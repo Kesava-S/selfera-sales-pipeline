@@ -1,0 +1,143 @@
+{
+  "name": "Sales follow-ups (daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [ 250, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env[\"SUPABASE_URL\"]}}/rest/v1/leads_due_today",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$env[\"SUPABASE_SERVICE_ROLE_KEY\"]}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env[\"SUPABASE_SERVICE_ROLE_KEY\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-leads",
+      "name": "Get Leads Due Today",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 450, 300 ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "number": [
+                  {
+                    "value1": "={{$json[\"follow_up_count\"]}}",
+                    "operation": "equal",
+                    "value2": 3
+                  }
+                ]
+              },
+              "output": 0
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json[\"stage\"]}}",
+                    "operation": "equal",
+                    "value2": "Won"
+                  }
+                ]
+              },
+              "output": 1
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json[\"channel\"]}}",
+                    "operation": "equal",
+                    "value2": "Email"
+                  }
+                ]
+              },
+              "output": 2
+            }
+          ]
+        },
+        "fallbackOutput": 3
+      },
+      "id": "switch",
+      "name": "Switch on rules",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [ 650, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env[\"SUPABASE_URL\"]}}/rest/v1/rpc/record_outreach",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$env[\"SUPABASE_SERVICE_ROLE_KEY\"]}}" },
+            { "name": "Authorization", "value": "=Bearer {{$env[\"SUPABASE_SERVICE_ROLE_KEY\"]}}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "p_lead_id", "value": "={{$json[\"id\"]}}" },
+            { "name": "p_action", "value": "no_reply_final" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "final-check",
+      "name": "Final Check (Lost)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 900, 100 ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [ { "node": "Get Leads Due Today", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Get Leads Due Today": {
+      "main": [
+        [ { "node": "Switch on rules", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Switch on rules": {
+      "main": [
+        [ { "node": "Final Check (Lost)", "type": "main", "index": 0 } ],
+        [],
+        [],
+        []
+      ]
+    }
+  }
+}
