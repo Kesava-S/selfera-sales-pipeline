@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { PlusCircle, Search } from 'lucide-react'
+import { PlusCircle, Search, Upload } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,10 +20,16 @@ export default async function LeadsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1>All Leads</h1>
-        <Link href="/leads/add" className="btn btn-primary">
-          <PlusCircle size={18} />
-          New Lead
-        </Link>
+        <div className="flex gap-3">
+          <Link href="/leads/import" className="btn btn-secondary">
+            <Upload size={18} />
+            Import
+          </Link>
+          <Link href="/leads/add" className="btn btn-primary">
+            <PlusCircle size={18} />
+            New Lead
+          </Link>
+        </div>
       </div>
 
       <div className="card mb-6 flex items-center gap-2">
