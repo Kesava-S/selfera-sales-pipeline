@@ -1,7 +1,0 @@
-# Directories not needed in Vercel build
-n8n/
-supabase/
-docs/
-AGENTS.md
-*.md
-!README.md
