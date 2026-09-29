@@ -1,7 +1,8 @@
 'use server'
 import { createClient } from '@/lib/supabase/server'
+import type { CSVLeadRow } from '@/types/database'
 
-export async function bulkImportLeads(leads: any[]) {
+export async function bulkImportLeads(leads: CSVLeadRow[]) {
   const supabase = await createClient()
   
   // Clean up and prepare leads for insertion

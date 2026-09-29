@@ -1,62 +1,35 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import Link from "next/link";
-import { LayoutDashboard, Users, PlusCircle, Mail, Settings } from "lucide-react";
-
-const inter = Inter({ subsets: ["latin"] });
+import type { Metadata } from 'next'
+import './globals.css'
+import { Sidebar } from '@/components/Sidebar'
+import { Topbar } from '@/components/Topbar'
+import { AddLeadModalProvider } from '@/components/AddLeadModalProvider'
 
 export const metadata: Metadata = {
-  title: "Sales Pipeline Dashboard",
-  description: "Manage sales pipeline and automated follow-ups",
-};
+  title: 'Selfera. | Sales Pipeline',
+  description: 'AI Automation for UK small businesses - bookings, follow ups, operations and sales cadence workflows.',
+  icons: {
+    icon: '/logo.png',
+  },
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <div className="app-layout">
-          <aside className="sidebar">
-            <div className="sidebar-logo mb-6">
-              <div className="sidebar-logo-icon">
-                <Users size={18} color="white" />
-              </div>
-              Selfera Sales
+      <body>
+        <AddLeadModalProvider>
+          <div className="app-layout">
+            <Sidebar />
+            <div className="main-wrapper">
+              <Topbar />
+              <main className="main-content">{children}</main>
             </div>
-            <nav className="sidebar-nav">
-              <Link href="/" className="nav-item">
-                <LayoutDashboard size={20} />
-                Today Tasks
-              </Link>
-              <Link href="/leads" className="nav-item">
-                <Users size={20} />
-                All Leads
-              </Link>
-              <Link href="/leads/add" className="nav-item">
-                <PlusCircle size={20} />
-                Add Lead
-              </Link>
-              <Link href="/templates" className="nav-item">
-                <Mail size={20} />
-                Templates
-              </Link>
-            </nav>
-            <div className="mt-auto">
-              <Link href="/settings" className="nav-item">
-                <Settings size={20} />
-                Settings
-              </Link>
-            </div>
-          </aside>
-          <main className="main-content">
-            {children}
-          </main>
-        </div>
+          </div>
+        </AddLeadModalProvider>
       </body>
     </html>
-  );
+  )
 }
