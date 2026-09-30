@@ -33,6 +33,7 @@ import { ConfirmModal } from '@/components/ConfirmModal'
 import { useAddLeadModal } from '@/components/AddLeadModalProvider'
 import { formatDate } from '@/lib/dateUtils'
 import { getLeadCadenceStep, CADENCE_STEPS } from '@/lib/templateUtils'
+import { ServiceBadge } from '@/components/ServiceBadge'
 
 interface CompanyLeadsViewProps {
   companyName: string
@@ -519,6 +520,16 @@ export function CompanyLeadsView({
                   <span>Up to Date</span>
                 </span>
               )}
+
+              {/* Multi-Service Approaches Summary for this Company */}
+              {leads.length > 0 && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', marginLeft: '0.35rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Pitched:</span>
+                  {Array.from(new Set(leads.map((l) => l.current_service || l.initial_service || 'Website Services'))).map((srv) => (
+                    <ServiceBadge key={srv} service={srv} size="sm" />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -547,9 +558,10 @@ export function CompanyLeadsView({
             }
             className="btn btn-primary btn-sm"
             style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', gap: '5px', borderRadius: '8px' }}
+            title="Pitch another service or add contact for this business"
           >
             <Plus size={14} />
-            <span>Add Lead</span>
+            <span>Pitch Service / Add Contact</span>
           </button>
           <Link
             href={`/leads?search=${encodeURIComponent(companyName)}`}
@@ -620,6 +632,7 @@ export function CompanyLeadsView({
               <thead>
                 <tr style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ padding: '0.65rem 1.15rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Lead</th>
+                  <th style={{ padding: '0.65rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Service Pitch</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Cadence Step</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600 }}>Stage</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600 }}>Outreach / Cadence</th>
@@ -671,6 +684,16 @@ export function CompanyLeadsView({
                             </span>
                           </div>
                         </div>
+                      </td>
+
+                      {/* Service Offering Pitch Column */}
+                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                        <ServiceBadge
+                          service={lead.current_service || 'Website Services'}
+                          initialService={lead.initial_service}
+                          showPivot={true}
+                          size="sm"
+                        />
                       </td>
 
                       {/* Cadence Step Column */}

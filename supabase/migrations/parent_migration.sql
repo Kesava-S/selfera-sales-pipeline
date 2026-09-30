@@ -356,3 +356,38 @@ DROP POLICY IF EXISTS "notifications_full_access" ON "sales-pipe".notifications;
 CREATE POLICY "notifications_full_access" ON "sales-pipe".notifications
     FOR ALL USING (true) WITH CHECK (true);
 
+-- 12. SERVICE TRACKING & SERVICE HISTORY
+ALTER TABLE "sales-pipe".leads
+ADD COLUMN IF NOT EXISTS initial_service text DEFAULT 'Website Services',
+ADD COLUMN IF NOT EXISTS current_service text DEFAULT 'Website Services',
+ADD COLUMN IF NOT EXISTS agreed_service text DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS service_notes text DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_leads_initial_service ON "sales-pipe".leads(initial_service);
+CREATE INDEX IF NOT EXISTS idx_leads_current_service ON "sales-pipe".leads(current_service);
+CREATE INDEX IF NOT EXISTS idx_leads_agreed_service ON "sales-pipe".leads(agreed_service);
+
+CREATE TABLE IF NOT EXISTS "sales-pipe".lead_service_history (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    lead_id uuid REFERENCES "sales-pipe".leads(id) ON DELETE CASCADE NOT NULL,
+    business_name text NOT NULL,
+    from_service text NOT NULL,
+    to_service text NOT NULL,
+    transition_stage text NOT NULL,
+    reason text NOT NULL,
+    changed_by text DEFAULT 'Sales Team',
+    created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_history_lead ON "sales-pipe".lead_service_history(lead_id);
+CREATE INDEX IF NOT EXISTS idx_service_history_services ON "sales-pipe".lead_service_history(from_service, to_service);
+CREATE INDEX IF NOT EXISTS idx_service_history_created_at ON "sales-pipe".lead_service_history(created_at DESC);
+
+ALTER TABLE "sales-pipe".lead_service_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_history_full_access" ON "sales-pipe".lead_service_history;
+CREATE POLICY "service_history_full_access" ON "sales-pipe".lead_service_history
+    FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE "sales-pipe".lead_service_history TO anon, authenticated, service_role;
+

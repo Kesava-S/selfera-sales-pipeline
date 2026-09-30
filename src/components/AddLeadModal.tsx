@@ -13,7 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { InstagramIcon } from '@/components/Icons'
-import { ChannelType } from '@/types/database'
+import { ChannelType, ServiceType } from '@/types/database'
 import { CompanyAutocompleteInput } from '@/components/CompanyAutocompleteInput'
 
 interface AddLeadModalProps {
@@ -31,6 +31,7 @@ export function AddLeadModal({
 }: AddLeadModalProps) {
   const router = useRouter()
   const [businessName, setBusinessName] = useState(defaultCompany)
+  const [service, setService] = useState<ServiceType>('Website Services')
   const [channel, setChannel] = useState<ChannelType>('Email')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -122,6 +123,8 @@ export function AddLeadModal({
         .insert({
           business_name: businessName.trim(),
           channel,
+          initial_service: service,
+          current_service: service,
           email: email.trim() || null,
           phone: phone.trim() || null,
           instagram_handle: instagramHandle.trim() || null,
@@ -156,7 +159,7 @@ export function AddLeadModal({
         await supabase.from('activity_log').insert({
           lead_id: newLead.id,
           action_type: 'system',
-          details: `Lead registered via ${channel}. Initial outreach task queued.`,
+          details: `Lead registered via ${channel} for ${service}. Initial outreach task queued.`,
         })
 
         // User audit log
@@ -165,6 +168,7 @@ export function AddLeadModal({
           business_name: newLead.business_name,
           channel: newLead.channel,
           company_type: newLead.company_type,
+          service: service,
         })
 
         setIsSuccess(true)
@@ -340,6 +344,28 @@ export function AddLeadModal({
                   <span>{errors.businessName}</span>
                 </div>
               )}
+            </div>
+
+            {/* Service Offering Pitch */}
+            <div className="input-group" style={{ marginBottom: '1.15rem' }}>
+              <label htmlFor="modal_service" className="input-label">
+                Service Offering Pitch <span className="required-star">*</span>
+              </label>
+              <select
+                id="modal_service"
+                value={service}
+                onChange={(e) => setService(e.target.value as ServiceType)}
+                className="input-field"
+              >
+                <option value="Website Services">Website Services (UI/UX, Redesign, Web Apps)</option>
+                <option value="Dashboard Services">Dashboard Services (Custom Admin, Analytics, Portals)</option>
+                <option value="Micro Services">Micro Services (Dedicated APIs, Micro-Tools)</option>
+                <option value="End to End Automation">End to End Automation (n8n, CRM & Ops Auto-Sync)</option>
+                <option value="Cold Outreach">Cold Outreach (Outbound WhatsApp, IG & Email Campaigns)</option>
+              </select>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                Initial marketing angle. If the client asks for another service later, you can log the pivot anytime.
+              </span>
             </div>
 
             {/* Primary Channel Cadence */}

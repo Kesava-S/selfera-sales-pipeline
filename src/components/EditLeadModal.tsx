@@ -13,7 +13,7 @@ import {
   Edit3,
 } from 'lucide-react'
 import { InstagramIcon } from '@/components/Icons'
-import type { ExtendedLead, ChannelType } from '@/types/database'
+import type { ExtendedLead, ChannelType, ServiceType } from '@/types/database'
 
 interface EditLeadModalProps {
   isOpen: boolean
@@ -33,6 +33,9 @@ export function EditLeadModal({
   const [phone, setPhone] = useState(lead.phone || '')
   const [instagramHandle, setInstagramHandle] = useState(lead.instagram_handle || '')
   const [channel, setChannel] = useState<ChannelType>(lead.channel || 'Email')
+  const [service, setService] = useState<ServiceType>(
+    (lead.current_service as ServiceType) || (lead.initial_service as ServiceType) || 'Website Services'
+  )
   const [companyType, setCompanyType] = useState<'limited' | 'sole_trader'>(
     lead.company_type || 'limited'
   )
@@ -66,6 +69,7 @@ export function EditLeadModal({
         phone: cleanPhone,
         instagram_handle: cleanHandle || null,
         channel,
+        current_service: service,
         company_type: companyType,
         assigned_to: lead.assigned_to ?? null,
       }
@@ -88,6 +92,7 @@ export function EditLeadModal({
       if (cleanPhone !== (lead.phone || null)) changes.push(`Phone: "${cleanPhone || 'None'}"`)
       if (cleanHandle !== (lead.instagram_handle || '')) changes.push(`Instagram: "@${cleanHandle || 'None'}"`)
       if (channel !== lead.channel) changes.push(`Primary Channel: ${channel}`)
+      if (service !== (lead.current_service || lead.initial_service)) changes.push(`Service: ${service}`)
       if (companyType !== lead.company_type) changes.push(`PECR: ${companyType}`)
 
       const summary = changes.length > 0 ? changes.join(', ') : 'Details refreshed'
@@ -285,6 +290,40 @@ export function EditLeadModal({
                   }}
                 />
               </div>
+            </div>
+
+            {/* Service Offering Pitch */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.825rem',
+                  fontWeight: 600,
+                  color: '#334155',
+                  marginBottom: '0.4rem',
+                }}
+              >
+                Service Offering
+              </label>
+              <select
+                value={service}
+                onChange={(e) => setService(e.target.value as ServiceType)}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.85rem',
+                  fontSize: '0.875rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#ffffff',
+                  outline: 'none',
+                }}
+              >
+                <option value="Website Services">Website Services (UI/UX, Redesign, Web Apps)</option>
+                <option value="Dashboard Services">Dashboard Services (Custom Admin, Analytics, Portals)</option>
+                <option value="Micro Services">Micro Services (Dedicated APIs, Micro-Tools)</option>
+                <option value="End to End Automation">End to End Automation (n8n, CRM & Ops Auto-Sync)</option>
+                <option value="Cold Outreach">Cold Outreach (Outbound WhatsApp, IG & Email Campaigns)</option>
+              </select>
             </div>
 
             {/* PECR Company Type */}

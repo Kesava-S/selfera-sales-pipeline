@@ -23,6 +23,7 @@ import type { ExtendedLead } from '@/types/database'
 import { formatDate } from '@/lib/dateUtils'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { getLeadCadenceStep, CADENCE_STEPS } from '@/lib/templateUtils'
+import { ServiceBadge } from '@/components/ServiceBadge'
 
 interface LeadsViewProps {
   initialLeads?: ExtendedLead[] | null
@@ -33,6 +34,7 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [stageFilter, setStageFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
+  const [serviceFilter, setServiceFilter] = useState<string>('all')
   const [deleteTarget, setDeleteTarget] = useState<ExtendedLead | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const searchParams = useSearchParams()
@@ -123,8 +125,14 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
 
     const matchesStage = stageFilter === 'all' || lead.stage === stageFilter
     const matchesChannel = channelFilter === 'all' || lead.channel === channelFilter
+    const matchesService =
+      serviceFilter === 'all'
+        ? true
+        : serviceFilter === 'pivoted'
+        ? Boolean(lead.initial_service && lead.current_service && lead.initial_service !== lead.current_service)
+        : (lead.current_service || lead.initial_service || 'Website Services') === serviceFilter
 
-    return matchesSearch && matchesStage && matchesChannel
+    return matchesSearch && matchesStage && matchesChannel && matchesService
   })
 
   const getChannelBadgeClass = (channel: string) => {
@@ -279,6 +287,23 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
             <option value="Phone">Phone</option>
             <option value="Walk-in">Walk-in</option>
           </select>
+
+          {/* Service Offering Filter */}
+          <select
+            value={serviceFilter}
+            onChange={(e) => setServiceFilter(e.target.value)}
+            className="input-field"
+            style={{ padding: '0.5rem 0.95rem', width: 'auto', fontSize: '0.85rem', borderRadius: '8px' }}
+            title="Filter by pitched or active service"
+          >
+            <option value="all">All Services</option>
+            <option value="Website Services">Website Services</option>
+            <option value="Dashboard Services">Dashboard Services</option>
+            <option value="Micro Services">Micro Services</option>
+            <option value="End to End Automation">End to End Automation</option>
+            <option value="Cold Outreach">Cold Outreach</option>
+            <option value="pivoted">Pivoted Services Only</option>
+          </select>
         </div>
       </div>
 
@@ -288,6 +313,7 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
           <thead>
             <tr>
               <th>Business Name</th>
+              <th>Service Pitch</th>
               <th>Channel</th>
               <th>Stage</th>
               <th>Cadence Step</th>
@@ -348,6 +374,16 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
                           </span>
                         </div>
                       )}
+                    </td>
+
+                    {/* Service Pitch Column */}
+                    <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                      <ServiceBadge
+                        service={lead.current_service || 'Website Services'}
+                        initialService={lead.initial_service}
+                        showPivot={true}
+                        size="sm"
+                      />
                     </td>
 
                     <td>

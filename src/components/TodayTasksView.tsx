@@ -26,6 +26,7 @@ import type { ExtendedTask, ExtendedLead, ChannelType, StageType } from '@/types
 import { ReplyChannelModal } from './ReplyChannelModal'
 import { SendFollowupModal } from './SendFollowupModal'
 import { useAddLeadModal } from '@/components/AddLeadModalProvider'
+import { ServiceBadge } from '@/components/ServiceBadge'
 
 interface TodayTasksViewProps {
   initialTasks?: ExtendedTask[] | null
@@ -412,6 +413,15 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
               {getChannelIcon(channel)}
               <span>{channel}</span>
             </span>
+
+            {task.leads && (task.leads.current_service || task.leads.initial_service) && (
+              <ServiceBadge
+                service={task.leads.current_service || task.leads.initial_service}
+                initialService={task.leads.initial_service}
+                showPivot={true}
+                size="sm"
+              />
+            )}
 
             {task.leads && (
               <Link
