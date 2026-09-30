@@ -35,15 +35,15 @@ export function Preloader({ fullScreen = true }: PreloaderProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: '96px',
-          height: '96px',
+          width: '56px',
+          height: '56px',
         }}
       >
         <Image
           src="/logo.png"
           alt="Selfera Logo"
-          width={96}
-          height={96}
+          width={56}
+          height={56}
           style={{
             width: '100%',
             height: 'auto',
@@ -59,8 +59,8 @@ export function Preloader({ fullScreen = true }: PreloaderProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '9px',
-          marginTop: '24px',
+          gap: '8px',
+          marginTop: '18px',
         }}
       >
         <div

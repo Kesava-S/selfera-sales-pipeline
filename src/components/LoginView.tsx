@@ -275,8 +275,8 @@ export function LoginView() {
             <Image
               src="/logo.png"
               alt="Selfera Logo"
-              width={104}
-              height={140}
+              width={54}
+              height={72}
               className="login-logo-img"
               priority
             />
