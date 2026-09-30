@@ -1,0 +1,160 @@
+{
+  "name": "Selfera v2: Inbound Webhooks",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "selfera/inbound/whatsapp",
+        "options": {}
+      },
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 200, 200 ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "selfera/inbound/instagram",
+        "options": {}
+      },
+      "name": "Instagram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 200, 400 ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"sales-pipe\".record_inbound(\n  $1::text,\n  $2::text,\n  $3::text,\n  $4::text,\n  $5::text,\n  $6::text\n);",
+        "additionalFields": {
+          "queryParams": "={{$json.platform}},{{$json.external_thread_id}},{{$json.from}},{{$json.body}},{{$json.external_message_id}},{{$json.media_url}}"
+        }
+      },
+      "name": "Record Inbound",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [ 600, 300 ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "platform",
+              "value": "WhatsApp"
+            },
+            {
+              "name": "external_thread_id",
+              "value": "={{$json.body.entry[0].changes[0].value.messages[0].from}}"
+            },
+            {
+              "name": "from",
+              "value": "={{$json.body.entry[0].changes[0].value.messages[0].from}}"
+            },
+            {
+              "name": "body",
+              "value": "={{$json.body.entry[0].changes[0].value.messages[0].text.body}}"
+            },
+            {
+              "name": "external_message_id",
+              "value": "={{$json.body.entry[0].changes[0].value.messages[0].id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Map WA",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [ 400, 200 ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "platform",
+              "value": "Instagram"
+            },
+            {
+              "name": "external_thread_id",
+              "value": "={{$json.body.entry[0].messaging[0].sender.id}}"
+            },
+            {
+              "name": "from",
+              "value": "={{$json.body.entry[0].messaging[0].sender.id}}"
+            },
+            {
+              "name": "body",
+              "value": "={{$json.body.entry[0].messaging[0].message.text}}"
+            },
+            {
+              "name": "external_message_id",
+              "value": "={{$json.body.entry[0].messaging[0].message.mid}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Map IG",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [ 400, 400 ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Map WA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Webhook": {
+      "main": [
+        [
+          {
+            "node": "Map IG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map WA": {
+      "main": [
+        [
+          {
+            "node": "Record Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map IG": {
+      "main": [
+        [
+          {
+            "node": "Record Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

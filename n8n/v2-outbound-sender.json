@@ -1,0 +1,130 @@
+{
+  "name": "Selfera v2: Outbound Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "selfera/outbound/send",
+        "options": {}
+      },
+      "name": "Send Webhook (from App)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 200, 300 ]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json.body.platform}}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "WhatsApp",
+              "output": 0
+            },
+            {
+              "value2": "Instagram",
+              "output": 1
+            },
+            {
+              "value2": "Email",
+              "output": 2
+            }
+          ]
+        }
+      },
+      "name": "Switch Platform",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [ 400, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v17.0/YOUR_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{$json.body.to}}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{\"body\": \"{{$json.body.message}}\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send WA API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 700, 100 ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"sales-pipe\".record_outbound(\n  $1::uuid,\n  $2::text,\n  $3::text,\n  $4::uuid,\n  'api',\n  $5::text,\n  $6::uuid\n);",
+        "additionalFields": {
+          "queryParams": "={{$json.body.thread_id}},{{$json.body.message}},{{$json.body.subject}},{{$json.body.template_id}},{{$json.messages[0].id}},{{$json.body.sent_by}}"
+        }
+      },
+      "name": "Record Outbound DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [ 1000, 100 ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Send Webhook (from App)": {
+      "main": [
+        [
+          {
+            "node": "Switch Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Platform": {
+      "main": [
+        [
+          {
+            "node": "Send WA API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WA API": {
+      "main": [
+        [
+          {
+            "node": "Record Outbound DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

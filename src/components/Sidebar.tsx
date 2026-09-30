@@ -41,24 +41,24 @@ export function Sidebar() {
 
   const navItems = [
     {
-      href: '/',
-      label: 'Today Tasks',
+      href: '/dashboard',
+      label: 'Dashboard Home',
       icon: LayoutDashboard,
       badge: openTasksCount > 0 ? openTasksCount : null,
     },
     {
-      href: '/leads',
-      label: 'All Leads',
+      href: '/dashboard/leads',
+      label: 'All Leads & Imports',
       icon: Users,
     },
     {
       href: '/templates',
-      label: 'Templates',
+      label: 'Templates (V2)',
       icon: FileText,
     },
     {
       href: '/settings',
-      label: 'Cadence Rules',
+      label: 'Settings',
       icon: Sliders,
     },
   ]

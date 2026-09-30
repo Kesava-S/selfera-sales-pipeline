@@ -1,0 +1,50 @@
+{
+  "name": "Selfera v2: Daily Update Cron",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Schedule (Mon-Fri 9AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [ 200, 300 ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \"sales-pipe\".daily_update();"
+      },
+      "name": "Call daily_update()",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [ 400, 300 ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule (Mon-Fri 9AM)": {
+      "main": [
+        [
+          {
+            "node": "Call daily_update()",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
