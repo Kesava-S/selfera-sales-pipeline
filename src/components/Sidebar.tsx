@@ -249,13 +249,13 @@ export function Sidebar() {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={currentUser?.full_name || currentUser?.email || 'User'}
+              title={currentUser?.full_name || currentUser?.email || ''}
             >
-              {currentUser?.full_name || 'User'}
+              {currentUser?.full_name || currentUser?.email?.split('@')[0] || ''}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-              {currentUser?.role_name || 'Staff'}
+              {currentUser?.role_name || ''}
             </div>
           </div>
           <button

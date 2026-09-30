@@ -133,6 +133,62 @@ export async function fetchActiveUserProfile(): Promise<UserProfile | null> {
   }
 }
 
+export async function verifyAuth(): Promise<UserProfile | null> {
+  if (typeof window === 'undefined') return null
+
+  // 1. Check direct token in URL
+  const urlParams = new URLSearchParams(window.location.search)
+  const directToken =
+    urlParams.get('token') ||
+    urlParams.get('accessToken') ||
+    urlParams.get('access_token')
+
+  if (directToken) {
+    const res = await handleSSOLogin(directToken)
+    if (res.success) {
+      return getCachedUserProfile()
+    }
+  }
+
+  // 2. Check SSO token in localStorage
+  const ssoToken = localStorage.getItem('selfera_sso_token')
+  if (ssoToken) {
+    const payload = decodeJwtPayload(ssoToken)
+    if (!payload) {
+      clearCachedUserProfile()
+      return null
+    }
+
+    // Check expiration
+    if (typeof payload.exp === 'number' && Date.now() >= payload.exp * 1000) {
+      clearCachedUserProfile()
+      return null
+    }
+
+    const cached = getCachedUserProfile()
+    if (cached && cached.email) {
+      return cached
+    }
+
+    const res = await handleSSOLogin(ssoToken)
+    if (res.success) return getCachedUserProfile()
+  }
+
+  // 3. Check active Supabase auth session
+  try {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      return await fetchActiveUserProfile()
+    }
+  } catch {}
+
+  // 4. No valid session
+  clearCachedUserProfile()
+  return null
+}
+
 export function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split('.')

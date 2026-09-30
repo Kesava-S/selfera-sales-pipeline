@@ -5,18 +5,56 @@ import { usePathname } from 'next/navigation'
 import { CheckCircle, AlertCircle } from 'lucide-react'
 import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
-import { handleSSOLogin } from '@/lib/authUtils'
+import { handleSSOLogin, verifyAuth } from '@/lib/authUtils'
+import { Preloader } from '@/components/Preloader'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAuthPage = pathname === '/login' || pathname.startsWith('/sso')
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [isAuthorized, setIsAuthorized] = useState(isAuthPage)
+  const [isVerifying, setIsVerifying] = useState(!isAuthPage)
 
+  // Enforce JWT Auth Verification on all workspace pages
+  useEffect(() => {
+    let isMounted = true
+
+    if (isAuthPage) {
+      setIsAuthorized(true)
+      setIsVerifying(false)
+      return
+    }
+
+    const checkAuthorization = async () => {
+      setIsVerifying(true)
+      const user = await verifyAuth()
+
+      if (!isMounted) return
+
+      if (user) {
+        setIsAuthorized(true)
+        setIsVerifying(false)
+      } else {
+        setIsAuthorized(false)
+        setIsVerifying(false)
+        window.location.replace('/login')
+      }
+    }
+
+    checkAuthorization()
+
+    return () => {
+      isMounted = false
+    }
+  }, [pathname, isAuthPage])
+
+  // Process direct tokens or pending toast notifications
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    // 1. Check if token is passed directly in URL (e.g. /?token=...)
     const searchParams = new URLSearchParams(window.location.search)
+
+    // 1. Check if token is passed directly in URL (e.g. /?token=...)
     const directToken = searchParams.get('token')
     if (directToken) {
       handleSSOLogin(directToken).then((res) => {
@@ -71,6 +109,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isAuthPage) {
     return <main className="auth-shell">{children}</main>
+  }
+
+  // Display clean preloader while verifying JWT credentials
+  if (isVerifying || !isAuthorized) {
+    return <Preloader fullScreen />
   }
 
   return (

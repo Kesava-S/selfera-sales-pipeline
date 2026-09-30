@@ -198,7 +198,7 @@ export function Topbar() {
               }}
             >
               <span style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a' }}>
-                {currentUser?.full_name || 'User'}
+                {currentUser?.full_name || currentUser?.email?.split('@')[0] || ''}
               </span>
               <span
                 style={{
@@ -217,7 +217,7 @@ export function Topbar() {
                     backgroundColor: '#10b981',
                   }}
                 />
-                {currentUser?.role_name || 'Staff'}
+                {currentUser?.role_name || ''}
               </span>
             </div>
 
@@ -285,7 +285,7 @@ export function Topbar() {
                       backgroundColor: '#10b981',
                     }}
                   />
-                  Active • {currentUser?.role_name || 'Staff'}
+                  Active • {currentUser?.role_name || 'Member'}
                 </div>
               </div>
 
