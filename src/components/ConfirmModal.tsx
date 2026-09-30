@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { RotateCcw, AlertTriangle, X } from 'lucide-react'
 
 interface ConfirmModalProps {
@@ -12,6 +13,7 @@ interface ConfirmModalProps {
   confirmText?: string
   cancelText?: string
   variant?: 'danger' | 'primary' | 'warning'
+  confirmIcon?: React.ReactNode
 }
 
 export function ConfirmModal({
@@ -23,7 +25,14 @@ export function ConfirmModal({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'primary',
+  confirmIcon,
 }: ConfirmModalProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -34,19 +43,22 @@ export function ConfirmModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  if (!isOpen || !mounted) return null
 
   const isDanger = variant === 'danger'
   const isWarning = variant === 'warning'
 
-  return (
+  const modalContent = (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.45)',
-        backdropFilter: 'blur(4px)',
-        zIndex: 100,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: 'rgba(15, 23, 42, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -59,11 +71,11 @@ export function ConfirmModal({
         className="card"
         style={{
           width: '100%',
-          maxWidth: '460px',
+          maxWidth: '440px',
           padding: '1.75rem 2rem',
           backgroundColor: '#ffffff',
           borderRadius: '16px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
           border: '1px solid #e2e8f0',
           position: 'relative',
         }}
@@ -92,7 +104,7 @@ export function ConfirmModal({
         </button>
 
         {/* Modal Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '0.85rem' }}>
           <div
             style={{
               width: '42px',
@@ -108,7 +120,7 @@ export function ConfirmModal({
           >
             {isDanger || isWarning ? <AlertTriangle size={20} /> : <RotateCcw size={20} />}
           </div>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
             {title}
           </h3>
         </div>
@@ -119,7 +131,7 @@ export function ConfirmModal({
             fontSize: '0.875rem',
             lineHeight: 1.6,
             color: '#475569',
-            marginBottom: '1.75rem',
+            marginBottom: '1.5rem',
           }}
         >
           {message}
@@ -153,11 +165,13 @@ export function ConfirmModal({
               gap: '0.5rem',
             }}
           >
-            <RotateCcw size={14} />
+            {confirmIcon !== undefined ? confirmIcon : (isDanger ? null : <RotateCcw size={14} />)}
             <span>{confirmText}</span>
           </button>
         </div>
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

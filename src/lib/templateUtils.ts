@@ -60,18 +60,27 @@ export function getLeadCadenceStep(lead: { stage: string; follow_up_count?: numb
 export function parseTemplateStep(
   name: string,
   explicitStep?: number | null
-): CadenceStep {
+): CadenceStep | -1 {
   if (explicitStep === 0 || explicitStep === 1 || explicitStep === 2 || explicitStep === 3) {
     return explicitStep as CadenceStep
   }
   const lower = name.toLowerCase()
+  if (
+    lower.includes('upsell') ||
+    lower.includes('after won') ||
+    lower.includes('post-sale') ||
+    lower.includes('won deal')
+  ) {
+    return -1
+  }
   if (
     lower.includes('step 0') ||
     lower.includes('follow up 0') ||
     lower.includes('follow-up 0') ||
     lower.includes('initial') ||
     lower.includes('intro') ||
-    lower.includes('day 0')
+    lower.includes('day 0') ||
+    lower.includes('first outreach')
   ) {
     return 0
   }
@@ -104,7 +113,7 @@ export function parseTemplateStep(
   ) {
     return 3
   }
-  return 0
+  return -1
 }
 
 export function parseTemplateChannel(

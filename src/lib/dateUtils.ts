@@ -54,3 +54,62 @@ export function formatDateTime(dateStr: string | null | undefined): string {
     return dateStr
   }
 }
+
+/**
+ * Checks whether a date string is due today or overdue (YYYY-MM-DD <= today).
+ */
+export function isDueTodayOrOverdue(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false
+  const dateOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const today = `${year}-${month}-${day}`
+  return dateOnly <= today
+}
+
+/**
+ * Checks whether a date string is exactly today.
+ */
+export function isExactToday(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false
+  const dateOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const today = `${year}-${month}-${day}`
+  return dateOnly === today
+}
+
+/**
+ * Adds working days (Monday-Friday) to current date and returns YYYY-MM-DD.
+ */
+export function addWorkingDays(workingDays: number): string {
+  const current = new Date()
+  let added = 0
+  while (added < workingDays) {
+    current.setDate(current.getDate() + 1)
+    const day = current.getDay()
+    if (day !== 0 && day !== 6) {
+      added++
+    }
+  }
+  const year = current.getFullYear()
+  const month = String(current.getMonth() + 1).padStart(2, '0')
+  const day = String(current.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Adds calendar days to current date and returns YYYY-MM-DD.
+ */
+export function addCalendarDays(calendarDays: number): string {
+  const current = new Date()
+  current.setDate(current.getDate() + calendarDays)
+  const year = current.getFullYear()
+  const month = String(current.getMonth() + 1).padStart(2, '0')
+  const day = String(current.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}

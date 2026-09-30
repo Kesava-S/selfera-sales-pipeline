@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   CheckCircle,
   Clock,
+  Calendar,
   MessageCircle,
   Mail,
   Phone,
@@ -27,6 +28,8 @@ import { ReplyChannelModal } from './ReplyChannelModal'
 import { SendFollowupModal } from './SendFollowupModal'
 import { useAddLeadModal } from '@/components/AddLeadModalProvider'
 import { ServiceBadge } from '@/components/ServiceBadge'
+import { isDueTodayOrOverdue, addWorkingDays, formatDate } from '@/lib/dateUtils'
+import { CompanyTasksModal } from '@/components/CompanyTasksModal'
 
 interface TodayTasksViewProps {
   initialTasks?: ExtendedTask[] | null
@@ -40,6 +43,17 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
   const [leads, setLeads] = useState<ExtendedLead[]>(initialLeads || [])
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
+  const [tasksModalData, setTasksModalData] = useState<{
+    isOpen: boolean
+    companyName: string
+    tasks: ExtendedTask[]
+    leads: ExtendedLead[]
+  }>({
+    isOpen: false,
+    companyName: '',
+    tasks: [],
+    leads: [],
+  })
   const [modalState, setModalState] = useState<{
     isOpen: boolean
     lead: ExtendedLead | null
@@ -78,13 +92,21 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
     }
   }, [initialLeads])
 
-  const openTasks = tasks.filter((t) => t.status === 'open')
+  const openTasks = tasks.filter((t) => {
+    if (t.status !== 'open') return false
+    const lead = t.leads
+    if (lead?.stage && ['Replied', 'Lost', 'Do not contact'].includes(lead.stage)) return false
+    if (lead?.stage === 'Interested' && lead.next_follow_up && t.due_date !== lead.next_follow_up) return false
+    return true
+  })
+  // Only tasks due today or overdue
+  const dueTodayTasks = openTasks.filter((t) => isDueTodayOrOverdue(t.due_date))
   const completedTasks = tasks.filter((t) => t.status === 'completed')
 
-  const salesFollowupCount = openTasks.filter((t) => t.task_type === 'sales_followup').length
-  const generalTaskCount = openTasks.filter((t) => t.task_type !== 'sales_followup').length
+  const salesFollowupCount = dueTodayTasks.filter((t) => t.task_type === 'sales_followup').length
+  const generalTaskCount = dueTodayTasks.filter((t) => t.task_type !== 'sales_followup').length
 
-  // Group open tasks by company/business name and calculate leads count under that business
+  // Group all companies/businesses and associate their open & due tasks
   const companyGroups = React.useMemo(() => {
     const groupsMap = new Map<
       string,
@@ -96,6 +118,29 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
       }
     >()
 
+    // 1. Register all companies from leads
+    leads.forEach((lead) => {
+      const bizName = lead.business_name?.trim()
+      if (!bizName) return
+      const key = bizName.toLowerCase()
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, {
+          companyName: bizName,
+          tasks: [],
+          allCompanyLeads: [lead],
+          totalLeadsCount: 1,
+        })
+      } else {
+        const group = groupsMap.get(key)!
+        if (!group.allCompanyLeads.some((l) => l.id === lead.id)) {
+          group.allCompanyLeads.push(lead)
+          group.totalLeadsCount = group.allCompanyLeads.length
+        }
+      }
+    })
+
+    // 2. Associate open tasks to corresponding company or general tasks
     const generalTasks: ExtendedTask[] = []
 
     openTasks.forEach((task) => {
@@ -106,31 +151,67 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
       }
 
       const key = bizName.toLowerCase()
-      if (!groupsMap.has(key)) {
-        // Find all leads for this company/business name in the complete leads list
+      let group = groupsMap.get(key)
+      if (!group) {
         const matchingLeads = leads.filter(
           (l) => l.business_name && l.business_name.trim().toLowerCase() === key
         )
-        const taskLeadIds = new Set<string>()
-        if (task.lead_id) taskLeadIds.add(task.lead_id)
-
-        groupsMap.set(key, {
+        group = {
           companyName: bizName,
-          tasks: [task],
+          tasks: [],
           allCompanyLeads: matchingLeads,
-          totalLeadsCount: Math.max(matchingLeads.length, taskLeadIds.size, 1),
-        })
-      } else {
-        const group = groupsMap.get(key)!
-        group.tasks.push(task)
-        if (task.lead_id && !group.allCompanyLeads.some((l) => l.id === task.lead_id)) {
-          group.totalLeadsCount = Math.max(group.totalLeadsCount, group.allCompanyLeads.length + 1)
+          totalLeadsCount: Math.max(matchingLeads.length, 1),
         }
+        groupsMap.set(key, group)
       }
+
+      group.tasks.push(task)
     })
 
+    // 3. Compute due tasks and next upcoming due date for each company
+    const companies = Array.from(groupsMap.values())
+      .map((group) => {
+        const dueTasks = group.tasks.filter((t) => isDueTodayOrOverdue(t.due_date))
+
+        // Find next future due date from open tasks or lead.next_follow_up
+        const futureTaskDates = group.tasks
+          .filter((t): t is ExtendedTask & { due_date: string } => Boolean(t.due_date && !isDueTodayOrOverdue(t.due_date)))
+          .map((t) => (t.due_date.includes('T') ? t.due_date.split('T')[0] : t.due_date))
+
+        const futureLeadDates = group.allCompanyLeads
+          .filter((l): l is ExtendedLead & { next_follow_up: string } => Boolean(l.next_follow_up && !isDueTodayOrOverdue(l.next_follow_up)))
+          .map((l) => (l.next_follow_up.includes('T') ? l.next_follow_up.split('T')[0] : l.next_follow_up))
+
+        const allFutureDates = Array.from(new Set([...futureTaskDates, ...futureLeadDates])).sort()
+        const nextDueDate = allFutureDates[0] || null
+
+        return {
+          ...group,
+          dueTasks,
+          nextDueDate,
+        }
+      })
+      .sort((a, b) => {
+        // Companies with tasks due today first
+        if (a.dueTasks.length > 0 && b.dueTasks.length === 0) return -1
+        if (a.dueTasks.length === 0 && b.dueTasks.length > 0) return 1
+        if (b.dueTasks.length !== a.dueTasks.length) return b.dueTasks.length - a.dueTasks.length
+
+        // Then by earliest nextDueDate
+        if (a.nextDueDate && b.nextDueDate) {
+          const cmp = a.nextDueDate.localeCompare(b.nextDueDate)
+          if (cmp !== 0) return cmp
+        } else if (a.nextDueDate && !b.nextDueDate) {
+          return -1
+        } else if (!a.nextDueDate && b.nextDueDate) {
+          return 1
+        }
+
+        return a.companyName.localeCompare(b.companyName)
+      })
+
     return {
-      companies: Array.from(groupsMap.values()),
+      companies,
       generalTasks,
     }
   }, [openTasks, leads])
@@ -254,6 +335,15 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
             p_action: 'interested',
             p_task_id: task.id,
           })
+          const nextDateStr = addWorkingDays(2)
+          await supabase.from('tasks').insert({
+            title: `${task.leads?.business_name || 'Lead'}: Follow-up with Interested Lead`,
+            description: 'High interest prospect. Follow-up on proposal / service offerings.',
+            lead_id: task.lead_id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
         }
         await supabase.from('tasks').update({ status: 'completed' }).eq('id', task.id)
         setTasks((prev) => prev.filter((t) => t.id !== task.id))
@@ -293,6 +383,18 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
         // 3. Mark task completed
         await supabase.from('tasks').update({ status: 'completed' }).eq('id', modalState.task.id)
         setTasks((prev) => prev.filter((t) => t.id !== modalState.task?.id))
+
+        if (modalState.actionType === 'interested') {
+          const nextDateStr = addWorkingDays(2)
+          await supabase.from('tasks').insert({
+            title: `${modalState.lead.business_name}: Follow-up with Interested Lead`,
+            description: 'High interest prospect. Follow-up on proposal / service offerings.',
+            lead_id: modalState.lead.id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
+        }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Database error'
         showToast(`Error: ${errorMsg}`)
@@ -417,8 +519,6 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
             {task.leads && (task.leads.current_service || task.leads.initial_service) && (
               <ServiceBadge
                 service={task.leads.current_service || task.leads.initial_service}
-                initialService={task.leads.initial_service}
-                showPivot={true}
                 size="sm"
               />
             )}
@@ -740,15 +840,15 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
         <div
           style={{
             position: 'fixed',
-            bottom: '2.5rem',
-            right: '2.5rem',
+            top: '1.25rem',
+            right: '1.75rem',
             backgroundColor: '#0f172a',
             color: '#ffffff',
             padding: '0.9rem 1.4rem',
             borderRadius: '12px',
             border: '1px solid #1e293b',
             boxShadow: 'var(--shadow-xl)',
-            zIndex: 1000,
+            zIndex: 9999,
             display: 'flex',
             alignItems: 'center',
             gap: '0.75rem',
@@ -790,14 +890,14 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
       {/* Metric Stat Cards */}
       <div className="stat-grid" style={{ gap: '0.75rem', marginBottom: '1.25rem', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
         <div className="stat-card" style={{ padding: '0.8rem 1rem', borderRadius: '12px', gap: '0.25rem' }}>
-          <span className="stat-label" style={{ fontSize: '0.7rem', letterSpacing: '0.04em' }}>Companies to Action</span>
+          <span className="stat-label" style={{ fontSize: '0.7rem', letterSpacing: '0.04em' }}>Total Companies</span>
           <span className="stat-value" style={{ fontSize: '1.45rem', color: 'var(--primary)' }}>
             {companyGroups.companies.length}
           </span>
         </div>
         <div className="stat-card" style={{ padding: '0.8rem 1rem', borderRadius: '12px', gap: '0.25rem' }}>
           <span className="stat-label" style={{ fontSize: '0.7rem', letterSpacing: '0.04em' }}>Pending Tasks</span>
-          <span className="stat-value" style={{ fontSize: '1.45rem' }}>{openTasks.length}</span>
+          <span className="stat-value" style={{ fontSize: '1.45rem' }}>{dueTodayTasks.length}</span>
         </div>
         <div className="stat-card" style={{ padding: '0.8rem 1rem', borderRadius: '12px', gap: '0.25rem' }}>
           <span className="stat-label" style={{ fontSize: '0.7rem', letterSpacing: '0.04em' }}>Sales Follow-ups</span>
@@ -947,25 +1047,60 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
                         </span>
                       </span>
 
-                      {/* Tasks Status Badge */}
-                      {group.tasks.length > 0 ? (
-                        <span
+                      {/* Tasks Status Badge: If tasks due today, show amber badge with count; else show next due date */}
+                      {group.dueTasks.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setTasksModalData({
+                              isOpen: true,
+                              companyName: group.companyName,
+                              tasks: group.dueTasks,
+                              leads: group.allCompanyLeads,
+                            })
+                          }}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            backgroundColor: 'transparent',
+                            backgroundColor: '#fffbeb',
                             color: '#b45309',
-                            border: 'none',
-                            padding: 0,
+                            border: '1px solid #fde68a',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
                             fontSize: '0.72rem',
                             fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
                           }}
+                          className="hover:bg-amber-100"
+                          title={`Click to view ${group.dueTasks.length} task${group.dueTasks.length === 1 ? '' : 's'} due today`}
                         >
                           <Clock size={12} />
                           <span>
-                            {group.tasks.length} {group.tasks.length === 1 ? 'Task Today' : 'Tasks Today'}
+                            {group.dueTasks.length} {group.dueTasks.length === 1 ? 'Task Today' : 'Tasks Today'}
                           </span>
+                        </button>
+                      ) : group.nextDueDate ? (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4.5px',
+                            backgroundColor: '#f8fafc',
+                            color: '#475569',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 500,
+                          }}
+                          title={`Next scheduled action on ${formatDate(group.nextDueDate)}`}
+                        >
+                          <Calendar size={11} style={{ color: 'var(--primary)' }} />
+                          <span>Next: {formatDate(group.nextDueDate)}</span>
                         </span>
                       ) : (
                         <span
@@ -973,16 +1108,18 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            backgroundColor: 'transparent',
-                            color: '#15803d',
-                            border: 'none',
-                            padding: 0,
+                            backgroundColor: '#f8fafc',
+                            color: '#64748b',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
                             fontSize: '0.72rem',
-                            fontWeight: 600,
+                            fontWeight: 500,
                           }}
+                          title="No pending cadence tasks for this business"
                         >
-                          <Check size={12} />
-                          <span>Done Today</span>
+                          <CheckCircle size={11} style={{ color: '#10b981' }} />
+                          <span>All caught up</span>
                         </span>
                       )}
                     </div>
@@ -1081,6 +1218,25 @@ export function TodayTasksView({ initialTasks = [], initialLeads = [] }: TodayTa
           onSentSuccess={({ channel, templateName }) => {
             showToast(`Outreach sent via ${channel} using ${templateName}`)
             router.refresh()
+          }}
+        />
+      )}
+
+      {/* Company Tasks Modal (Opens when user clicks task count badge) */}
+      {tasksModalData.isOpen && (
+        <CompanyTasksModal
+          isOpen={tasksModalData.isOpen}
+          companyName={tasksModalData.companyName}
+          tasks={tasksModalData.tasks}
+          leads={tasksModalData.leads}
+          onClose={() => setTasksModalData((prev) => ({ ...prev, isOpen: false }))}
+          onActionTask={(task, lead) => {
+            setTasksModalData((prev) => ({ ...prev, isOpen: false }))
+            setFollowupModalState({
+              isOpen: true,
+              lead,
+              task,
+            })
           }}
         />
       )}

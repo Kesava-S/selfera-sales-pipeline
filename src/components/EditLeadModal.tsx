@@ -1,13 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   Building2,
   Mail,
   Phone,
-  User,
-  ShieldCheck,
   Check,
   Loader2,
   Edit3,
@@ -28,6 +27,11 @@ export function EditLeadModal({
   lead,
   onSave,
 }: EditLeadModalProps) {
+  const [mounted, setMounted] = useState<boolean>(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [businessName, setBusinessName] = useState(lead.business_name || '')
   const [email, setEmail] = useState(lead.email || '')
   const [phone, setPhone] = useState(lead.phone || '')
@@ -35,9 +39,6 @@ export function EditLeadModal({
   const [channel, setChannel] = useState<ChannelType>(lead.channel || 'Email')
   const [service, setService] = useState<ServiceType>(
     (lead.current_service as ServiceType) || (lead.initial_service as ServiceType) || 'Website Services'
-  )
-  const [companyType, setCompanyType] = useState<'limited' | 'sole_trader'>(
-    lead.company_type || 'limited'
   )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -70,7 +71,6 @@ export function EditLeadModal({
         instagram_handle: cleanHandle || null,
         channel,
         current_service: service,
-        company_type: companyType,
         assigned_to: lead.assigned_to ?? null,
       }
 
@@ -93,7 +93,6 @@ export function EditLeadModal({
       if (cleanHandle !== (lead.instagram_handle || '')) changes.push(`Instagram: "@${cleanHandle || 'None'}"`)
       if (channel !== lead.channel) changes.push(`Primary Channel: ${channel}`)
       if (service !== (lead.current_service || lead.initial_service)) changes.push(`Service: ${service}`)
-      if (companyType !== lead.company_type) changes.push(`PECR: ${companyType}`)
 
       const summary = changes.length > 0 ? changes.join(', ') : 'Details refreshed'
 
@@ -121,14 +120,19 @@ export function EditLeadModal({
     }
   }
 
-  return (
+  if (!isOpen || !mounted) return null
+
+  const modalContent = (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.65)',
-        backdropFilter: 'blur(5px)',
-        zIndex: 1050,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: 'rgba(15, 23, 42, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -146,6 +150,8 @@ export function EditLeadModal({
           maxWidth: '560px',
           maxHeight: '92vh',
           overflowY: 'auto',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#cbd5e1 transparent',
           backgroundColor: '#ffffff',
           borderRadius: '16px',
           padding: 0,
@@ -232,7 +238,7 @@ export function EditLeadModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} style={{ padding: '1.5rem 1.75rem' }}>
+        <form onSubmit={handleSubmit} noValidate style={{ padding: '1.5rem 1.75rem' }}>
           {errorMsg && (
             <div
               style={{
@@ -276,17 +282,21 @@ export function EditLeadModal({
                 />
                 <input
                   type="text"
-                  required
                   value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
+                  onChange={(e) => {
+                    setBusinessName(e.target.value)
+                    if (errorMsg) setErrorMsg(null)
+                  }}
                   placeholder="e.g. Apex Clinic Ltd"
                   style={{
                     width: '100%',
                     padding: '0.65rem 0.85rem 0.65rem 2.35rem',
                     fontSize: '0.9rem',
                     borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
+                    border: errorMsg ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
                     outline: 'none',
+                    backgroundColor: errorMsg ? '#fef2f2' : '#ffffff',
+                    transition: 'border-color 0.15s ease',
                   }}
                 />
               </div>
@@ -324,74 +334,6 @@ export function EditLeadModal({
                 <option value="End to End Automation">End to End Automation (n8n, CRM & Ops Auto-Sync)</option>
                 <option value="Cold Outreach">Cold Outreach (Outbound WhatsApp, IG & Email Campaigns)</option>
               </select>
-            </div>
-
-            {/* PECR Company Type */}
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '0.825rem',
-                  fontWeight: 600,
-                  color: '#334155',
-                  marginBottom: '0.4rem',
-                }}
-              >
-                Company Structure (PECR UK Compliance)
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setCompanyType('limited')}
-                  style={{
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: '8px',
-                    border: companyType === 'limited' ? '2px solid var(--primary)' : '1px solid #e2e8f0',
-                    backgroundColor: companyType === 'limited' ? '#f5f3ff' : '#ffffff',
-                    color: companyType === 'limited' ? 'var(--primary)' : '#475569',
-                    fontSize: '0.825rem',
-                    fontWeight: companyType === 'limited' ? 700 : 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <ShieldCheck size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <div>Limited (Ltd / PLC)</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>B2B PECR auto-outreach</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCompanyType('sole_trader')}
-                  style={{
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: '8px',
-                    border: companyType === 'sole_trader' ? '2px solid var(--primary)' : '1px solid #e2e8f0',
-                    backgroundColor: companyType === 'sole_trader' ? '#f5f3ff' : '#ffffff',
-                    color: companyType === 'sole_trader' ? 'var(--primary)' : '#475569',
-                    fontSize: '0.825rem',
-                    fontWeight: companyType === 'sole_trader' ? 700 : 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <User size={16} style={{ flexShrink: 0 }} />
-                  <div>
-                    <div>Sole Trader / Partnership</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Explicit consent required</div>
-                  </div>
-                </button>
-              </div>
             </div>
 
             {/* Primary Channel */}
@@ -619,4 +561,6 @@ export function EditLeadModal({
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

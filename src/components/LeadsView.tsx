@@ -14,7 +14,6 @@ import {
   Filter,
   Calendar,
   ChevronRight,
-  ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import { InstagramIcon } from '@/components/Icons'
@@ -364,24 +363,12 @@ export function LeadsView({ initialLeads = [] }: LeadsViewProps) {
                           </span>
                         )}
                       </div>
-                      {lead.company_type === 'limited' && (
-                        <div className="text-muted flex items-center gap-1" style={{ fontSize: '0.72rem', marginTop: '0.15rem' }}>
-                          <span
-                            title="Limited Company (PECR Compliant for automated email)"
-                            style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                          >
-                            <ShieldCheck size={11} /> Limited Company
-                          </span>
-                        </div>
-                      )}
                     </td>
 
                     {/* Service Pitch Column */}
                     <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                       <ServiceBadge
-                        service={lead.current_service || 'Website Services'}
-                        initialService={lead.initial_service}
-                        showPivot={true}
+                        service={lead.current_service || lead.initial_service || 'Website Services'}
                         size="sm"
                       />
                     </td>

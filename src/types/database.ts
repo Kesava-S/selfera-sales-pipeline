@@ -24,6 +24,18 @@ export const ALL_SERVICES: readonly ServiceType[] = [
   'Cold Outreach',
 ] as const
 
+export interface ServiceItem {
+  id: string
+  name: string
+  description: string
+  icon_name: string
+  color: string
+  deliverables?: string[]
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 export interface Lead {
   id: string
   lead_code?: string | null
@@ -39,6 +51,34 @@ export interface Lead {
   current_service?: ServiceType | string
   agreed_service?: ServiceType | string | null
   service_notes?: string | null
+  won_at?: string | null
+  lost_at?: string | null
+  deal_value?: number | null
+}
+
+export interface DuplicateLeadMatch {
+  id: string
+  lead_code: string | null
+  business_name: string
+  email: string | null
+  phone: string | null
+  channel: string
+  stage: string
+  current_service: string | null
+  follow_up_count: number
+  assigned_to: string | null
+  created_at: string
+  match_reason: string
+}
+
+export interface PipelineAnalyticsRow {
+  stage: StageType | string
+  lead_count: number
+  stage_value: number
+  avg_follow_up_count: number
+  leads_last_30_days: number
+  won_count: number
+  lost_count: number
 }
 
 export interface ExtendedLead extends Lead {
@@ -77,6 +117,7 @@ export interface Task {
     email?: string | null
     instagram_handle?: string | null
     stage?: StageType
+    next_follow_up?: string | null
     initial_service?: ServiceType | string | null
     current_service?: ServiceType | string | null
   } | null
@@ -115,6 +156,7 @@ export interface Template {
 export interface CSVLeadRow {
   business_name: string
   email?: string
+  phone?: string
   channel?: ChannelType
 }
 

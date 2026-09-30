@@ -52,7 +52,7 @@ export function TemplatesView({ initialTemplates = [], initialLeads = [] }: Temp
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [channelFilter, setChannelFilter] = useState<'All' | TemplateChannel>('All')
-  const [stepFilter, setStepFilter] = useState<'All' | CadenceStep>('All')
+  const [stepFilter, setStepFilter] = useState<'All' | CadenceStep | -1>('All')
 
   // Dynamic preview variables initialized from database leads if available
   const [previewVars, setPreviewVars] = useState(() => {
@@ -466,18 +466,19 @@ export function TemplatesView({ initialTemplates = [], initialLeads = [] }: Temp
         <div
           style={{
             position: 'fixed',
-            bottom: '2rem',
-            right: '2rem',
+            top: '1.25rem',
+            right: '1.75rem',
             backgroundColor: '#0f172a',
             color: '#ffffff',
-            padding: '0.75rem 1.25rem',
-            borderRadius: '10px',
+            padding: '0.85rem 1.35rem',
+            borderRadius: '12px',
+            border: '1px solid #1e293b',
             boxShadow: 'var(--shadow-xl)',
-            zIndex: 1000,
+            zIndex: 9999,
             display: 'flex',
             alignItems: 'center',
-            gap: '0.65rem',
-            fontSize: '0.825rem',
+            gap: '0.75rem',
+            fontSize: '0.85rem',
             fontWeight: 500,
             animation: 'fadeIn 0.2s ease',
           }}
@@ -638,6 +639,7 @@ export function TemplatesView({ initialTemplates = [], initialLeads = [] }: Temp
             { key: 1, label: 'Step 1: Follow-up 1', sub: '+3 working days' },
             { key: 2, label: 'Step 2: Follow-up 2', sub: '+5 working days' },
             { key: 3, label: 'Step 3: Final Message', sub: '+14 working days' },
+            { key: -1, label: 'Post-Sale / Upsell', sub: 'Won Deals' },
           ] as const).map((item) => {
             const isSelected = stepFilter === item.key
             const count =
@@ -649,7 +651,7 @@ export function TemplatesView({ initialTemplates = [], initialLeads = [] }: Temp
               <button
                 key={item.key}
                 type="button"
-                onClick={() => setStepFilter(item.key as 'All' | CadenceStep)}
+                onClick={() => setStepFilter(item.key as 'All' | CadenceStep | -1)}
                 style={{
                   padding: '0.45rem 0.85rem',
                   fontSize: '0.775rem',
@@ -795,7 +797,17 @@ export function TemplatesView({ initialTemplates = [], initialLeads = [] }: Temp
             const usedVariables = getUsedVariables(template)
             const parsed = parseTemplateChannel(template.name, template.channel)
             const templateStep = parseTemplateStep(template.name, template.step)
-            const stepInfo = CADENCE_STEPS[templateStep]
+            const stepInfo =
+              templateStep >= 0 && templateStep <= 3
+                ? CADENCE_STEPS[templateStep as CadenceStep]
+                : {
+                    step: 0 as CadenceStep,
+                    name: 'Post-Sale / Upsell',
+                    shortLabel: 'Upsell (Won Deals)',
+                    visibilityRule: 'Available for Won leads',
+                    description: 'Post-sale retention and upsell communication.',
+                    timing: '+30 days after Won',
+                  }
 
             return (
               <div

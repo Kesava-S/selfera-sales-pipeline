@@ -7,13 +7,63 @@ import {
   ArrowLeft,
   ChevronRight,
   ChevronDown,
+  LogOut,
 } from 'lucide-react'
+
+import { ConfirmModal } from '@/components/ConfirmModal'
+import {
+  fetchActiveUserProfile,
+  getCachedUserProfile,
+  clearCachedUserProfile,
+  logoutUser,
+  UserProfile,
+} from '@/lib/authUtils'
 
 export function Topbar() {
   const pathname = usePathname()
   const router = useRouter()
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null)
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
+
+  // Load authenticated user profile
+  useEffect(() => {
+    let isMounted = true
+
+    const syncUser = async () => {
+      // 1. Immediately check cached profile for fast zero-flicker render
+      const cached = getCachedUserProfile()
+      if (cached && isMounted) {
+        setCurrentUser(cached)
+      }
+
+      // 2. Fetch fresh profile from Supabase
+      const fresh = await fetchActiveUserProfile()
+      if (fresh && isMounted) {
+        setCurrentUser(fresh)
+      }
+    }
+
+    syncUser()
+
+    const handleProfileUpdate = () => {
+      const updated = getCachedUserProfile()
+      if (updated && isMounted) {
+        setCurrentUser(updated)
+      }
+    }
+
+    window.addEventListener('selfera_user_profile_updated', handleProfileUpdate)
+    return () => {
+      isMounted = false
+      window.removeEventListener('selfera_user_profile_updated', handleProfileUpdate)
+    }
+  }, [pathname])
+
+  const executeSignOut = async () => {
+    await logoutUser()
+  }
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -33,7 +83,9 @@ export function Topbar() {
     if (pathname.startsWith('/leads/import')) return 'Import CSV'
     if (pathname.startsWith('/leads/')) return 'Lead Overview'
     if (pathname === '/templates') return 'Templates'
+    if (pathname === '/reports') return 'Pipeline Analytics'
     if (pathname.startsWith('/company')) return 'Company Workspace'
+    if (pathname === '/services') return 'Services'
     if (pathname === '/settings') return 'Cadence Rules'
     return 'Workspace'
   }
@@ -132,7 +184,7 @@ export function Topbar() {
                 flexShrink: 0,
               }}
             >
-              K
+              {currentUser?.initial || 'U'}
             </div>
 
             {/* User Info */}
@@ -146,7 +198,7 @@ export function Topbar() {
               }}
             >
               <span style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a' }}>
-                Kesav
+                {currentUser?.full_name || 'User'}
               </span>
               <span
                 style={{
@@ -165,7 +217,7 @@ export function Topbar() {
                     backgroundColor: '#10b981',
                   }}
                 />
-                Admin
+                {currentUser?.role_name || 'Staff'}
               </span>
             </div>
 
@@ -204,11 +256,13 @@ export function Topbar() {
                 }}
               >
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0f172a' }}>
-                  Kesav
+                  {currentUser?.full_name || 'User'}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                  kesav@selfera.co.uk
-                </div>
+                {currentUser?.email && (
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                    {currentUser.email}
+                  </div>
+                )}
                 <div
                   style={{
                     display: 'inline-flex',
@@ -231,13 +285,60 @@ export function Topbar() {
                       backgroundColor: '#10b981',
                     }}
                   />
-                  Active • Admin
+                  Active • {currentUser?.role_name || 'Staff'}
                 </div>
               </div>
+
+              {/* Sign Out Button in Dropdown */}
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileOpen(false)
+                  setShowSignOutConfirm(true)
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.6rem 0.75rem',
+                  marginTop: '0.5rem',
+                  borderTop: '1px solid #f1f5f9',
+                  borderBottom: 'none',
+                  borderLeft: 'none',
+                  borderRight: 'none',
+                  background: 'transparent',
+                  color: '#dc2626',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  borderRadius: '6px',
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fef2f2')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <LogOut size={14} />
+                <span>Sign Out</span>
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showSignOutConfirm}
+        onClose={() => setShowSignOutConfirm(false)}
+        onConfirm={executeSignOut}
+        title="Sign Out"
+        message="Are you sure you want to sign out of your Selfera workspace?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        variant="danger"
+        confirmIcon={<LogOut size={14} />}
+      />
     </header>
   )
 }

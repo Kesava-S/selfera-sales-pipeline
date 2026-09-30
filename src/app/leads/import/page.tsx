@@ -2,15 +2,18 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Upload, AlertCircle } from 'lucide-react'
+import { Upload, AlertCircle, AlertTriangle, CheckCircle, ShieldCheck } from 'lucide-react'
 import Papa from 'papaparse'
-import { bulkImportLeads } from './actions'
+import { bulkImportLeads, checkBulkDuplicates, BulkDuplicateCheckResult } from './actions'
 import { useRouter } from 'next/navigation'
 import type { CSVLeadRow } from '@/types/database'
 
 export default function BulkImportPage() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<CSVLeadRow[]>([])
+  const [duplicates, setDuplicates] = useState<BulkDuplicateCheckResult[]>([])
+  const [skipDuplicates, setSkipDuplicates] = useState(true)
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -21,12 +24,13 @@ export default function BulkImportPage() {
     
     setFile(selectedFile)
     setError(null)
+    setDuplicates([])
 
     Papa.parse<CSVLeadRow>(selectedFile, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
-        // We expect columns like business_name, email, channel
+      complete: async (results) => {
+        // Expect columns like business_name, email, phone, channel
         const parsedData = results.data
         
         // Basic validation
@@ -37,12 +41,27 @@ export default function BulkImportPage() {
         }
         
         setPreview(validData)
+
+        // Asynchronously check duplicates against sales-pipe database
+        setIsCheckingDuplicates(true)
+        try {
+          const dups = await checkBulkDuplicates(validData)
+          setDuplicates(dups)
+        } catch (err) {
+          console.error('Error checking duplicates in CSV:', err)
+        } finally {
+          setIsCheckingDuplicates(false)
+        }
       },
       error: (err) => {
         setError('Error parsing CSV file: ' + err.message)
       }
     })
   }
+
+  const duplicateMap = new Map(duplicates.map(d => [d.rowIndex, d]))
+  const uniqueCount = Math.max(0, preview.length - duplicates.length)
+  const toImportCount = skipDuplicates ? uniqueCount : preview.length
 
   const handleImport = async () => {
     if (preview.length === 0) return
@@ -51,7 +70,8 @@ export default function BulkImportPage() {
     setError(null)
     
     try {
-      const result = await bulkImportLeads(preview)
+      const skipIndices = skipDuplicates ? duplicates.map(d => d.rowIndex) : []
+      const result = await bulkImportLeads(preview, { skipDuplicateIndices: skipIndices })
       
       if (result.success) {
         router.push('/leads')
@@ -77,7 +97,7 @@ export default function BulkImportPage() {
           Bulk Import Leads
         </h1>
         <p className="text-muted" style={{ margin: 0, fontSize: '0.85rem' }}>
-          Upload prospective leads from a CSV file into the commercial pipeline.
+          Upload prospective leads from a CSV file into the commercial pipeline with automated duplicate protection.
         </p>
       </div>
 
@@ -92,7 +112,7 @@ export default function BulkImportPage() {
             border: '2px dashed #cbd5e1',
             backgroundColor: '#f8fafc',
             borderRadius: '12px',
-            padding: '2.5rem 1.5rem',
+            padding: '2.25rem 1.5rem',
             textAlign: 'center',
             position: 'relative',
             cursor: 'pointer',
@@ -107,10 +127,50 @@ export default function BulkImportPage() {
                 opacity: 0, cursor: 'pointer'
               }}
             />
-            <Upload size={36} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 1rem', color: 'var(--primary)' }} />
-            <div className="font-semibold" style={{ fontSize: '0.95rem', color: '#0f172a' }}>{file ? file.name : 'Click or drag CSV here'}</div>
-            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.35rem' }}>Accepts .csv up to 10MB</div>
+            <Upload size={34} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 0.75rem', color: 'var(--primary)' }} />
+            <div className="font-semibold" style={{ fontSize: '0.925rem', color: '#0f172a' }}>{file ? file.name : 'Click or drag CSV here'}</div>
+            <div className="text-muted" style={{ fontSize: '0.775rem', marginTop: '0.35rem' }}>Accepts .csv up to 10MB</div>
           </div>
+
+          {isCheckingDuplicates && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#eff6ff', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldCheck size={16} />
+              <span>Checking database for duplicates...</span>
+            </div>
+          )}
+
+          {duplicates.length > 0 && !isCheckingDuplicates && (
+            <div style={{ marginTop: '1rem', padding: '0.85rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#b45309', fontWeight: 700, fontSize: '0.85rem' }}>
+                <AlertTriangle size={16} />
+                <span>{duplicates.length} duplicate lead(s) detected</span>
+              </div>
+              <p style={{ margin: '0.35rem 0 0.75rem', fontSize: '0.775rem', color: '#92400e', lineHeight: 1.4 }}>
+                Existing pipeline records matched by email or phone. Choose how you want to handle them:
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.8rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: skipDuplicates ? 600 : 400 }}>
+                  <input
+                    type="radio"
+                    name="duplicatePolicy"
+                    checked={skipDuplicates}
+                    onChange={() => setSkipDuplicates(true)}
+                  />
+                  <span>Skip duplicates (import {uniqueCount} unique)</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: !skipDuplicates ? 600 : 400 }}>
+                  <input
+                    type="radio"
+                    name="duplicatePolicy"
+                    checked={!skipDuplicates}
+                    onChange={() => setSkipDuplicates(false)}
+                  />
+                  <span>Import all anyway ({preview.length} leads)</span>
+                </label>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 p-3 rounded flex items-center gap-2.5" style={{ backgroundColor: 'var(--danger-bg)', color: 'var(--danger)', fontSize: '0.875rem', borderRadius: '10px' }}>
@@ -123,51 +183,91 @@ export default function BulkImportPage() {
             <div className="mt-6">
               <button 
                 className="btn btn-primary" 
-                style={{ width: '100%', padding: '0.8rem 1.4rem', borderRadius: '10px', fontSize: '0.925rem' }}
+                style={{ width: '100%', padding: '0.75rem 1.4rem', borderRadius: '10px', fontSize: '0.9rem' }}
                 onClick={handleImport}
-                disabled={isImporting}
+                disabled={isImporting || isCheckingDuplicates || toImportCount === 0}
               >
-                {isImporting ? 'Importing...' : `Import ${preview.length} Leads`}
+                {isImporting ? 'Importing...' : `Import ${toImportCount} Leads`}
               </button>
             </div>
           )}
         </div>
 
-        <div className="card" style={{ gridColumn: 'span 2', padding: '1.75rem 2rem' }}>
-          <h2 className="mb-4">Preview</h2>
+        <div className="card" style={{ gridColumn: 'span 2', padding: '1.5rem 1.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>Preview</h2>
+            {preview.length > 0 && (
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                Total rows: <strong>{preview.length}</strong> | Unique: <strong>{uniqueCount}</strong> | Duplicates: <strong>{duplicates.length}</strong>
+              </span>
+            )}
+          </div>
+
           {!preview.length ? (
-            <div className="text-muted text-center" style={{ padding: '3rem' }}>
+            <div className="text-muted text-center" style={{ padding: '3.5rem 1rem' }}>
               Upload a file to see a preview of the leads to be imported.
             </div>
           ) : (
-            <div className="table-container" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+            <div className="table-container" style={{ maxHeight: '520px', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
                   <tr>
                     <th>Business Name</th>
                     <th>Email</th>
                     <th>Channel</th>
+                    <th>Duplicate Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.slice(0, 10).map((row, i) => (
-                    <tr key={i}>
-                      <td className="font-semibold">{row.business_name}</td>
-                      <td>{row.email || <span className="text-muted">-</span>}</td>
-                      <td>
-                        <span className="badge badge-neutral">
-                          {row.channel || 'Email'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {preview.length > 10 && (
-                    <tr>
-                      <td colSpan={3} className="text-center text-muted" style={{ padding: '1rem' }}>
-                        ... and {preview.length - 10} more rows
-                      </td>
-                    </tr>
-                  )}
+                  {preview.map((row, i) => {
+                    const dup = duplicateMap.get(i)
+                    return (
+                      <tr key={i} style={{ backgroundColor: dup ? '#fffbeb' : undefined }}>
+                        <td className="font-semibold">{row.business_name}</td>
+                        <td>{row.email || <span className="text-muted">-</span>}</td>
+                        <td>
+                          <span className="badge badge-neutral">
+                            {row.channel || 'Email'}
+                          </span>
+                        </td>
+                        <td>
+                          {dup ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                backgroundColor: '#fef3c7',
+                                color: '#b45309',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '6px',
+                                fontSize: '0.725rem',
+                                fontWeight: 600,
+                              }}
+                              title={`Matches existing lead ${dup.match.lead_code || ''}: ${dup.match.business_name} (${dup.match.stage}) via ${dup.match.match_reason}`}
+                            >
+                              <AlertTriangle size={12} />
+                              <span>Exists ({dup.match.stage})</span>
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                color: '#059669',
+                                fontSize: '0.725rem',
+                                fontWeight: 600,
+                              }}
+                            >
+                              <CheckCircle size={12} />
+                              <span>Unique</span>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

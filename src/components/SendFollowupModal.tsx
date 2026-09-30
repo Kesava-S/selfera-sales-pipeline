@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   Send,
@@ -99,6 +100,11 @@ export function SendFollowupModal({
   const [customBody, setCustomBody] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [advanceCadence, setAdvanceCadence] = useState(true)
 
   // Fetch templates from database
@@ -488,20 +494,26 @@ export function SendFollowupModal({
     }
   }
 
-  return (
+  if (!isOpen || !mounted) return null
+
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 110,
+        width: '100vw',
+        height: '100vh',
         backgroundColor: 'rgba(15, 23, 42, 0.55)',
-        backdropFilter: 'blur(5px)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1rem',
+        animation: 'fadeIn 0.15s ease-out',
       }}
       onClick={onClose}
     >
@@ -605,6 +617,8 @@ export function SendFollowupModal({
           style={{
             padding: '1.25rem 1.5rem',
             overflowY: 'auto',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#cbd5e1 transparent',
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -1018,4 +1032,6 @@ export function SendFollowupModal({
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

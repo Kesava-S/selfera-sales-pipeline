@@ -1,11 +1,13 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import {
   X,
   PlusCircle,
   AlertCircle,
+  AlertTriangle,
   Mail,
   Phone,
   Layers,
@@ -13,7 +15,8 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { InstagramIcon } from '@/components/Icons'
-import { ChannelType, ServiceType } from '@/types/database'
+import { ChannelType, ServiceType, DuplicateLeadMatch, ALL_SERVICES } from '@/types/database'
+import { getPitchedServicesForBusiness, validateServiceAvailableForBusiness } from '@/lib/serviceUtils'
 import { CompanyAutocompleteInput } from '@/components/CompanyAutocompleteInput'
 
 interface AddLeadModalProps {
@@ -45,6 +48,55 @@ export function AddLeadModal({
     instagramHandle?: string
   }>({})
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false)
+  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateLeadMatch[] | null>(null)
+  const [pitchedServices, setPitchedServices] = useState<string[]>([])
+  const [leadCodesByService, setLeadCodesByService] = useState<Record<string, string>>({})
+  const [isCheckingServices, setIsCheckingServices] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const allServicesPitched = ALL_SERVICES.length > 0 && ALL_SERVICES.every((s) => pitchedServices.includes(s))
+
+  // Check pitched services whenever business name changes
+  useEffect(() => {
+    let isCancelled = false
+    const checkServices = async () => {
+      const clean = businessName.trim()
+      if (!clean) {
+        setPitchedServices([])
+        setLeadCodesByService({})
+        return
+      }
+      setIsCheckingServices(true)
+      try {
+        const result = await getPitchedServicesForBusiness(clean)
+        if (!isCancelled) {
+          setPitchedServices(result.pitchedServices)
+          setLeadCodesByService(result.leadCodesByService)
+
+          // If current selected service is already pitched, switch to first available service
+          if (result.pitchedServices.includes(service)) {
+            if (result.availableServices.length > 0) {
+              setService(result.availableServices[0])
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking pitched services for business:', err)
+      } finally {
+        if (!isCancelled) setIsCheckingServices(false)
+      }
+    }
+
+    const timer = setTimeout(checkServices, 200)
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+    }
+  }, [businessName, service])
 
   // Reset or prefill when modal opens or defaultCompany changes
   useEffect(() => {
@@ -58,6 +110,9 @@ export function AddLeadModal({
       setHasAttemptedSubmit(false)
       setIsSubmitting(false)
       setIsSuccess(false)
+      setDuplicateMatches(null)
+      setPitchedServices([])
+      setLeadCodesByService({})
     }
   }, [isOpen, defaultCompany])
 
@@ -74,8 +129,8 @@ export function AddLeadModal({
 
   if (!isOpen) return null
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent, bypassDuplicateCheck: boolean = false) => {
+    if (e) e.preventDefault()
     setHasAttemptedSubmit(true)
 
     const newErrors: {
@@ -118,6 +173,33 @@ export function AddLeadModal({
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
+
+      // 1. Check for duplicates if not explicitly bypassed
+      if (!bypassDuplicateCheck && (email.trim() || phone.trim())) {
+        const { data: duplicates, error: dupError } = await supabase.rpc('check_duplicate_lead', {
+          p_email: email.trim() || null,
+          p_phone: phone.trim() || null,
+        })
+
+        if (!dupError && duplicates && duplicates.length > 0) {
+          setDuplicateMatches(duplicates as DuplicateLeadMatch[])
+          setIsSubmitting(false)
+          return
+        }
+      }
+
+      setDuplicateMatches(null)
+
+      // 2. Validate service availability for this business (each service can only be pitched once per company, even if pivoted)
+      const serviceValidation = await validateServiceAvailableForBusiness(businessName.trim(), service)
+      if (!serviceValidation.available) {
+        setErrors({
+          businessName: serviceValidation.error || `This business already has a lead for ${service}.`,
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       const { data: newLead, error } = await supabase
         .from('leads')
         .insert({
@@ -189,20 +271,26 @@ export function AddLeadModal({
     }
   }
 
-  return (
+  if (!isOpen || !mounted) return null
+
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 99999,
         backgroundColor: 'rgba(15, 23, 42, 0.55)',
-        backdropFilter: 'blur(5px)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '1.25rem',
+        animation: 'fadeIn 0.15s ease',
       }}
       onClick={onClose}
     >
@@ -286,6 +374,8 @@ export function AddLeadModal({
           style={{
             padding: '1.4rem 1.5rem',
             overflowY: 'auto',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#cbd5e1 transparent',
             flex: 1,
           }}
         >
@@ -348,23 +438,59 @@ export function AddLeadModal({
 
             {/* Service Offering Pitch */}
             <div className="input-group" style={{ marginBottom: '1.15rem' }}>
-              <label htmlFor="modal_service" className="input-label">
-                Service Offering Pitch <span className="required-star">*</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label htmlFor="modal_service" className="input-label" style={{ margin: 0 }}>
+                  Service Offering Pitch <span className="required-star">*</span>
+                </label>
+                {pitchedServices.length > 0 && (
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>
+                    {pitchedServices.length} {pitchedServices.length === 1 ? 'service' : 'services'} already pitched
+                  </span>
+                )}
+              </div>
+
+              {allServicesPitched && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.65rem 0.85rem',
+                    marginBottom: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    color: '#92400e',
+                    fontSize: '0.785rem',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0, color: '#d97706' }} />
+                  <span>
+                    All standard services have already been pitched for <strong>{businessName}</strong>. Each service can only have one lead per company (even if pivoted).
+                  </span>
+                </div>
+              )}
+
               <select
                 id="modal_service"
                 value={service}
                 onChange={(e) => setService(e.target.value as ServiceType)}
                 className="input-field"
+                disabled={allServicesPitched}
               >
-                <option value="Website Services">Website Services (UI/UX, Redesign, Web Apps)</option>
-                <option value="Dashboard Services">Dashboard Services (Custom Admin, Analytics, Portals)</option>
-                <option value="Micro Services">Micro Services (Dedicated APIs, Micro-Tools)</option>
-                <option value="End to End Automation">End to End Automation (n8n, CRM & Ops Auto-Sync)</option>
-                <option value="Cold Outreach">Cold Outreach (Outbound WhatsApp, IG & Email Campaigns)</option>
+                {ALL_SERVICES.map((srv) => {
+                  const isPitched = pitchedServices.includes(srv)
+                  const code = leadCodesByService[srv]
+                  return (
+                    <option key={srv} value={srv} disabled={isPitched}>
+                      {srv} {isPitched ? `— (Already Pitched${code ? ` in ${code}` : ''} - Cannot reuse)` : ''}
+                    </option>
+                  )
+                })}
               </select>
               <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                Initial marketing angle. If the client asks for another service later, you can log the pivot anytime.
+                Leads are service-dependent. Once a service is created for this company (even if pivoted), it cannot be created again.
               </span>
             </div>
 
@@ -651,6 +777,117 @@ export function AddLeadModal({
               </div>
             </div>
 
+            {/* Duplicate Lead Warning Banner */}
+            {duplicateMatches && duplicateMatches.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  animation: 'fadeIn 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
+                      backgroundColor: '#fef3c7',
+                      color: '#d97706',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <AlertTriangle size={16} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#92400e' }}>
+                      Potential Duplicate Lead Detected
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#b45309', marginTop: '2px' }}>
+                      Found {duplicateMatches.length} existing record(s) matching this contact info:
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {duplicateMatches.map((m) => (
+                    <div
+                      key={m.id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #fef3c7',
+                        borderRadius: '8px',
+                        padding: '0.6rem 0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a' }}>
+                          {m.business_name}{' '}
+                          {m.lead_code && (
+                            <span style={{ fontSize: '0.725rem', fontWeight: 500, color: '#64748b' }}>
+                              ({m.lead_code})
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', gap: '6px', marginTop: '2px' }}>
+                          <span>Stage: <strong>{m.stage}</strong></span>
+                          <span>•</span>
+                          <span style={{ color: '#d97706', fontWeight: 600 }}>{m.match_reason}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap' }}
+                        onClick={() => {
+                          onClose()
+                          router.push(`/company?name=${encodeURIComponent(m.business_name)}`)
+                        }}
+                      >
+                        View Existing
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: '0.775rem', padding: '0.35rem 0.75rem' }}
+                    onClick={() => setDuplicateMatches(null)}
+                  >
+                    Edit Info
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{
+                      fontSize: '0.775rem',
+                      padding: '0.4rem 0.85rem',
+                      backgroundColor: '#d97706',
+                      borderColor: '#d97706',
+                    }}
+                    onClick={() => handleSubmit(undefined, true)}
+                  >
+                    Create Anyway
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Quick Cadence note */}
             <div
               style={{
@@ -697,7 +934,7 @@ export function AddLeadModal({
           <button
             type="submit"
             form="add-lead-modal-form"
-            disabled={isSubmitting || isSuccess}
+            disabled={isSubmitting || isSuccess || allServicesPitched}
             className="btn btn-primary"
             style={{
               padding: '0.55rem 1.35rem',
@@ -706,6 +943,7 @@ export function AddLeadModal({
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
+              ...(allServicesPitched ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
             }}
           >
             {isSuccess ? (
@@ -715,6 +953,8 @@ export function AddLeadModal({
               </>
             ) : isSubmitting ? (
               <span>Creating...</span>
+            ) : allServicesPitched ? (
+              <span>All Services Pitched</span>
             ) : (
               <>
                 <PlusCircle size={16} />
@@ -726,4 +966,6 @@ export function AddLeadModal({
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

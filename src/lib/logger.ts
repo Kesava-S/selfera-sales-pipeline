@@ -40,15 +40,31 @@ export async function logUser(
   entityType?: 'lead' | 'task' | 'template' | 'navigation' | 'channel',
   entityId?: string,
   details: LogDetails = {},
-  userId: string = 'admin-1',
-  userName: string = 'Kesav'
+  userId?: string,
+  userName?: string
 ): Promise<void> {
   if (!isSupabaseConfigured()) return
   try {
+    let resolvedUserId = userId
+    let resolvedUserName = userName
+
+    if ((!resolvedUserId || !resolvedUserName) && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('selfera_user_profile')
+        if (raw) {
+          const profile = JSON.parse(raw)
+          if (!resolvedUserId) resolvedUserId = profile.id || profile.user_id
+          if (!resolvedUserName) resolvedUserName = profile.full_name || profile.email
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const supabase = createClient()
     await supabase.from('user_logs').insert({
-      user_id: userId,
-      user_name: userName,
+      user_id: resolvedUserId || null,
+      user_name: resolvedUserName || 'User',
       action,
       entity_type: entityType || null,
       entity_id: entityId || null,

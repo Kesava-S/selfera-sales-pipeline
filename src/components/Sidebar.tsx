@@ -6,26 +6,87 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
+  Layers,
   FileText,
   Sliders,
+  LogOut,
+  BarChart3,
 } from 'lucide-react'
+
+import { ConfirmModal } from '@/components/ConfirmModal'
+import {
+  fetchActiveUserProfile,
+  getCachedUserProfile,
+  clearCachedUserProfile,
+  logoutUser,
+  UserProfile,
+} from '@/lib/authUtils'
 
 export function Sidebar() {
   const pathname = usePathname()
   const [openTasksCount, setOpenTasksCount] = useState<number>(0)
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null)
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
+
+  // Load authenticated user profile
+  useEffect(() => {
+    let isMounted = true
+
+    const syncUser = async () => {
+      // 1. Immediately check cached profile for fast zero-flicker render
+      const cached = getCachedUserProfile()
+      if (cached && isMounted) {
+        setCurrentUser(cached)
+      }
+
+      // 2. Fetch fresh profile from Supabase
+      const fresh = await fetchActiveUserProfile()
+      if (fresh && isMounted) {
+        setCurrentUser(fresh)
+      }
+    }
+
+    syncUser()
+
+    const handleProfileUpdate = () => {
+      const updated = getCachedUserProfile()
+      if (updated && isMounted) {
+        setCurrentUser(updated)
+      }
+    }
+
+    window.addEventListener('selfera_user_profile_updated', handleProfileUpdate)
+    return () => {
+      isMounted = false
+      window.removeEventListener('selfera_user_profile_updated', handleProfileUpdate)
+    }
+  }, [pathname])
+
+  const executeSignOut = async () => {
+    await logoutUser()
+  }
 
   useEffect(() => {
     let isMounted = true
     const fetchCount = async () => {
       try {
         const { createClient } = await import('@/lib/supabase/client')
+        const { isDueTodayOrOverdue } = await import('@/lib/dateUtils')
         const supabase = createClient()
-        const { count, error } = await supabase
+        const { data: openTasks, error } = await supabase
           .from('tasks')
-          .select('*', { count: 'exact', head: true })
+          .select('id, due_date, leads(stage, next_follow_up)')
           .eq('status', 'open')
-        if (!error && count !== null && isMounted) {
-          setOpenTasksCount(count)
+        if (!error && openTasks && isMounted) {
+          const dueTodayCount = openTasks.filter((t) => {
+            if (!isDueTodayOrOverdue(t.due_date)) return false
+            const leadStage = (t.leads as { stage?: string; next_follow_up?: string } | null)?.stage
+            if (leadStage && ['Replied', 'Lost', 'Do not contact'].includes(leadStage)) return false
+            const nextFollowUp = (t.leads as { stage?: string; next_follow_up?: string } | null)?.next_follow_up
+            if (leadStage === 'Interested' && nextFollowUp && t.due_date !== nextFollowUp) return false
+            return true
+          }).length
+          setOpenTasksCount(dueTodayCount)
         }
       } catch {
         // Safe fallback
@@ -50,6 +111,16 @@ export function Sidebar() {
       href: '/leads',
       label: 'All Leads',
       icon: Users,
+    },
+    {
+      href: '/reports',
+      label: 'Analytics',
+      icon: BarChart3,
+    },
+    {
+      href: '/services',
+      label: 'Services',
+      icon: Layers,
     },
     {
       href: '/templates',
@@ -163,21 +234,72 @@ export function Sidebar() {
               justifyContent: 'center',
               fontWeight: 700,
               fontSize: '0.8rem',
+              flexShrink: 0,
             }}
           >
-            K
+            {currentUser?.initial || 'U'}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Kesav
+            <div
+              style={{
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                color: 'var(--foreground)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={currentUser?.full_name || currentUser?.email || 'User'}
+            >
+              {currentUser?.full_name || 'User'}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-              Admin
+              {currentUser?.role_name || 'Staff'}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowSignOutConfirm(true)}
+            title="Sign Out"
+            style={{
+              color: 'var(--muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.4rem',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--danger)'
+              e.currentTarget.style.backgroundColor = 'var(--danger-bg)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--muted)'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showSignOutConfirm}
+        onClose={() => setShowSignOutConfirm(false)}
+        onConfirm={executeSignOut}
+        title="Sign Out"
+        message="Are you sure you want to sign out of your Selfera workspace?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        variant="danger"
+        confirmIcon={<LogOut size={14} />}
+      />
     </aside>
   )
 }

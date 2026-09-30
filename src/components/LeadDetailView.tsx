@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -24,16 +24,18 @@ import {
   Edit3,
   Trash2,
   ArrowRightLeft,
+  ArrowRight,
 } from 'lucide-react'
-import type { ActivityLog, ChannelType, ExtendedLead, StageType } from '@/types/database'
+import type { ActivityLog, ChannelType, ExtendedLead, StageType, LeadServiceHistory } from '@/types/database'
 import { InstagramIcon } from '@/components/Icons'
-import { formatDate, formatDateTime } from '@/lib/dateUtils'
+import { formatDate, formatDateTime, addWorkingDays, addCalendarDays } from '@/lib/dateUtils'
 import { ReplyChannelModal } from '@/components/ReplyChannelModal'
 import { EditLeadModal } from '@/components/EditLeadModal'
 import { SendFollowupModal } from '@/components/SendFollowupModal'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { ChangeServiceModal } from '@/components/ChangeServiceModal'
 import { ServiceBadge } from '@/components/ServiceBadge'
+import { buildPivotChain } from '@/lib/serviceUtils'
 
 export function LeadDetailView({
   leadId,
@@ -53,10 +55,36 @@ export function LeadDetailView({
   const [replyModalAction, setReplyModalAction] = useState<'replied' | 'interested'>('replied')
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [changeServiceModalOpen, setChangeServiceModalOpen] = useState(false)
+  const [changeServiceModalTab, setChangeServiceModalTab] = useState<'offering' | 'pivot'>('offering')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [sendFollowupModalOpen, setSendFollowupModalOpen] = useState(false)
   const [selectedComposerChannel, setSelectedComposerChannel] = useState<ChannelType | undefined>(undefined)
+  const [serviceHistory, setServiceHistory] = useState<LeadServiceHistory[]>([])
+
+  const pivotChain = useMemo(() => {
+    return buildPivotChain(lead?.initial_service, serviceHistory, lead?.current_service)
+  }, [lead?.initial_service, lead?.current_service, serviceHistory])
+
+  // Fetch service history
+  useEffect(() => {
+    if (!lead?.id) return
+    const fetchHistory = async () => {
+      try {
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('lead_service_history')
+          .select('*')
+          .eq('lead_id', lead.id)
+          .order('created_at', { ascending: true })
+        if (data) setServiceHistory(data as LeadServiceHistory[])
+      } catch {
+        // safe fallback
+      }
+    }
+    fetchHistory()
+  }, [lead?.id])
 
   const handleServicePivotSuccess = async () => {
     try {
@@ -71,6 +99,12 @@ export function LeadDetailView({
           .eq('lead_id', lead.id)
           .order('created_at', { ascending: false })
         if (refreshedActs) setActivities(refreshedActs)
+        const { data: refreshedHist } = await supabase
+          .from('lead_service_history')
+          .select('*')
+          .eq('lead_id', lead.id)
+          .order('created_at', { ascending: true })
+        if (refreshedHist) setServiceHistory(refreshedHist as LeadServiceHistory[])
       }
     } catch (err) {
       console.error('Failed to refresh after service pivot:', err)
@@ -213,6 +247,37 @@ export function LeadDetailView({
         p_details: details || null,
         p_reply_channel: replyChannel || null,
       })
+
+      // 2b. Synchronize open cadence tasks with the new stage
+      if (['replied', 'interested', 'won', 'lost', 'do_not_contact'].includes(action)) {
+        await supabase
+          .from('tasks')
+          .update({ status: 'completed' })
+          .eq('lead_id', lead.id)
+          .eq('status', 'open')
+
+        if (action === 'interested') {
+          const nextDateStr = addWorkingDays(2)
+          await supabase.from('tasks').insert({
+            title: `${lead.business_name}: Follow-up with Interested Lead`,
+            description: 'High interest prospect. Follow-up on proposal / service offerings.',
+            lead_id: lead.id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
+        } else if (action === 'won') {
+          const nextDateStr = addCalendarDays(30)
+          await supabase.from('tasks').insert({
+            title: `${lead.business_name}: 30-Day Check-in & Upsell`,
+            description: 'Check-in with client and present additional service offerings.',
+            lead_id: lead.id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
+        }
+      }
 
       // 3. Log channel switch note if updated
       if (replyChannel && replyChannel !== lead.channel) {
@@ -371,12 +436,6 @@ export function LeadDetailView({
     }
   }
 
-  const nextStepPreview = () => {
-    if (lead.follow_up_count === 0) return '+3 working days'
-    if (lead.follow_up_count === 1) return '+5 working days'
-    if (lead.follow_up_count === 2) return '+14 working days'
-    return 'Cadence completed'
-  }
 
   const getWhatsAppLink = (phone?: string) => {
     if (!phone) return '#'
@@ -392,20 +451,21 @@ export function LeadDetailView({
         <div
           style={{
             position: 'fixed',
-            bottom: '2.5rem',
-            right: '2.5rem',
+            top: '1.25rem',
+            right: '1.75rem',
             backgroundColor: '#0f172a',
             color: '#ffffff',
             padding: '0.85rem 1.4rem',
             borderRadius: '12px',
             border: '1px solid #1e293b',
             boxShadow: 'var(--shadow-xl)',
-            zIndex: 1000,
+            zIndex: 9999,
             display: 'flex',
             alignItems: 'center',
             gap: '0.75rem',
             fontSize: '0.875rem',
             fontWeight: 500,
+            animation: 'fadeIn 0.2s ease',
           }}
         >
           <CheckCircle size={18} style={{ color: '#10b981' }} />
@@ -445,7 +505,7 @@ export function LeadDetailView({
           >
             {lead.lead_code ? (
               <>
-                <span>
+                <span style={{ whiteSpace: 'nowrap' }}>
                   Lead ID:{' '}
                   <code
                     style={{
@@ -455,6 +515,7 @@ export function LeadDetailView({
                       fontWeight: 600,
                       color: '#334155',
                       letterSpacing: '0.02em',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {lead.lead_code}
@@ -463,13 +524,53 @@ export function LeadDetailView({
                 <span>•</span>
               </>
             ) : null}
-            <span>
+            <span style={{ whiteSpace: 'nowrap' }}>
               Channel: <strong style={{ color: '#0f172a' }}>{lead.channel}</strong>
             </span>
-            <span>•</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              Service: <ServiceBadge service={lead.current_service || 'Website Services'} initialService={lead.initial_service} showPivot={true} size="sm" />
-            </span>
+          </div>
+
+          {/* Service Pitch as a dedicated separate row */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              fontSize: '0.825rem',
+              color: '#64748b',
+              marginTop: '0.35rem',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>Service Pitch:</span>
+            <ServiceBadge
+              service={lead.current_service || lead.initial_service || 'Website Services'}
+              size="sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setChangeServiceModalTab('offering')
+                setChangeServiceModalOpen(true)
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                color: 'var(--primary)',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                cursor: 'pointer',
+                marginLeft: '6px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Click to view complete service offering details and evolution timeline in modal"
+            >
+              <Layers size={12} />
+              <span>View Offering</span>
+            </button>
           </div>
         </div>
 
@@ -500,28 +601,33 @@ export function LeadDetailView({
             <span>Step {lead.follow_up_count}/3</span>
           </span>
 
+          {/* Edit Button - Icon Only */}
           <button
             onClick={() => setEditModalOpen(true)}
             className="btn btn-secondary btn-sm"
             style={{
-              padding: '0.35rem 0.85rem',
+              width: '32px',
+              height: '32px',
+              padding: 0,
               borderRadius: '8px',
-              gap: '6px',
-              fontSize: '0.825rem',
-              fontWeight: 600,
               color: '#334155',
               boxShadow: 'var(--shadow-xs)',
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
             }}
             title="Edit lead details"
+            aria-label="Edit lead details"
           >
-            <Edit3 size={14} style={{ color: 'var(--primary)' }} />
-            <span>Edit Lead</span>
+            <Edit3 size={15} style={{ color: 'var(--primary)' }} />
           </button>
 
+          {/* Pivot Service Button */}
           <button
-            onClick={() => setChangeServiceModalOpen(true)}
+            onClick={() => {
+              setChangeServiceModalTab('pivot')
+              setChangeServiceModalOpen(true)
+            }}
             className="btn btn-secondary btn-sm"
             style={{
               padding: '0.35rem 0.85rem',
@@ -540,26 +646,27 @@ export function LeadDetailView({
             <span>Pivot Service</span>
           </button>
 
+          {/* Delete Button - Icon Only */}
           <button
             onClick={() => setDeleteConfirmOpen(true)}
             className="btn btn-secondary btn-sm"
             style={{
-              padding: '0.35rem 0.85rem',
+              width: '32px',
+              height: '32px',
+              padding: 0,
               borderRadius: '8px',
-              gap: '6px',
-              fontSize: '0.825rem',
-              fontWeight: 600,
               color: '#dc2626',
               borderColor: '#fecaca',
               backgroundColor: '#fff5f5',
               boxShadow: 'var(--shadow-xs)',
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
             }}
             title="Delete this lead"
+            aria-label="Delete this lead"
           >
-            <Trash2 size={14} style={{ color: '#dc2626' }} />
-            <span>Delete</span>
+            <Trash2 size={15} style={{ color: '#dc2626' }} />
           </button>
 
         </div>
@@ -952,90 +1059,6 @@ export function LeadDetailView({
             </div>
           </div>
 
-          {/* Service Offering & Evolution Card */}
-          <div className="card" style={{ padding: '1.15rem 1.35rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Layers size={15} style={{ color: 'var(--primary)' }} />
-                <h2 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
-                  Service Offering
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setChangeServiceModalOpen(true)}
-                className="btn btn-secondary btn-sm"
-                style={{
-                  padding: '0.3rem 0.65rem',
-                  fontSize: '0.75rem',
-                  gap: '5px',
-                  borderRadius: '6px',
-                  fontWeight: 600,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                }}
-                title="Log a service pivot or change"
-              >
-                <ArrowRightLeft size={13} />
-                <span>Pivot Service</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {/* Active Service */}
-              <div style={{ padding: '0.75rem 0.85rem', borderRadius: '8px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b', fontWeight: 700, marginBottom: '0.35rem' }}>
-                  Active Proposition
-                </div>
-                <ServiceBadge
-                  service={lead.current_service || 'Website Services'}
-                  initialService={lead.initial_service}
-                  showPivot={true}
-                  size="md"
-                />
-              </div>
-
-              {/* Pivot Indicator */}
-              {lead.initial_service && lead.current_service && lead.initial_service !== lead.current_service && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '0.5rem',
-                    fontSize: '0.75rem',
-                    color: '#1e40af',
-                    padding: '0.5rem 0.65rem',
-                    borderRadius: '6px',
-                    backgroundColor: '#eff6ff',
-                    border: '1px solid #bfdbfe',
-                  }}
-                >
-                  <ArrowRightLeft size={14} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }} />
-                  <div>
-                    <strong>Pivoted from initial pitch:</strong> Approached for <em>{lead.initial_service}</em>, transitioned to <em>{lead.current_service}</em>.
-                  </div>
-                </div>
-              )}
-
-              {/* Agreed Contract Service */}
-              {lead.agreed_service && (
-                <div style={{ padding: '0.6rem 0.75rem', borderRadius: '8px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#166534', fontWeight: 700, marginBottom: '0.25rem' }}>
-                    Agreed / Won Contract
-                  </div>
-                  <ServiceBadge service={lead.agreed_service} size="md" />
-                </div>
-              )}
-
-              {lead.service_notes && (
-                <div style={{ fontSize: '0.775rem', color: '#334155', padding: '0.25rem 0.1rem' }}>
-                  <span style={{ fontWeight: 600, color: '#64748b' }}>Scope Notes: </span>
-                  <span>{lead.service_notes}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Cadence Outreach Action Card */}
           <div className="card" style={{ padding: '1.15rem 1.35rem', borderRadius: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
@@ -1074,49 +1097,25 @@ export function LeadDetailView({
               </button>
 
               {(lead.stage === 'New' || lead.stage === 'Contacted') ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleAction('sent', `Manual message sent via ${lead.channel}`)}
-                    className="btn btn-secondary btn-sm"
-                    style={{
-                      width: '100%',
-                      padding: '0.45rem 0.85rem',
-                      justifyContent: 'space-between',
-                      borderRadius: '8px',
-                      fontSize: '0.775rem',
-                    }}
-                    title="Quick-log without opening template composer"
-                  >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <Check size={13} />
-                      <span>Quick-log Sent Only</span>
-                    </span>
-                    <span style={{ fontSize: '0.7rem', opacity: 0.85 }}>
-                      ({nextStepPreview()})
-                    </span>
-                  </button>
-
-                  <div
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      backgroundColor: '#f8fafc',
-                      borderRadius: '7px',
-                      border: '1px solid #e2e8f0',
-                      fontSize: '0.75rem',
-                      color: '#64748b',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <Clock size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                    <span>
-                      Current: <strong>Step {lead.follow_up_count}/3</strong> • Due:{' '}
-                      <strong>{formatDate(lead.next_follow_up)}</strong>
-                    </span>
-                  </div>
-                </>
+                <div
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '7px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '0.75rem',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Clock size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                  <span>
+                    Current: <strong>Step {lead.follow_up_count}/3</strong> • Due:{' '}
+                    <strong>{formatDate(lead.next_follow_up)}</strong>
+                  </span>
+                </div>
               ) : (
                 <div
                   style={{
@@ -1399,15 +1398,20 @@ export function LeadDetailView({
         />
       )}
 
-      {/* Service Pivot Modal */}
+      {/* Service Offering & Pivot Modal */}
       {lead && (
         <ChangeServiceModal
           leadId={lead.id}
           businessName={lead.business_name}
           currentService={lead.current_service}
           initialService={lead.initial_service}
+          agreedService={lead.agreed_service}
+          serviceNotes={lead.service_notes}
+          serviceHistory={serviceHistory}
+          pivotChain={pivotChain}
           currentStage={lead.stage}
           isOpen={changeServiceModalOpen}
+          initialTab={changeServiceModalTab}
           onClose={() => setChangeServiceModalOpen(false)}
           onSuccess={handleServicePivotSuccess}
         />

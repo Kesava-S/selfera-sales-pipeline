@@ -11,33 +11,10 @@ ADD COLUMN IF NOT EXISTS current_service text DEFAULT 'Website Services',
 ADD COLUMN IF NOT EXISTS agreed_service text DEFAULT NULL,
 ADD COLUMN IF NOT EXISTS service_notes text DEFAULT NULL;
 
--- Ensure service check constraints if not already added
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'check_initial_service'
-    ) THEN
-        ALTER TABLE "sales-pipe".leads 
-        ADD CONSTRAINT check_initial_service 
-        CHECK (initial_service IN ('Website Services', 'Dashboard Services', 'Micro Services', 'End to End Automation', 'Cold Outreach'));
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'check_current_service'
-    ) THEN
-        ALTER TABLE "sales-pipe".leads 
-        ADD CONSTRAINT check_current_service 
-        CHECK (current_service IN ('Website Services', 'Dashboard Services', 'Micro Services', 'End to End Automation', 'Cold Outreach'));
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'check_agreed_service'
-    ) THEN
-        ALTER TABLE "sales-pipe".leads 
-        ADD CONSTRAINT check_agreed_service 
-        CHECK (agreed_service IS NULL OR agreed_service IN ('Website Services', 'Dashboard Services', 'Micro Services', 'End to End Automation', 'Cold Outreach'));
-    END IF;
-END $$;
+-- Ensure service check constraints support both single services and combo bundles
+ALTER TABLE "sales-pipe".leads DROP CONSTRAINT IF EXISTS check_initial_service;
+ALTER TABLE "sales-pipe".leads DROP CONSTRAINT IF EXISTS check_current_service;
+ALTER TABLE "sales-pipe".leads DROP CONSTRAINT IF EXISTS check_agreed_service;
 
 -- Indexes for fast query filtering
 CREATE INDEX IF NOT EXISTS idx_leads_initial_service ON "sales-pipe".leads(initial_service);

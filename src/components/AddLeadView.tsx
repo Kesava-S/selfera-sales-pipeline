@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { PlusCircle, AlertCircle, Mail, Phone, Layers } from 'lucide-react'
+import { PlusCircle, AlertCircle, AlertTriangle, Mail, Phone, Layers } from 'lucide-react'
 import { InstagramIcon } from '@/components/Icons'
-import { ChannelType, ServiceType } from '@/types/database'
+import { ChannelType, ServiceType, ALL_SERVICES } from '@/types/database'
+import { getPitchedServicesForBusiness, validateServiceAvailableForBusiness } from '@/lib/serviceUtils'
 import { CompanyAutocompleteInput } from '@/components/CompanyAutocompleteInput'
 
 interface AddLeadViewProps {
@@ -29,6 +30,49 @@ export function AddLeadView({ defaultCompany = '' }: AddLeadViewProps) {
     instagramHandle?: string
   }>({})
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false)
+  const [pitchedServices, setPitchedServices] = useState<string[]>([])
+  const [leadCodesByService, setLeadCodesByService] = useState<Record<string, string>>({})
+  const [isCheckingServices, setIsCheckingServices] = useState(false)
+
+  const allServicesPitched = ALL_SERVICES.length > 0 && ALL_SERVICES.every((s) => pitchedServices.includes(s))
+
+  // Check pitched services whenever business name changes
+  useEffect(() => {
+    let isCancelled = false
+    const checkServices = async () => {
+      const clean = businessName.trim()
+      if (!clean) {
+        setPitchedServices([])
+        setLeadCodesByService({})
+        return
+      }
+      setIsCheckingServices(true)
+      try {
+        const result = await getPitchedServicesForBusiness(clean)
+        if (!isCancelled) {
+          setPitchedServices(result.pitchedServices)
+          setLeadCodesByService(result.leadCodesByService)
+
+          // If current selected service is already pitched, switch to first available service
+          if (result.pitchedServices.includes(service)) {
+            if (result.availableServices.length > 0) {
+              setService(result.availableServices[0])
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking pitched services for business:', err)
+      } finally {
+        if (!isCancelled) setIsCheckingServices(false)
+      }
+    }
+
+    const timer = setTimeout(checkServices, 200)
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+    }
+  }, [businessName, service])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,6 +118,16 @@ export function AddLeadView({ defaultCompany = '' }: AddLeadViewProps) {
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
+      // Validate service availability for this business (each service can only be pitched once per company, even if pivoted)
+      const serviceValidation = await validateServiceAvailableForBusiness(businessName.trim(), service)
+      if (!serviceValidation.available) {
+        setErrors({
+          businessName: serviceValidation.error || `This business already has a lead for ${service}.`,
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       const { data: newLead, error } = await supabase
         .from('leads')
         .insert({
@@ -211,23 +265,59 @@ export function AddLeadView({ defaultCompany = '' }: AddLeadViewProps) {
 
             {/* Service Offering Pitch */}
             <div className="input-group" style={{ marginBottom: '1.25rem' }}>
-              <label htmlFor="service" className="input-label">
-                Service Offering Pitch <span className="required-star">*</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label htmlFor="service" className="input-label" style={{ margin: 0 }}>
+                  Service Offering Pitch <span className="required-star">*</span>
+                </label>
+                {pitchedServices.length > 0 && (
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>
+                    {pitchedServices.length} {pitchedServices.length === 1 ? 'service' : 'services'} already pitched
+                  </span>
+                )}
+              </div>
+
+              {allServicesPitched && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.65rem 0.85rem',
+                    marginBottom: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    color: '#92400e',
+                    fontSize: '0.785rem',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0, color: '#d97706' }} />
+                  <span>
+                    All standard services have already been pitched for <strong>{businessName}</strong>. Each service can only have one lead per company (even if pivoted).
+                  </span>
+                </div>
+              )}
+
               <select
                 id="service"
                 value={service}
                 onChange={(e) => setService(e.target.value as ServiceType)}
                 className="input-field"
+                disabled={allServicesPitched}
               >
-                <option value="Website Services">Website Services (UI/UX, Redesign, Web Apps)</option>
-                <option value="Dashboard Services">Dashboard Services (Custom Admin, Analytics, Portals)</option>
-                <option value="Micro Services">Micro Services (Dedicated APIs, Micro-Tools)</option>
-                <option value="End to End Automation">End to End Automation (n8n, CRM & Ops Auto-Sync)</option>
-                <option value="Cold Outreach">Cold Outreach (Outbound WhatsApp, IG & Email Campaigns)</option>
+                {ALL_SERVICES.map((srv) => {
+                  const isPitched = pitchedServices.includes(srv)
+                  const code = leadCodesByService[srv]
+                  return (
+                    <option key={srv} value={srv} disabled={isPitched}>
+                      {srv} {isPitched ? `— (Already Pitched${code ? ` in ${code}` : ''} - Cannot reuse)` : ''}
+                    </option>
+                  )
+                })}
               </select>
               <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                Initial marketing angle. If the client asks for another service later, you can log the pivot anytime.
+                Leads are service-dependent. Once a service is created for this company (even if pivoted), it cannot be created again.
               </span>
             </div>
 
@@ -519,7 +609,7 @@ export function AddLeadView({ defaultCompany = '' }: AddLeadViewProps) {
             <div style={{ marginTop: '1.75rem' }}>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || allServicesPitched}
                 className="btn btn-primary"
                 style={{
                   padding: '0.85rem 1.85rem',
@@ -528,10 +618,17 @@ export function AddLeadView({ defaultCompany = '' }: AddLeadViewProps) {
                   gap: '0.75rem',
                   borderRadius: '10px',
                   fontSize: '0.925rem',
+                  ...(allServicesPitched ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
                 }}
               >
                 <PlusCircle size={18} style={{ marginRight: '2px', flexShrink: 0 }} />
-                <span>{isSubmitting ? 'Creating Lead...' : 'Create Lead & Schedule Cadence'}</span>
+                <span>
+                  {allServicesPitched
+                    ? 'All Services Already Pitched'
+                    : isSubmitting
+                    ? 'Creating Lead...'
+                    : 'Create Lead & Schedule Cadence'}
+                </span>
               </button>
             </div>
           </form>

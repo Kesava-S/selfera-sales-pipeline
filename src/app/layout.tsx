@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Sidebar } from '@/components/Sidebar'
-import { Topbar } from '@/components/Topbar'
 import { AddLeadModalProvider } from '@/components/AddLeadModalProvider'
+import { AppShell } from '@/components/AppShell'
 
 export const metadata: Metadata = {
   title: 'Selfera. | Sales Pipeline',
@@ -21,13 +20,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AddLeadModalProvider>
-          <div className="app-layout">
-            <Sidebar />
-            <div className="main-wrapper">
-              <Topbar />
-              <main className="main-content">{children}</main>
-            </div>
-          </div>
+          <AppShell>{children}</AppShell>
         </AddLeadModalProvider>
       </body>
     </html>

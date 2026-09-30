@@ -32,7 +32,7 @@ export default async function TodayTasks() {
         .order('due_date', { ascending: true }),
       supabase
         .from('leads')
-        .select('id, lead_code, business_name, stage, channel, email, phone, instagram_handle, created_at')
+        .select('*')
         .order('created_at', { ascending: false }),
     ])
 

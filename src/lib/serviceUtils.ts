@@ -55,7 +55,73 @@ export function getServiceMeta(service?: string | null): ServiceMeta {
   if (service && service in SERVICES_CONFIG) {
     return SERVICES_CONFIG[service as ServiceType]
   }
-  return SERVICES_CONFIG['Website Services']
+  // Check if it's a known combo or custom service
+  return (
+    SERVICES_CONFIG['Website Services']
+  )
+}
+
+/**
+ * Splits a composite service string into individual service offerings
+ * e.g. "Dashboard Services + End to End Automation" -> ["Dashboard Services", "End to End Automation"]
+ */
+export function parseComboServices(serviceStr?: string | null): string[] {
+  if (!serviceStr) return ['Website Services']
+  if (serviceStr.includes(' + ')) {
+    return serviceStr.split(' + ').map((s) => s.trim()).filter(Boolean)
+  }
+  if (serviceStr.includes(', ')) {
+    return serviceStr.split(', ').map((s) => s.trim()).filter(Boolean)
+  }
+  return [serviceStr.trim()]
+}
+
+/**
+ * Formats multiple service offerings into a standard combo string
+ */
+export function formatComboServices(services: string[]): string {
+  const clean = services.map((s) => s.trim()).filter(Boolean)
+  if (clean.length === 0) return 'Website Services'
+  return clean.join(' + ')
+}
+
+/**
+ * Constructs the full transition chain from history records:
+ * e.g. ["Website Services", "Dashboard Services", "End to End Automation"]
+ */
+export function buildPivotChain(
+  initialService: string | undefined | null,
+  history: Array<{ from_service: string; to_service: string }>,
+  currentService?: string | null
+): string[] {
+  if (!history || history.length === 0) {
+    if (initialService && currentService && initialService !== currentService) {
+      return [initialService, currentService]
+    }
+    return currentService ? [currentService] : initialService ? [initialService] : []
+  }
+
+  const chain: string[] = []
+  if (initialService) {
+    chain.push(initialService)
+  } else if (history[0]?.from_service) {
+    chain.push(history[0].from_service)
+  }
+
+  for (const item of history) {
+    if (item.from_service && !chain.includes(item.from_service)) {
+      chain.push(item.from_service)
+    }
+    if (item.to_service && chain[chain.length - 1] !== item.to_service) {
+      chain.push(item.to_service)
+    }
+  }
+
+  if (currentService && chain[chain.length - 1] !== currentService) {
+    chain.push(currentService)
+  }
+
+  return chain
 }
 
 export interface RecordServicePivotParams {
@@ -100,8 +166,8 @@ export async function recordServicePivot(params: RecordServicePivotParams): Prom
       .eq('id', leadId)
 
     if (updateError) {
-      console.error('[recordServicePivot] Failed to update lead:', updateError)
-      return { success: false, error: updateError.message }
+      console.error('[recordServicePivot] Failed to update lead:', updateError.message, updateError.details, updateError.hint, updateError.code)
+      return { success: false, error: updateError.message || 'Failed to update lead record.' }
     }
 
     // 2. Insert into lead_service_history (fail-safe if migration is pending)
@@ -148,3 +214,141 @@ export async function recordServicePivot(params: RecordServicePivotParams): Prom
     return { success: false, error: message }
   }
 }
+
+/**
+ * Result of checking which services are already pitched for a business
+ */
+export interface BusinessPitchedServicesResult {
+  pitchedServices: string[]
+  leadCodesByService: Record<string, string>
+  availableServices: ServiceType[]
+  allServicesPitched: boolean
+}
+
+/**
+ * Fetches all services that have EVER been pitched to a given business name.
+ * This includes:
+ * - initial_service of any existing lead for that company (even if pivoted later)
+ * - current_service of any existing lead for that company
+ * - any service recorded in lead_service_history for that company
+ */
+export async function getPitchedServicesForBusiness(businessName: string): Promise<BusinessPitchedServicesResult> {
+  const cleanName = businessName ? businessName.trim() : ''
+  if (!cleanName) {
+    return {
+      pitchedServices: [],
+      leadCodesByService: {},
+      availableServices: [...ALL_SERVICES],
+      allServicesPitched: false,
+    }
+  }
+
+  try {
+    const supabase = createClient()
+    const { data: leads, error } = await supabase
+      .from('leads')
+      .select('id, lead_code, initial_service, current_service')
+      .ilike('business_name', cleanName)
+
+    if (error || !leads || leads.length === 0) {
+      return {
+        pitchedServices: [],
+        leadCodesByService: {},
+        availableServices: [...ALL_SERVICES],
+        allServicesPitched: false,
+      }
+    }
+
+    const leadCodesByService: Record<string, string> = {}
+    const pitchedSet = new Set<string>()
+
+    for (const lead of leads) {
+      if (lead.initial_service) {
+        const parsed = parseComboServices(lead.initial_service)
+        for (const srv of parsed) {
+          pitchedSet.add(srv)
+          if (!leadCodesByService[srv] && lead.lead_code) {
+            leadCodesByService[srv] = lead.lead_code
+          }
+        }
+      }
+      if (lead.current_service) {
+        const parsed = parseComboServices(lead.current_service)
+        for (const srv of parsed) {
+          pitchedSet.add(srv)
+          if (!leadCodesByService[srv] && lead.lead_code) {
+            leadCodesByService[srv] = lead.lead_code
+          }
+        }
+      }
+    }
+
+    // Also check lead_service_history
+    const leadIds = leads.map((l) => l.id).filter(Boolean)
+    if (leadIds.length > 0) {
+      const { data: history } = await supabase
+        .from('lead_service_history')
+        .select('from_service, to_service, lead_id')
+        .in('lead_id', leadIds)
+
+      if (history) {
+        for (const h of history) {
+          if (h.from_service) {
+            parseComboServices(h.from_service).forEach((s) => pitchedSet.add(s))
+          }
+          if (h.to_service) {
+            parseComboServices(h.to_service).forEach((s) => pitchedSet.add(s))
+          }
+        }
+      }
+    }
+
+    const pitchedServices = Array.from(pitchedSet)
+    const availableServices = ALL_SERVICES.filter((srv) => !pitchedSet.has(srv))
+    const allServicesPitched = availableServices.length === 0
+
+    return {
+      pitchedServices,
+      leadCodesByService,
+      availableServices,
+      allServicesPitched,
+    }
+  } catch (err) {
+    console.error('[getPitchedServicesForBusiness] Error:', err)
+    return {
+      pitchedServices: [],
+      leadCodesByService: {},
+      availableServices: [...ALL_SERVICES],
+      allServicesPitched: false,
+    }
+  }
+}
+
+/**
+ * Validates whether a given service can be pitched/created for a business
+ */
+export async function validateServiceAvailableForBusiness(
+  businessName: string,
+  service: string
+): Promise<{ available: boolean; error?: string; existingLeadCode?: string }> {
+  if (!businessName || !businessName.trim() || !service) {
+    return { available: true }
+  }
+
+  const { pitchedServices, leadCodesByService } = await getPitchedServicesForBusiness(businessName)
+  const targetServices = parseComboServices(service)
+
+  for (const srv of targetServices) {
+    if (pitchedServices.includes(srv)) {
+      const code = leadCodesByService[srv]
+      return {
+        available: false,
+        existingLeadCode: code,
+        error: `"${businessName.trim()}" already has a lead associated with ${srv}${code ? ` (${code})` : ''} (even if previously pivoted). Each service can only be pitched once per business.`,
+      }
+    }
+  }
+
+  return { available: true }
+}
+

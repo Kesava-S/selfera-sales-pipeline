@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   FileText,
   X,
@@ -88,6 +89,11 @@ export function TemplateModal({
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [liveLead, setLiveLead] = useState<{
     business_name?: string
     channel?: string
@@ -138,7 +144,8 @@ export function TemplateModal({
       const parsed = parseTemplateChannel(initialTemplate.name || '', initialTemplate.channel)
       setName(parsed.cleanName)
       setSelectedChannel(parsed.channel)
-      setSelectedStep(parseTemplateStep(initialTemplate.name || '', initialTemplate.step))
+      const parsedStep = parseTemplateStep(initialTemplate.name || '', initialTemplate.step)
+      setSelectedStep(parsedStep === -1 ? 0 : parsedStep)
       setSubject(sanitizeTemplateInput(initialTemplate.subject || ''))
       const cleanBody = sanitizeTemplateInput(initialTemplate.body || '')
       setBody(cleanBody)
@@ -287,14 +294,19 @@ export function TemplateModal({
     }
   }
 
-  return (
+  if (!isOpen || !mounted) return null
+
+  const modalContent = (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.45)',
-        backdropFilter: 'blur(4px)',
-        zIndex: 100,
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: 'rgba(15, 23, 42, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -429,7 +441,7 @@ export function TemplateModal({
           )}
 
           {activeTab === 'editor' ? (
-            <form id="template-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
+            <form id="template-form" onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
               {/* Template Name */}
               <div>
                 <label className="input-label" style={{ fontSize: '0.825rem', marginBottom: '0.35rem', display: 'block' }}>
@@ -438,11 +450,19 @@ export function TemplateModal({
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    if (error) setError(null)
+                  }}
                   placeholder="e.g. First Outreach (Day 0), WhatsApp Quick Intro"
                   className="input-field"
-                  style={{ fontSize: '0.875rem', padding: '0.55rem 0.85rem', borderRadius: '8px' }}
-                  required
+                  style={{
+                    fontSize: '0.875rem',
+                    padding: '0.55rem 0.85rem',
+                    borderRadius: '8px',
+                    border: error && !name.trim() ? '1.5px solid #dc2626' : undefined,
+                    backgroundColor: error && !name.trim() ? '#fef2f2' : undefined,
+                  }}
                 />
               </div>
 
@@ -778,8 +798,9 @@ I noticed the great work {business_name} is doing and wanted to see if you would
                     borderRadius: '8px',
                     fontFamily: 'inherit',
                     resize: 'vertical',
+                    border: error && !body.trim() ? '1.5px solid #dc2626' : undefined,
+                    backgroundColor: error && !body.trim() ? '#fef2f2' : undefined,
                   }}
-                  required
                 />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.35rem' }}>
                   <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
@@ -912,4 +933,6 @@ I noticed the great work {business_name} is doing and wanted to see if you would
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

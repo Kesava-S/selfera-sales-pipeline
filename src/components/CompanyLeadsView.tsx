@@ -11,7 +11,6 @@ import {
   Mail,
   Phone,
   ArrowRight,
-  ArrowLeft,
   ExternalLink,
   CheckCircle,
   FileText,
@@ -31,9 +30,10 @@ import { ReplyChannelModal } from './ReplyChannelModal'
 import { SendFollowupModal } from './SendFollowupModal'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { useAddLeadModal } from '@/components/AddLeadModalProvider'
-import { formatDate } from '@/lib/dateUtils'
+import { formatDate, isDueTodayOrOverdue, addWorkingDays } from '@/lib/dateUtils'
 import { getLeadCadenceStep, CADENCE_STEPS } from '@/lib/templateUtils'
 import { ServiceBadge } from '@/components/ServiceBadge'
+import { CompanyTasksModal } from '@/components/CompanyTasksModal'
 
 interface CompanyLeadsViewProps {
   companyName: string
@@ -50,9 +50,18 @@ export function CompanyLeadsView({
   const { openAddLeadModal } = useAddLeadModal()
   const [leads, setLeads] = useState<ExtendedLead[]>(initialLeads)
   const [tasks, setTasks] = useState<ExtendedTask[]>(initialTasks)
+  const tasksDueToday = tasks.filter((t) => {
+    if (t.status !== 'open') return false
+    if (!isDueTodayOrOverdue(t.due_date)) return false
+    const lead = t.leads
+    if (lead?.stage && ['Replied', 'Lost', 'Do not contact'].includes(lead.stage)) return false
+    if (lead?.stage === 'Interested' && lead.next_follow_up && t.due_date !== lead.next_follow_up) return false
+    return true
+  })
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [activeTaskModal, setActiveTaskModal] = useState<ExtendedTask | null>(null)
+  const [isCompanyTasksModalOpen, setIsCompanyTasksModalOpen] = useState(false)
   const [followupModalLead, setFollowupModalLead] = useState<ExtendedLead | null>(null)
   const [followupModalTask, setFollowupModalTask] = useState<ExtendedTask | null>(null)
   const [followupModalChannel, setFollowupModalChannel] = useState<ChannelType | undefined>(undefined)
@@ -315,6 +324,15 @@ export function CompanyLeadsView({
             p_action: 'interested',
             p_task_id: task.id,
           })
+          const nextDateStr = addWorkingDays(2)
+          await supabase.from('tasks').insert({
+            title: `${task.leads?.business_name || 'Lead'}: Follow-up with Interested Lead`,
+            description: 'High interest prospect. Follow-up on proposal / service offerings.',
+            lead_id: task.lead_id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
         }
         await supabase.from('tasks').update({ status: 'completed' }).eq('id', task.id)
         setTasks((prev) => prev.filter((t) => t.id !== task.id))
@@ -357,6 +375,18 @@ export function CompanyLeadsView({
         await supabase.from('tasks').update({ status: 'completed' }).eq('id', modalState.task.id)
         setTasks((prev) => prev.filter((t) => t.id !== modalState.task?.id))
 
+        if (modalState.actionType === 'interested') {
+          const nextDateStr = addWorkingDays(2)
+          await supabase.from('tasks').insert({
+            title: `${modalState.lead.business_name}: Follow-up with Interested Lead`,
+            description: 'High interest prospect. Follow-up on proposal / service offerings.',
+            lead_id: modalState.lead.id,
+            due_date: nextDateStr,
+            status: 'open',
+            task_type: 'sales_followup',
+          })
+        }
+
         setLeads((prev) =>
           prev.map((l) => (l.id === modalState.lead?.id ? { ...l, stage: targetStage, channel: selectedChannel } : l))
         )
@@ -392,21 +422,21 @@ export function CompanyLeadsView({
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '1100px', margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       {/* Toast Notification */}
       {toastMessage && (
         <div
           style={{
             position: 'fixed',
-            bottom: '2.5rem',
-            right: '2.5rem',
+            top: '1.25rem',
+            right: '1.75rem',
             backgroundColor: '#0f172a',
             color: '#ffffff',
             padding: '0.85rem 1.35rem',
             borderRadius: '12px',
             border: '1px solid #1e293b',
             boxShadow: 'var(--shadow-xl)',
-            zIndex: 1000,
+            zIndex: 9999,
             display: 'flex',
             alignItems: 'center',
             gap: '0.75rem',
@@ -481,8 +511,10 @@ export function CompanyLeadsView({
                 </span>
               </span>
 
-              {tasks.length > 0 ? (
-                <span
+              {tasksDueToday.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCompanyTasksModalOpen(true)}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -494,13 +526,17 @@ export function CompanyLeadsView({
                     borderRadius: '6px',
                     fontSize: '0.72rem',
                     fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
+                  className="hover:bg-amber-100"
+                  title="Click to view tasks due today"
                 >
                   <Clock size={12} />
                   <span>
-                    {tasks.length} {tasks.length === 1 ? 'Task Due Today' : 'Tasks Due Today'}
+                    {tasksDueToday.length} {tasksDueToday.length === 1 ? 'Task Due Today' : 'Tasks Due Today'}
                   </span>
-                </span>
+                </button>
               ) : (
                 <span
                   style={{
@@ -520,32 +556,22 @@ export function CompanyLeadsView({
                   <span>Up to Date</span>
                 </span>
               )}
-
-              {/* Multi-Service Approaches Summary for this Company */}
-              {leads.length > 0 && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', marginLeft: '0.35rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Pitched:</span>
-                  {Array.from(new Set(leads.map((l) => l.current_service || l.initial_service || 'Website Services'))).map((srv) => (
-                    <ServiceBadge key={srv} service={srv} size="sm" />
-                  ))}
-                </div>
-              )}
             </div>
+
+            {/* Multi-Service Approaches Summary as a dedicated separate row */}
+            {leads.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Service Pitch:</span>
+                {Array.from(new Set(leads.map((l) => l.current_service || l.initial_service || 'Website Services'))).map((srv) => (
+                  <ServiceBadge key={srv} service={srv} size="sm" />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Company Actions on the Right */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="btn btn-secondary btn-sm"
-            style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', gap: '5px', borderRadius: '8px' }}
-            title="Go back to previous page"
-          >
-            <ArrowLeft size={13} />
-            <span>Back</span>
-          </button>
           <button
             type="button"
             onClick={() =>
@@ -632,7 +658,6 @@ export function CompanyLeadsView({
               <thead>
                 <tr style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ padding: '0.65rem 1.15rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Lead</th>
-                  <th style={{ padding: '0.65rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Service Pitch</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Cadence Step</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600 }}>Stage</th>
                   <th style={{ padding: '0.65rem 1rem', fontWeight: 600 }}>Outreach / Cadence</th>
@@ -641,7 +666,8 @@ export function CompanyLeadsView({
               </thead>
               <tbody>
                 {leads.map((lead) => {
-                  const dueTask = tasks.find((t) => t.lead_id === lead.id)
+                  const leadDueTask = tasksDueToday.find((t) => t.lead_id === lead.id)
+                  const anyOpenTask = tasks.find((t) => t.lead_id === lead.id && t.status === 'open')
                   const stageStyle = getStageBadgeColor(lead.stage)
                   const leadStep = getLeadCadenceStep(lead)
                   const stepInfo = CADENCE_STEPS[leadStep]
@@ -652,28 +678,49 @@ export function CompanyLeadsView({
                       key={lead.id}
                       style={{
                         borderBottom: '1px solid #f1f5f9',
-                        backgroundColor: dueTask ? '#fffdf7' : 'transparent',
+                        backgroundColor: leadDueTask ? '#fffdf5' : 'transparent',
+                        borderLeft: leadDueTask ? '3px solid #f59e0b' : '3px solid transparent',
                         transition: 'background-color 0.15s ease',
                       }}
                       className="hover:bg-slate-50"
                     >
-                      {/* Lead Identification */}
-                      <td style={{ padding: '0.85rem 1.15rem', verticalAlign: 'middle', whiteSpace: 'nowrap', minWidth: '95px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                          <Link
-                            href={`/leads/detail?id=${lead.id}`}
-                            style={{
-                              fontWeight: 700,
-                              color: '#0f172a',
-                              textDecoration: 'none',
-                              fontSize: '0.875rem',
-                              whiteSpace: 'nowrap',
-                              display: 'inline-block',
-                            }}
-                            className="hover:underline"
-                          >
-                            {lead.lead_code || lead.business_name}
-                          </Link>
+                      {/* Lead Identification & Service Pitch */}
+                      <td style={{ padding: '0.85rem 1.15rem', verticalAlign: 'middle', whiteSpace: 'nowrap', minWidth: '130px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Link
+                              href={`/leads/detail?id=${lead.id}`}
+                              style={{
+                                fontWeight: 700,
+                                color: '#0f172a',
+                                textDecoration: 'none',
+                                fontSize: '0.875rem',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block',
+                              }}
+                              className="hover:underline"
+                            >
+                              {lead.lead_code || lead.business_name}
+                            </Link>
+                            {leadDueTask && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  backgroundColor: '#fef3c7',
+                                  color: '#92400e',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  border: '1px solid #fde68a',
+                                }}
+                              >
+                                <Clock size={10} /> Task Today
+                              </span>
+                            )}
+                          </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span
                               className={`badge ${getChannelBadgeClass(lead.channel)}`}
@@ -683,17 +730,14 @@ export function CompanyLeadsView({
                               <span>{lead.channel}</span>
                             </span>
                           </div>
+                          {/* Current Service Pitch */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                            <ServiceBadge
+                              service={lead.current_service || lead.initial_service || 'Website Services'}
+                              size="sm"
+                            />
+                          </div>
                         </div>
-                      </td>
-
-                      {/* Service Offering Pitch Column */}
-                      <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                        <ServiceBadge
-                          service={lead.current_service || 'Website Services'}
-                          initialService={lead.initial_service}
-                          showPivot={true}
-                          size="sm"
-                        />
                       </td>
 
                       {/* Cadence Step Column */}
@@ -743,34 +787,45 @@ export function CompanyLeadsView({
 
                       {/* Outreach / Cadence status */}
                       <td style={{ padding: '0.85rem 1rem', verticalAlign: 'middle' }}>
-                        {dueTask ? (
+                        {leadDueTask ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <span
+                            <button
+                              type="button"
                               onClick={() => {
-                                const ch = (dueTask.channel ||
-                                  (dueTask.title.match(/\((WhatsApp|Instagram|Email|Phone)\)/i)?.[1] as ChannelType) ||
+                                const ch = (leadDueTask.channel ||
+                                  (leadDueTask.title.match(/\((WhatsApp|Instagram|Email|Phone)\)/i)?.[1] as ChannelType) ||
                                   lead.channel ||
                                   'Email') as ChannelType
                                 setFollowupModalLead(lead)
-                                setFollowupModalTask(dueTask)
+                                setFollowupModalTask(leadDueTask)
                                 setFollowupModalChannel(ch)
                               }}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '4px',
-                                backgroundColor: 'transparent',
+                                backgroundColor: '#fffbeb',
                                 color: '#b45309',
-                                border: 'none',
-                                padding: 0,
+                                border: '1px solid #fde68a',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
                                 fontSize: '0.72rem',
                                 fontWeight: 700,
                                 cursor: 'pointer',
+                                textAlign: 'left',
                               }}
-                              title="Click to choose template and send initial outreach"
+                              className="hover:bg-amber-100"
+                              title="Click to choose template and send outreach"
                             >
                               <Clock size={11} />
-                              <span>Due Today: {dueTask.title}</span>
+                              <span>Due Today: {leadDueTask.title}</span>
+                            </button>
+                          </div>
+                        ) : anyOpenTask ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', color: '#64748b' }}>
+                            <span style={{ fontWeight: 500, color: '#334155' }}>{anyOpenTask.title}</span>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                              Scheduled: {formatDate(anyOpenTask.due_date)}
                             </span>
                           </div>
                         ) : (
@@ -1166,6 +1221,27 @@ export function CompanyLeadsView({
           confirmText={isDeleting ? 'Deleting...' : 'Delete Lead'}
           cancelText="Cancel"
           variant="danger"
+        />
+      )}
+
+      {/* Company Tasks Modal (Opens on header badge click) */}
+      {isCompanyTasksModalOpen && (
+        <CompanyTasksModal
+          isOpen={isCompanyTasksModalOpen}
+          companyName={companyName}
+          tasks={tasksDueToday}
+          leads={leads}
+          onClose={() => setIsCompanyTasksModalOpen(false)}
+          onActionTask={(task, lead) => {
+            setIsCompanyTasksModalOpen(false)
+            const ch = (task.channel ||
+              (task.title.match(/\((WhatsApp|Instagram|Email|Phone)\)/i)?.[1] as ChannelType) ||
+              lead.channel ||
+              'Email') as ChannelType
+            setFollowupModalLead(lead)
+            setFollowupModalTask(task)
+            setFollowupModalChannel(ch)
+          }}
         />
       )}
     </div>
