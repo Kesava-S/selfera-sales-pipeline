@@ -82,6 +82,7 @@ Call with `supabase.rpc('<name>', { ... })`. Access checks are inside each funct
 | `assign_sales`, `set_services`, `set_archived` | admin bulk actions | No bulk messaging, by design |
 | `insights(p_from, p_to, p_service, p_user)` | Insights page | Funnel, reply rate by platform and step, wins, templates. Admin can pick a person, others see their own |
 | `save_template(p_id, p_step, p_service, p_platform, p_subject, p_body)` / `set_template_active(p_id, p_active)` | Templates page | Admin only. One template per step + service + platform. No delete (switch Off) |
+| `set_my_name`, `update_member`, `set_cadence` | Settings page | Name for everyone; team and timing admin only. Inviting (`auth.admin.inviteUserByEmail`) and blocking log-in (`ban_duration`) use the service key in `actions.ts` |
 | `record_inbound(...)` | **n8n only** | Incoming message: pauses other platforms, discards old drafts, STOP = Do not contact |
 | `daily_update()` | **n8n only**, 09:00 Mon to Fri | Drafts due follow-ups, marks No reply / Went cold / No response, upsell reminders. Sends nothing |
 
@@ -90,8 +91,6 @@ Automatic: new website bookings are matched by phone or email (trigger), and new
 ---
 
 ## 5. What's done and what's left
-
-The Settings screen is **not in scope yet** (still being planned).
 
 ### 5.1 Done and tested (local Postgres + PostgREST, logged in as admin, two salespeople and a consultant)
 - **Getting leads in:** Add business form (with duplicate check), CSV import in 4 steps (column matching, type mapping, error rows download, duplicates: skip / update / new pitch), `public/import-template.csv`, review queue with Approve (single or selected).
@@ -103,6 +102,7 @@ The Settings screen is **not in scope yet** (still being planned).
 - **Sending route** `/api/send`: checks again on the server (access, window, PECR, placeholders, opted out), sends through n8n, then records. If n8n fails nothing is recorded and the text stays.
 - **Insights:** date range (last 30 days by default), service, person (admin). Five numbers, funnel, reply rate by platform and by step, wins, templates (under 10 sends shows "Too few to judge"). Phone and Walk-in show "Not tracked" because call outcomes are notes, not replies.
 - **Templates:** tabs by message type, filters for service and platform, On/Off switch, edit subject (Email and All platforms) and body with placeholder buttons. Admin edits, others view. Most specific template wins, service first: service + platform > service + All platforms > General + platform > General + All platforms (drafts and the chat picker). "All platforms" covers WhatsApp, Instagram, Facebook and Email only; Phone and Walk-in use their own notes. Templates describe clients anonymously, never by name.
+- **Settings:** my name (everyone). Admin: team list with emails, Add person (invite email, lands on `/auth/set-password`), edit name, role, active lead limit, switch off (also blocks log-in). Can't remove your own admin access, and one admin always stays. Follow-up timing for the 3 steps. The 14 working days after the Final check is still fixed in `record_outbound` and `daily_update`.
 - **Top bar:** notification bell (live), log out. Login is invite only (no sign-up button).
 - **Database:** every change goes through checked functions; staff can only read and change what they are assigned (plus the unassigned review queue for salespeople).
 
@@ -124,6 +124,7 @@ The Settings screen is **not in scope yet** (still being planned).
 - **Matching is automatic** (trigger).
 
 ### 5.4 Clean-up still open
+- `src/lib/supabase/middleware.ts` skips the login check when `NODE_ENV` is `development` (a mock user). Pages still check the login, but remove this before go-live.
 - `supabase/migrations/merged_for_live.sql` holds older function versions. Do not run it after 24 or 25 (it would undo them). Delete it at the end.
 - `next.config.ts` has `typescript.ignoreBuildErrors: true`, an `eslint` key that Next 16 no longer accepts, and a v1 rewrite for `/leads/:id`.
   - Remove all three, so build errors are not hidden.

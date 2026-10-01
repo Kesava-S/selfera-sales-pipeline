@@ -1,138 +1,145 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Plus, FileText } from 'lucide-react'
-import { CONFIG } from '@/lib/config'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { ChevronRight, Plus, Pencil } from 'lucide-react'
+import { STEPS, PLATFORMS, SERVICES, MESSAGING, platformLabel, serviceOf, type TemplateRow } from '@/lib/templates'
 import { PLACEHOLDERS } from '@/lib/placeholders'
 import { saveTemplate, setTemplateActive } from '@/app/dashboard/actions'
-import { PlatformIcon, Modal, useAction, ErrorNote, EmptyState, Spinner } from '@/components/ui'
+import { PlatformIcon, Modal, useAction, ErrorNote, Spinner } from '@/components/ui'
 
-export type TemplateRow = {
-  id: string; name: string; platform: string; step: string; services: string[]
-  subject: string | null; body: string; is_active: boolean
-}
-
-const STEPS = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
-const PLATFORMS = ['All', 'WhatsApp', 'Instagram', 'Facebook', 'Email', 'Phone', 'Walk-in']
-const platformLabel = (p: string) => (p === 'All' ? 'All platforms' : p)
-const serviceOf = (t: TemplateRow) => t.services?.[0] || ''
 const hasSubject = (platform: string) => platform === 'Email' || platform === 'All'
+const slug = (s: string) => encodeURIComponent(s)
 
-type Editing = { id: string | null; step: string; service: string; platform: string; subject: string; body: string }
-
-export function TemplatesView({ templates, loadError, isAdmin }: { templates: TemplateRow[]; loadError: string | null; isAdmin: boolean }) {
-  const [step, setStep] = useState(STEPS[0])
-  const [service, setService] = useState('any')
-  const [platform, setPlatform] = useState('any')
-  const [editing, setEditing] = useState<Editing | null>(null)
-  const [viewing, setViewing] = useState<TemplateRow | null>(null)
-  const toggle = useAction()
-
-  const rows = templates
-    .filter(t => t.step === step)
-    .filter(t => service === 'any' || serviceOf(t) === service)
-    .filter(t => platform === 'any' || t.platform === platform)
-    .sort((a, z) => (serviceOf(a) || 'General').localeCompare(serviceOf(z) || 'General') || PLATFORMS.indexOf(a.platform) - PLATFORMS.indexOf(z.platform))
-
-  const open = (t: TemplateRow) =>
-    isAdmin
-      ? setEditing({ id: t.id, step: t.step, service: serviceOf(t), platform: t.platform, subject: t.subject || '', body: t.body })
-      : setViewing(t)
+// ---------- Level 1 and 2: services, then platforms ----------
+export function TemplatesHome({ templates, selected }: { templates: TemplateRow[]; selected: string | null }) {
+  const router = useRouter()
+  const count = (service: string, platform?: string) =>
+    templates.filter(t => serviceOf(t) === service && (!platform || t.platform === platform)).length
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div>
         <h1 className="text-2xl font-semibold">Templates</h1>
-        {isAdmin && (
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => setEditing({
-              id: null, step,
-              service: service === 'any' ? '' : service,
-              platform: platform === 'any' ? 'All' : platform,
-              subject: '', body: '',
-            })}
-          >
-            <Plus size={16} /> New template
-          </button>
-        )}
+        <p className="text-sm text-muted">Pick a service, then a platform.</p>
       </div>
 
-      {/* Message type */}
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
-        {STEPS.map(s => (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {SERVICES.map(s => (
           <button
             key={s}
-            onClick={() => setStep(s)}
-            className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-semibold ${step === s ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            onClick={() => router.replace(selected === s ? '/dashboard/templates' : `/dashboard/templates?service=${slug(s)}`, { scroll: false })}
+            className={`card card-link flex items-center justify-between !p-4 text-left ${selected === s ? '!border-primary ring-1 ring-primary' : ''}`}
           >
-            {s}
+            <div>
+              <h3 className="font-semibold">{s === 'General' ? 'General (any service)' : s}</h3>
+              <p className="text-xs text-muted">{count(s)} templates</p>
+            </div>
+            <ChevronRight size={16} className={`text-slate-400 transition-transform ${selected === s ? 'rotate-90' : ''}`} />
           </button>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <select className="input !w-auto" value={service} onChange={e => setService(e.target.value)} aria-label="Service">
-          <option value="any">Any service</option>
-          <option value="">General</option>
-          {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
-        </select>
-        <select className="input !w-auto" value={platform} onChange={e => setPlatform(e.target.value)} aria-label="Platform">
-          <option value="any">Any platform</option>
-          {PLATFORMS.map(p => <option key={p} value={p}>{platformLabel(p)}</option>)}
-        </select>
-      </div>
-
-      <ErrorNote error={loadError || toggle.error} />
-
-      {rows.length === 0 ? (
-        <EmptyState icon={<FileText size={28} />} title="No templates here" text={isAdmin ? 'Use New template to add one.' : undefined} />
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <tbody>
-              {rows.map(t => (
-                <tr key={t.id} className="cursor-pointer" onClick={() => open(t)}>
-                  <td>
-                    <span className={`flex items-center gap-2 ${t.is_active ? '' : 'text-slate-400'}`}>
-                      <PlatformIcon platform={t.platform} size={15} className="shrink-0" />
-                      {serviceOf(t) || 'General'} · {platformLabel(t.platform)}
-                    </span>
-                  </td>
-                  <td className="w-24 text-right" onClick={e => e.stopPropagation()}>
-                    {isAdmin ? (
-                      <Switch on={t.is_active} disabled={toggle.pending} onChange={v => toggle.run(() => setTemplateActive(t.id, v))} />
-                    ) : (
-                      <span className="text-xs text-muted">{t.is_active ? 'On' : 'Off'}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {editing && <EditTemplate value={editing} onClose={() => setEditing(null)} />}
-
-      <Modal title={viewing ? `${serviceOf(viewing) || 'General'} · ${platformLabel(viewing.platform)} · ${viewing.step}` : ''} open={!!viewing} onClose={() => setViewing(null)}>
-        {viewing && (
-          <div className="space-y-3 text-sm">
-            {viewing.subject && hasSubject(viewing.platform) && <p><span className="text-muted">Subject: </span>{viewing.subject}</p>}
-            <p className="whitespace-pre-wrap">{viewing.body}</p>
+      {selected && (
+        <section className="space-y-3">
+          <h2 className="font-semibold">{selected === 'General' ? 'General' : selected}: platforms</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {PLATFORMS.map(p => (
+              <Link key={p} href={`/dashboard/templates/${slug(selected)}/${slug(p)}`} className="card card-link flex items-center gap-3 !p-4">
+                <PlatformIcon platform={p} size={18} className="shrink-0" />
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{platformLabel(p)}</div>
+                  <div className="text-xs text-muted">{count(selected, p)} of {STEPS.length}</div>
+                </div>
+              </Link>
+            ))}
           </div>
-        )}
-      </Modal>
+        </section>
+      )}
     </div>
   )
 }
+
+// ---------- Level 3: the messages for one service + platform ----------
+// Which template is used for this slot, most specific first (same rule as the database)
+function chain(service: string, platform: string): [string, string][] {
+  const out: [string, string][] = []
+  const services = service === 'General' ? ['General'] : [service, 'General']
+  for (const s of services) {
+    if (platform !== 'All') out.push([s, platform])
+    if (platform === 'All' || MESSAGING.includes(platform)) out.push([s, 'All'])
+  }
+  return out
+}
+
+export function TemplateSlots({ templates, service, platform, isAdmin }: { templates: TemplateRow[]; service: string; platform: string; isAdmin: boolean }) {
+  const [editing, setEditing] = useState<Editing | null>(null)
+  const toggle = useAction()
+  const find = (step: string, s: string, p: string) => templates.find(t => t.step === step && serviceOf(t) === s && t.platform === p)
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex items-center gap-2">
+        <PlatformIcon platform={platform} size={20} />
+        <h1 className="text-2xl font-semibold">{service === 'General' ? 'General' : service} · {platformLabel(platform)}</h1>
+      </div>
+      {platform === 'All' && <p className="text-sm text-muted">Used for WhatsApp, Instagram, Facebook and Email when there is no platform-specific template.</p>}
+      <ErrorNote error={toggle.error} />
+
+      {STEPS.map(step => {
+        const own = find(step, service, platform)
+        const fallback = chain(service, platform)
+          .filter(([s, p]) => !(s === service && p === platform))
+          .map(([s, p]) => find(step, s, p))
+          .find(t => t?.is_active)
+        const usedNote = !own || !own.is_active
+          ? fallback ? `${own ? 'Off, so it uses' : 'Not set, uses'} ${serviceOf(fallback)} · ${platformLabel(fallback.platform)}` : `${own ? 'Off' : 'Not set'}, and nothing to fall back on. Drafts for this step will be empty.`
+          : null
+
+        return (
+          <div key={step} className={`card space-y-2 !p-4 ${own && !own.is_active ? 'opacity-70' : ''}`}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold">{step}</h2>
+              <div className="flex items-center gap-2">
+                {own && isAdmin && (
+                  <>
+                    <Switch on={own.is_active} disabled={toggle.pending} onChange={v => toggle.run(() => setTemplateActive(own.id, v))} />
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ id: own.id, step, service, platform, subject: own.subject || '', body: own.body })}>
+                      <Pencil size={14} /> Edit
+                    </button>
+                  </>
+                )}
+                {!own && isAdmin && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => setEditing({ id: null, step, service, platform, subject: '', body: '' })}>
+                    <Plus size={14} /> Add
+                  </button>
+                )}
+              </div>
+            </div>
+            {own && (
+              <div className="space-y-1 text-sm">
+                {own.subject && hasSubject(platform) && <p><span className="text-muted">Subject: </span>{own.subject}</p>}
+                <p className="whitespace-pre-wrap text-slate-700">{own.body}</p>
+              </div>
+            )}
+            {usedNote && <p className="text-xs text-muted">{usedNote}</p>}
+          </div>
+        )
+      })}
+
+      {editing && <EditTemplate value={editing} onClose={() => setEditing(null)} />}
+    </div>
+  )
+}
+
+// ---------- Edit / add ----------
+type Editing = { id: string | null; step: string; service: string; platform: string; subject: string; body: string }
 
 function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void }) {
   const [v, setV] = useState(value)
   const area = useRef<HTMLTextAreaElement>(null)
   const { run, pending, error } = useAction()
-  const isNew = !v.id
 
   const insert = (ph: string) => {
     const el = area.current
@@ -142,26 +149,15 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(start + ph.length, start + ph.length) })
   }
 
-  const title = isNew ? `New template · ${v.step}` : `${v.service || 'General'} · ${platformLabel(v.platform)} · ${v.step}`
-
   return (
-    <Modal title={title} open onClose={onClose}>
+    <Modal title={`${v.id ? 'Edit' : 'Add'} · ${v.step}`} open onClose={onClose}>
       <form
         className="space-y-3"
-        onSubmit={e => { e.preventDefault(); run(() => saveTemplate(v), onClose) }}
+        onSubmit={e => {
+          e.preventDefault()
+          run(() => saveTemplate({ ...v, service: v.service === 'General' ? '' : v.service }), onClose)
+        }}
       >
-        {isNew && (
-          <div className="grid grid-cols-2 gap-2">
-            <select className="input" value={v.service} onChange={e => setV({ ...v, service: e.target.value })} aria-label="Service">
-              <option value="">General</option>
-              {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
-            </select>
-            <select className="input" value={v.platform} onChange={e => setV({ ...v, platform: e.target.value })} aria-label="Platform">
-              {PLATFORMS.map(p => <option key={p} value={p}>{platformLabel(p)}</option>)}
-            </select>
-          </div>
-        )}
-
         {hasSubject(v.platform) && (
           <input
             className="input"
@@ -170,23 +166,13 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
             onChange={e => setV({ ...v, subject: e.target.value })}
           />
         )}
-
-        <textarea
-          ref={area}
-          className="input min-h-48"
-          placeholder="Message"
-          value={v.body}
-          onChange={e => setV({ ...v, body: e.target.value })}
-        />
-
+        <textarea ref={area} className="input min-h-48" placeholder="Message" value={v.body} onChange={e => setV({ ...v, body: e.target.value })} autoFocus />
         <div className="flex flex-wrap gap-1.5">
           {PLACEHOLDERS.map(ph => (
             <button key={ph} type="button" className="chip !py-0.5 !text-xs" onClick={() => insert(ph)}>{ph}</button>
           ))}
         </div>
-
         <ErrorNote error={error} />
-
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary btn-sm" disabled={pending}>{pending && <Spinner size={14} />} Save</button>
@@ -199,11 +185,7 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={on ? 'On' : 'Off'}
-      disabled={disabled}
+      type="button" role="switch" aria-checked={on} aria-label={on ? 'On' : 'Off'} disabled={disabled}
       onClick={() => onChange(!on)}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-primary' : 'bg-slate-300'} disabled:opacity-50`}
     >
