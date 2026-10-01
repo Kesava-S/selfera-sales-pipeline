@@ -29,7 +29,7 @@ export function DashboardHome({
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         
         {/* Column 1: Due Today */}
         <div className="flex flex-col gap-4">
@@ -123,15 +123,6 @@ export function DashboardHome({
           </div>
         </div>
 
-        {/* Column 3: Performance */}
-        <div className="flex flex-col gap-4 h-full">
-          <h2 className="text-lg font-semibold text-slate-800">Performance</h2>
-          <div className="card flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500 min-h-[500px] border-dashed border-2 bg-slate-50/50">
-             <BarChart2 size={48} className="mb-4 text-slate-300" />
-             <p className="font-medium text-slate-700">Analytics & Insights</p>
-             <p className="text-sm mt-2 text-slate-400 max-w-[200px]">Performance metrics and historical reporting are being calculated. Check back soon.</p>
-          </div>
-        </div>
 
       </div>
     </div>
