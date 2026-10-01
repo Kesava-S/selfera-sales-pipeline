@@ -1,4 +1,4 @@
-import { login } from './actions'
+import { login, signup } from './actions'
 import { AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 
@@ -51,9 +51,14 @@ export default async function LoginPage({
             />
           </div>
 
-          <button formAction={login} className="btn btn-primary w-full justify-center">
-            Log in
-          </button>
+          <div className="flex gap-2">
+            <button formAction={login} className="btn btn-primary flex-1 justify-center">
+              Log in
+            </button>
+            <button formAction={signup} className="btn btn-secondary flex-1 justify-center">
+              Sign up
+            </button>
+          </div>
         </form>
       </div>
     </div>

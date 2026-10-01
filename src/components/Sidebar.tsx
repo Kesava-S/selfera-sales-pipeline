@@ -8,9 +8,10 @@ import {
   Users,
   FileText,
   Sliders,
+  BarChart2,
 } from 'lucide-react'
 
-export function Sidebar() {
+export function Sidebar({ userProfile }: { userProfile: { full_name: string, role: string } }) {
   const pathname = usePathname()
   const [openTasksCount, setOpenTasksCount] = useState<number>(0)
 
@@ -42,22 +43,27 @@ export function Sidebar() {
   const navItems = [
     {
       href: '/dashboard',
-      label: 'Dashboard Home',
+      label: 'Dashboard',
       icon: LayoutDashboard,
       badge: openTasksCount > 0 ? openTasksCount : null,
     },
     {
       href: '/dashboard/leads',
-      label: 'All Leads & Imports',
+      label: 'Lead Management',
       icon: Users,
     },
     {
-      href: '/templates',
-      label: 'Templates (V2)',
+      href: '/dashboard/insights',
+      label: 'Insights',
+      icon: BarChart2,
+    },
+    {
+      href: '/dashboard/templates',
+      label: 'Templates',
       icon: FileText,
     },
     {
-      href: '/settings',
+      href: '/dashboard/settings',
       label: 'Settings',
       icon: Sliders,
     },
@@ -66,7 +72,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       {/* Brand Header */}
-      <Link href="/" className="sidebar-logo" title="Selfera. - Sales Pipeline">
+      <Link href="/dashboard" className="sidebar-logo" title="Selfera. - Sales Pipeline">
         <div className="sidebar-logo-icon">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="Selfera Logo" />
@@ -102,10 +108,10 @@ export function Sidebar() {
       <nav className="sidebar-nav">
         {navItems.map((item) => {
           const isActive =
-            item.href === '/'
-              ? pathname === '/'
-              : item.href === '/leads'
-              ? pathname.startsWith('/leads') || pathname.startsWith('/company')
+            item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : item.href === '/dashboard/leads'
+              ? pathname.startsWith('/dashboard/leads')
               : pathname.startsWith(item.href)
           const Icon = item.icon
 
@@ -163,17 +169,18 @@ export function Sidebar() {
               justifyContent: 'center',
               fontWeight: 700,
               fontSize: '0.8rem',
+              textTransform: 'uppercase'
             }}
           >
-            K
+            {userProfile.full_name.charAt(0)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Kesav
+              {userProfile.full_name}
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'capitalize' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-              Admin
+              {userProfile.role}
             </div>
           </div>
         </div>

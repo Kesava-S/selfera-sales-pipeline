@@ -1,7 +1,8 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { getSupabaseSchema } from '@/lib/env'
+import { isDemoMode, createDemoClient } from '@/lib/demo/demoClient'
 
-export function createClient() {
+function createRealClient() {
   const schema = getSupabaseSchema()
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,3 +15,8 @@ export function createClient() {
   )
 }
 
+export function createClient(): ReturnType<typeof createRealClient> {
+  // DEMO MODE (local testing only): use in-memory café data instead of Supabase
+  if (isDemoMode()) return createDemoClient()
+  return createRealClient()
+}

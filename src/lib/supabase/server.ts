@@ -1,8 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getSupabaseSchema } from '@/lib/env'
+import { isDemoMode, createDemoClient } from '@/lib/demo/demoClient'
 
-export async function createClient() {
+async function createRealClient() {
   const cookieStore = await cookies()
   const schema = getSupabaseSchema()
 
@@ -30,4 +31,10 @@ export async function createClient() {
       },
     }
   )
+}
+
+export async function createClient(): ReturnType<typeof createRealClient> {
+  // DEMO MODE (local testing only): use in-memory café data instead of Supabase
+  if (isDemoMode()) return createDemoClient()
+  return createRealClient()
 }

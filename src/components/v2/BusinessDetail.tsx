@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Building2, Phone, Mail, Instagram, ExternalLink, MessageSquare, History } from 'lucide-react'
+import { ArrowLeft, Building2, Phone, Mail, Camera, ExternalLink, MessageSquare, History, Clock } from 'lucide-react'
 
 export function BusinessDetail({ opp }: { opp: any }) {
   const b = opp.businesses
@@ -63,7 +63,7 @@ export function BusinessDetail({ opp }: { opp: any }) {
                 )}
                 {b.instagram && (
                   <div className="flex items-center gap-2">
-                    <Instagram size={14} className="text-muted" /> {b.instagram}
+                    <Camera size={14} className="text-muted" /> {b.instagram}
                   </div>
                 )}
               </div>
@@ -95,7 +95,7 @@ export function BusinessDetail({ opp }: { opp: any }) {
                   <div className="w-[calc(100%-2.5rem)] md:w-[calc(50%-1.25rem)] p-3 rounded border border-[var(--card-border)] bg-gray-50/50 dark:bg-white/5 shadow">
                     <div className="flex items-center justify-between space-x-2 mb-1">
                       <div className="font-medium text-sm text-[var(--foreground)]">{change.to_stage}</div>
-                      <time className="text-xs font-medium text-muted">{new Date(change.created_at).toLocaleDateString()}</time>
+                      <time className="text-xs font-medium text-muted">{new Date(change.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</time>
                     </div>
                     <div className="text-xs text-muted">{change.reason}</div>
                   </div>
@@ -144,7 +144,7 @@ export function BusinessDetail({ opp }: { opp: any }) {
                       <div className="flex flex-col sm:items-end gap-2 text-sm">
                         {t.next_due_on && (
                           <div className={`flex items-center gap-1 ${new Date(t.next_due_on) <= new Date() ? 'text-amber-500 font-medium' : 'text-muted'}`}>
-                            <Clock size={14} /> Due: {new Date(t.next_due_on).toLocaleDateString()}
+                            <Clock size={14} /> Due: {new Date(t.next_due_on).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </div>
                         )}
                         {activeDraft && (

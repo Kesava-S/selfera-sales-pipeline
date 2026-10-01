@@ -9,9 +9,12 @@ import {
   ChevronDown,
 } from 'lucide-react'
 
-export function Topbar() {
+import { useBreadcrumbs } from '@/components/BreadcrumbContext'
+
+export function Topbar({ userProfile, email }: { userProfile: { full_name: string, role: string }, email: string }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { breadcrumbs } = useBreadcrumbs()
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
 
@@ -26,20 +29,8 @@ export function Topbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const getBreadcrumbTitle = () => {
-    if (pathname === '/') return "Today's Queue"
-    if (pathname === '/leads') return 'Leads Directory'
-    if (pathname.startsWith('/leads/add')) return 'Add Lead'
-    if (pathname.startsWith('/leads/import')) return 'Import CSV'
-    if (pathname.startsWith('/leads/')) return 'Lead Overview'
-    if (pathname === '/templates') return 'Templates'
-    if (pathname.startsWith('/company')) return 'Company Workspace'
-    if (pathname === '/settings') return 'Cadence Rules'
-    return 'Workspace'
-  }
-
   // Show back navigation button on all pages other than the home dashboard root
-  const canGoBack = pathname !== '/'
+  const canGoBack = pathname !== '/dashboard'
 
   return (
     <header className="topbar">
@@ -68,32 +59,49 @@ export function Topbar() {
           </button>
         )}
 
-        {/* Hierarchical navigation for subpages */}
-        {(pathname.startsWith('/leads/') || pathname.startsWith('/company')) && (
-          <>
-            <Link
-              href="/leads"
-              className="text-muted hover:text-foreground font-semibold"
-              style={{ fontSize: '0.85rem', textDecoration: 'none' }}
-            >
-              All Leads
-            </Link>
-            <ChevronRight size={14} style={{ color: '#94a3b8' }} />
-          </>
+        {/* Hierarchical navigation for subpages via Context */}
+        {breadcrumbs.length > 0 ? (
+          breadcrumbs.map((crumb, idx) => (
+            <React.Fragment key={idx}>
+              {idx > 0 && <ChevronRight size={14} style={{ color: '#94a3b8', margin: '0 4px' }} />}
+              {crumb.href ? (
+                <Link
+                  href={crumb.href}
+                  className="text-muted hover:text-foreground font-semibold"
+                  style={{ fontSize: '0.85rem', textDecoration: 'none' }}
+                >
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span
+                  style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: '#0f172a',
+                    backgroundColor: '#f1f5f9',
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '6px',
+                  }}
+                >
+                  {crumb.label}
+                </span>
+              )}
+            </React.Fragment>
+          ))
+        ) : (
+          <span
+            style={{
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: '#0f172a',
+              backgroundColor: '#f1f5f9',
+              padding: '0.25rem 0.75rem',
+              borderRadius: '6px',
+            }}
+          >
+            Workspace
+          </span>
         )}
-
-        <span
-          style={{
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            color: '#0f172a',
-            backgroundColor: '#f1f5f9',
-            padding: '0.25rem 0.75rem',
-            borderRadius: '6px',
-          }}
-        >
-          {getBreadcrumbTitle()}
-        </span>
       </div>
 
       {/* Right: Actions & Staff Profile */}
@@ -132,7 +140,7 @@ export function Topbar() {
                 flexShrink: 0,
               }}
             >
-              K
+              {userProfile.full_name.charAt(0).toUpperCase()}
             </div>
 
             {/* User Info */}
@@ -146,7 +154,7 @@ export function Topbar() {
               }}
             >
               <span style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0f172a' }}>
-                Kesav
+                {userProfile.full_name}
               </span>
               <span
                 style={{
@@ -204,10 +212,10 @@ export function Topbar() {
                 }}
               >
                 <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0f172a' }}>
-                  Kesav
+                  {userProfile.full_name}
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                  kesav@selfera.co.uk
+                  {email}
                 </div>
                 <div
                   style={{
@@ -231,7 +239,7 @@ export function Topbar() {
                       backgroundColor: '#10b981',
                     }}
                   />
-                  Active • Admin
+                  Active • <span style={{ textTransform: 'capitalize' }}>{userProfile.role}</span>
                 </div>
               </div>
             </div>

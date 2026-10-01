@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Search, Filter, Upload, Plus, MoreVertical } from 'lucide-react'
 
+import { CsvImportModal } from './CsvImportModal'
+
 export function LeadsManagement({ 
   opportunities, 
   totalCount,
@@ -41,6 +43,7 @@ export function LeadsManagement({
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <CsvImportModal isOpen={showImport} onClose={() => setShowImport(false)} />
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="font-semibold text-2xl">Leads & Opportunities</h1>

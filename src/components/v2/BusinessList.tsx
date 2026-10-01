@@ -83,56 +83,78 @@ export function BusinessList({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {opportunities.length === 0 ? (
-          <div className="text-center py-12 text-muted bg-gray-50/50 dark:bg-white/5 rounded-lg border border-[var(--card-border)]">
+          <div className="col-span-full text-center py-12 text-muted bg-gray-50/50 dark:bg-white/5 rounded-lg border border-[var(--card-border)]">
             <Search size={32} className="mx-auto mb-4 opacity-30" />
             <p>No businesses found matching your criteria.</p>
           </div>
         ) : (
           opportunities.map(opp => {
             const b = opp.businesses
-            const latestThread = opp.threads?.sort((a: any, b: any) => 
-              new Date(b.next_due_on || 0).getTime() - new Date(a.next_due_on || 0).getTime()
-            )[0]
+            
+            // Collect platform statuses
+            const platformStatuses: Record<string, string> = {}
+            if (opp.threads) {
+              opp.threads.forEach((t: any) => {
+                platformStatuses[t.platform] = t.status
+              })
+            }
+
+            const platforms = ['Email', 'WhatsApp', 'Instagram', 'Facebook']
 
             return (
               <Link 
                 key={opp.id} 
                 href={`/dashboard/${opp.id}`}
-                className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-lg border border-[var(--card-border)] bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors gap-4"
+                className="flex flex-col p-5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 hover:shadow-md transition-all gap-4 group"
               >
-                <div className="flex-1">
-                  <div className="font-semibold text-lg">{b.business_name}</div>
-                  <div className="text-sm text-muted flex items-center gap-2 mt-1">
-                    {b.area && <span>{b.area}</span>}
+                <div>
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-slate-900 group-hover:text-blue-700 transition-colors line-clamp-1" title={b.business_name}>
+                      {b.business_name}
+                    </h3>
+                    <span className={`badge shrink-0 ml-2 ${
+                      opp.stage === 'Won' ? 'bg-green-100 text-green-700 border-green-200' :
+                      opp.stage === 'Interested' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                      opp.stage === 'Needs review' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                      opp.stage === 'No response' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                      'badge-neutral'
+                    }`}>{opp.stage}</span>
+                  </div>
+                  
+                  <div className="text-sm text-slate-500 flex items-center gap-2">
+                    {b.area && <span className="line-clamp-1">{b.area}</span>}
                     {b.area && b.google_rating && <span>•</span>}
-                    {b.google_rating && <span className="flex items-center gap-1">⭐ {b.google_rating}</span>}
+                    {b.google_rating && <span className="flex items-center gap-1 shrink-0">⭐ {b.google_rating}</span>}
                   </div>
                 </div>
 
-                <div className="flex-1 flex flex-col items-start md:items-center justify-center">
-                  <span className={`badge ${
-                    opp.stage === 'Won' ? 'bg-green-500/10 text-green-500' :
-                    opp.stage === 'Interested' ? 'bg-blue-500/10 text-blue-500' :
-                    opp.stage === 'Needs review' ? 'bg-amber-500/10 text-amber-500' :
-                    opp.stage === 'No response' ? 'bg-gray-500/10 text-gray-500' :
-                    'badge-neutral'
-                  }`}>{opp.stage}</span>
-                </div>
+                <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Channels
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {platforms.map(p => {
+                      const status = platformStatuses[p]
+                      let dotColor = 'bg-slate-200'
+                      if (status === 'due') dotColor = 'bg-amber-400'
+                      else if (status === 'replied') dotColor = 'bg-blue-500'
+                      else if (status === 'sent') dotColor = 'bg-green-500'
+                      else if (status === 'archived') dotColor = 'bg-slate-400'
+                      else if (!status) dotColor = 'bg-slate-100 opacity-50'
 
-                <div className="flex-1 flex items-center justify-end gap-3 text-sm">
-                  {latestThread ? (
-                    <div className="flex flex-col items-end">
-                      <div className="flex items-center gap-2">
-                        <MessageSquare size={14} className="text-muted" />
-                        <span className="font-medium">{latestThread.platform}</span>
-                      </div>
-                      <div className="text-xs text-muted mt-1">{latestThread.status}</div>
-                    </div>
-                  ) : (
-                    <div className="text-muted text-xs">No active threads</div>
-                  )}
+                      return (
+                        <div 
+                          key={p} 
+                          className="flex items-center justify-center w-7 h-7 rounded bg-slate-50 border border-slate-200"
+                          title={`${p}${status ? `: ${status}` : ''}`}
+                        >
+                          <div className={`w-2.5 h-2.5 rounded-full ${dotColor}`}></div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </Link>
             )
