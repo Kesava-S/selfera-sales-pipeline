@@ -66,52 +66,86 @@ function MyAccount({ me }: { me: Profile }) {
 function Team({ team, note, meId }: { team: Member[]; note: string | null; meId: string }) {
   const [inviting, setInviting] = useState(false)
   const [editing, setEditing] = useState<Member | null>(null)
-  const [activeTab, setActiveTab] = useState<'admin' | 'sales' | 'consultant'>('sales')
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'sales' | 'consultant' | null>(null)
   
   const sorted = [...team].sort((a, z) => Number(z.active) - Number(a.active) || a.fullName.localeCompare(z.fullName))
-  const filtered = sorted.filter(m => m.role === activeTab)
+  const filtered = selectedRole ? sorted.filter(m => m.role === selectedRole) : []
+
+  if (selectedRole) {
+    return (
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setSelectedRole(null)}
+              className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-500"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <h2 className="font-semibold capitalize">{selectedRole} Team</h2>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setInviting(true)} disabled={!!note}><UserPlus size={16} /> Add person</button>
+        </div>
+        
+        {note && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{note}</p>}
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted py-4 col-span-full">No users in this category.</p>
+          ) : (
+            filtered.map(m => (
+              <div key={m.id} onClick={() => setEditing(m)} className="card cursor-pointer hover:border-primary transition-colors flex flex-col gap-1 p-4 shadow-sm border border-slate-200 rounded-xl">
+                <div className="font-semibold text-slate-900 flex items-center justify-between">
+                  {m.fullName || 'No name'}
+                  {m.id === meId && <span className="text-xs font-normal text-muted bg-slate-100 px-2 py-0.5 rounded-full">You</span>}
+                </div>
+                <div className="text-sm text-slate-500 truncate" title={m.email}>{m.email}</div>
+                <div className="text-xs font-medium mt-2">
+                  {!m.active ? <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md">Disabled</span> : m.invited ? <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Invite sent</span> : <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Active</span>}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {inviting && <InviteModal onClose={() => setInviting(false)} defaultRole={selectedRole} />}
+        {editing && <EditMember member={editing} isMe={editing.id === meId} onClose={() => setEditing(null)} />}
+      </section>
+    )
+  }
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold">Team</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setInviting(true)} disabled={!!note}><UserPlus size={16} /> Add person</button>
+        <h2 className="font-semibold">Team Management</h2>
       </div>
-      {note && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{note}</p>}
       
-      <div className="flex gap-2 border-b border-slate-200 pb-2">
-        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'admin' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('admin')}>Admin</button>
-        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'sales' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('sales')}>Sales</button>
-        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'consultant' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('consultant')}>Consultant</button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.length === 0 ? (
-          <p className="text-sm text-muted py-4 col-span-full">No users in this category.</p>
-        ) : (
-          filtered.map(m => (
-            <div key={m.id} onClick={() => setEditing(m)} className="card cursor-pointer hover:border-primary transition-colors flex flex-col gap-1 p-4 shadow-sm border border-slate-200 rounded-xl">
-              <div className="font-semibold text-slate-900 flex items-center justify-between">
-                {m.fullName || 'No name'}
-                {m.id === meId && <span className="text-xs font-normal text-muted bg-slate-100 px-2 py-0.5 rounded-full">You</span>}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {ROLES.map(role => {
+          const count = team.filter(m => m.role === role.value).length;
+          return (
+            <div 
+              key={role.value} 
+              onClick={() => setSelectedRole(role.value as any)} 
+              className="card cursor-pointer hover:border-primary transition-colors p-5 shadow-sm border border-slate-200 rounded-xl flex items-center justify-between"
+            >
+              <div>
+                <div className="font-semibold text-lg text-slate-900">{role.label}</div>
+                <div className="text-sm text-slate-500 mt-1">{count} {count === 1 ? 'member' : 'members'}</div>
               </div>
-              <div className="text-sm text-slate-500 truncate" title={m.email}>{m.email}</div>
-              <div className="text-xs font-medium mt-2">
-                {!m.active ? <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md">Disabled</span> : m.invited ? <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Invite sent</span> : <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Active</span>}
+              <div className="text-slate-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
               </div>
             </div>
-          ))
-        )}
+          )
+        })}
       </div>
-
-      {inviting && <InviteModal onClose={() => setInviting(false)} />}
-      {editing && <EditMember member={editing} isMe={editing.id === meId} onClose={() => setEditing(null)} />}
     </section>
   )
 }
 
-function InviteModal({ onClose }: { onClose: () => void }) {
-  const [v, setV] = useState({ email: '', fullName: '', role: 'sales' })
+function InviteModal({ onClose, defaultRole }: { onClose: () => void; defaultRole?: string }) {
+  const [v, setV] = useState({ email: '', fullName: '', role: defaultRole || 'sales' })
   const { run, pending, error } = useAction()
   return (
     <Modal title="Add person" open onClose={onClose}>
