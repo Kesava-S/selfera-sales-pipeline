@@ -66,32 +66,44 @@ function MyAccount({ me }: { me: Profile }) {
 function Team({ team, note, meId }: { team: Member[]; note: string | null; meId: string }) {
   const [inviting, setInviting] = useState(false)
   const [editing, setEditing] = useState<Member | null>(null)
+  const [activeTab, setActiveTab] = useState<'admin' | 'sales' | 'consultant'>('sales')
+  
   const sorted = [...team].sort((a, z) => Number(z.active) - Number(a.active) || a.fullName.localeCompare(z.fullName))
+  const filtered = sorted.filter(m => m.role === activeTab)
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold">Team</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setInviting(true)} disabled={!!note}><UserPlus size={16} /> Add person</button>
       </div>
       {note && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{note}</p>}
-      <div className="table-wrap">
-        <table className="table">
-          <tbody>
-            {sorted.map(m => (
-              <tr key={m.id} className="cursor-pointer" onClick={() => setEditing(m)}>
-                <td className={m.active ? '' : 'text-slate-400'}>
-                  <div className="font-medium">{m.fullName || 'No name'}{m.id === meId && <span className="text-muted font-normal"> (you)</span>}</div>
-                  <div className="text-xs text-muted">{m.email}</div>
-                </td>
-                <td className="text-sm">{roleLabel(m.role)}</td>
-                <td className="text-right text-xs">
-                  {!m.active ? <span className="text-slate-400">Switched off</span> : m.invited ? <span className="text-amber-700">Invite sent</span> : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
+        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'admin' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('admin')}>Admin</button>
+        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'sales' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('sales')}>Sales</button>
+        <button className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'consultant' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('consultant')}>Consultant</button>
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted py-4 col-span-full">No users in this category.</p>
+        ) : (
+          filtered.map(m => (
+            <div key={m.id} onClick={() => setEditing(m)} className="card cursor-pointer hover:border-primary transition-colors flex flex-col gap-1 p-4 shadow-sm border border-slate-200 rounded-xl">
+              <div className="font-semibold text-slate-900 flex items-center justify-between">
+                {m.fullName || 'No name'}
+                {m.id === meId && <span className="text-xs font-normal text-muted bg-slate-100 px-2 py-0.5 rounded-full">You</span>}
+              </div>
+              <div className="text-sm text-slate-500 truncate" title={m.email}>{m.email}</div>
+              <div className="text-xs font-medium mt-2">
+                {!m.active ? <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md">Disabled</span> : m.invited ? <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Invite sent</span> : <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Active</span>}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       {inviting && <InviteModal onClose={() => setInviting(false)} />}
       {editing && <EditMember member={editing} isMe={editing.id === meId} onClose={() => setEditing(null)} />}
     </section>
@@ -120,9 +132,13 @@ function InviteModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+import { deleteMember } from '@/app/dashboard/actions'
+
 function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; onClose: () => void }) {
   const [v, setV] = useState({ fullName: member.fullName, role: member.role, capacity: member.capacity ?? 150, active: member.active })
   const { run, pending, error } = useAction()
+  const { run: runDelete, pending: deleting, error: deleteError } = useAction()
+  
   return (
     <Modal title={member.fullName || member.email} open onClose={onClose}>
       <form
@@ -155,10 +171,29 @@ function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; 
         {!isMe && !v.active && member.active && (
           <p className="text-xs text-muted">They will be logged out and blocked. Their history is kept. Reassign their leads in Lead Management.</p>
         )}
-        <ErrorNote error={error} />
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary btn-sm" disabled={pending}>{pending && <Spinner size={14} />} Save</button>
+        
+        <ErrorNote error={error || deleteError} />
+        
+        <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-100">
+          {!isMe ? (
+            <button 
+              type="button" 
+              className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+              disabled={deleting || pending}
+              onClick={() => {
+                if (confirm(`Are you sure you want to completely delete ${member.fullName || 'this user'}? This action cannot be undone.`)) {
+                  runDelete(() => deleteMember(member.id), onClose)
+                }
+              }}
+            >
+              {deleting ? 'Deleting...' : 'Delete User'}
+            </button>
+          ) : <div></div>}
+          
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending || deleting}>Cancel</button>
+            <button className="btn btn-primary btn-sm" disabled={pending || deleting}>{(pending && !deleting) && <Spinner size={14} />} Save</button>
+          </div>
         </div>
       </form>
     </Modal>

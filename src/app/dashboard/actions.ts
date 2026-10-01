@@ -195,6 +195,24 @@ export async function inviteMember(m: { email: string; fullName: string; role: s
   return rpc('update_member', { p_id: data.user!.id, p_full_name: m.fullName, p_role: m.role, p_capacity: null, p_active: true })
 }
 
+export async function deleteMember(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: role } = await supabase.rpc('get_user_role')
+  if (role !== 'admin') return { ok: false, error: 'You do not have permission to do this.' }
+  
+  let service
+  try { service = createServiceClient() } catch { return { ok: false, error: 'Add SUPABASE_SERVICE_ROLE_KEY to the server settings to delete users.' } }
+
+  const { error } = await service.auth.admin.deleteUser(id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  
+  // The trigger or cascade should delete the profile, but just in case:
+  await service.from('profiles').delete().eq('id', id)
+  
+  revalidatePath('/dashboard/settings')
+  return { ok: true }
+}
+
 export async function markNotificationsRead(ids: string[] | 'all') {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
