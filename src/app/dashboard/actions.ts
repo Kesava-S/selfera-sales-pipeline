@@ -6,7 +6,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -142,6 +143,56 @@ export async function saveTemplate(t: { id?: string | null; step: string; servic
 }
 export async function setTemplateActive(id: string, active: boolean) {
   return rpc('set_template_active', { p_id: id, p_active: active })
+}
+
+// ---------- Settings ----------
+export async function setMyName(fullName: string) {
+  return rpc('set_my_name', { p_full_name: fullName })
+}
+
+export async function setCadence(stepName: string, days: number) {
+  return rpc('set_cadence', { p_step_name: stepName, p_days: days })
+}
+
+// Admin only (checked in the database). Blocking log-in needs the service key.
+export async function updateMember(m: { id: string; fullName: string; role: string; capacity: number | null; active: boolean }): Promise<ActionResult> {
+  const res = await rpc('update_member', { p_id: m.id, p_full_name: m.fullName, p_role: m.role, p_capacity: m.capacity, p_active: m.active })
+  if (!res.ok) return res
+  try {
+    const { error } = await createServiceClient().auth.admin.updateUserById(m.id, { ban_duration: m.active ? 'none' : '876000h' })
+    if (error) return { ok: false, error: `Saved, but log-in could not be ${m.active ? 'restored' : 'blocked'}: ${error.message}` }
+  } catch {
+    return { ok: false, error: 'Saved, but log-in could not be changed. Add SUPABASE_SERVICE_ROLE_KEY to the server settings.' }
+  }
+  return { ok: true }
+}
+
+export async function inviteMember(m: { email: string; fullName: string; role: string }): Promise<ActionResult> {
+  const email = m.email.trim().toLowerCase()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: 'Enter a valid email address.' }
+  if (m.fullName.trim().length < 2) return { ok: false, error: 'Enter their name.' }
+  if (!['sales', 'consultant', 'admin'].includes(m.role)) return { ok: false, error: 'Pick a role.' }
+
+  // Only admins may invite
+  const supabase = await createClient()
+  const { data: role } = await supabase.rpc('get_user_role')
+  if (role !== 'admin') return { ok: false, error: 'You do not have permission to do this.' }
+
+  let service
+  try { service = createServiceClient() } catch { return { ok: false, error: 'Add SUPABASE_SERVICE_ROLE_KEY to the server settings to send invites.' } }
+
+  const origin = (await headers()).get('origin') || process.env.NEXT_PUBLIC_SITE_URL || ''
+  const { data, error } = await service.auth.admin.inviteUserByEmail(email, {
+    data: { full_name: m.fullName.trim() },
+    redirectTo: `${origin}/auth/set-password`,
+  })
+  if (error) {
+    if (/already been registered|exists/i.test(error.message)) return { ok: false, error: 'This email already has an account.' }
+    if (/rate limit/i.test(error.message)) return { ok: false, error: 'Too many invite emails sent. Wait an hour, or set up your own email service in Supabase.' }
+    return { ok: false, error: friendly(error.message) }
+  }
+  // The new profile is created as sales; set the chosen role and name
+  return rpc('update_member', { p_id: data.user!.id, p_full_name: m.fullName, p_role: m.role, p_capacity: null, p_active: true })
 }
 
 export async function markNotificationsRead(ids: string[] | 'all') {
