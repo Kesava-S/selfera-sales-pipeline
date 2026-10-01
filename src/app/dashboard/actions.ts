@@ -1,0 +1,163 @@
+'use server'
+
+// Every change made from the dashboard goes through here. Business rules and
+// access checks live in the database functions; these only call them and
+// turn database errors into short messages.
+
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+
+export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
+
+function friendly(message?: string): string {
+  if (!message) return 'Something went wrong. Please try again.'
+  if (/JWT|not logged in|401/i.test(message)) return 'Your session has expired. Please log in again.'
+  if (/permission denied/i.test(message)) return 'You do not have permission to do this.'
+  if (/duplicate key|already exists/i.test(message)) return 'This already exists.'
+  if (/fetch failed|ECONNREFUSED|network/i.test(message)) return 'Could not reach the database. Check your connection and try again.'
+  return message.replace(/^.*?ERROR:\s*/i, '')
+}
+
+async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<ActionResult<T>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc(fn, args)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard', 'layout')
+  return { ok: true, data: data as T }
+}
+
+async function currentUserId(): Promise<string | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user?.id ?? null
+}
+
+// ---------- Review queue ----------
+export async function approveLeads(businessIds: string[]) {
+  if (!businessIds.length) return { ok: false, error: 'Nothing selected.' } as ActionResult
+  return rpc('approve_import', { p_business_ids: businessIds })
+}
+
+// ---------- Stage, hand over, win ----------
+export async function changeStage(opportunityId: string, stage: string, reason: string) {
+  return rpc('set_stage', { p_opportunity_id: opportunityId, p_stage: stage, p_reason: reason || null, p_user_id: await currentUserId() })
+}
+
+export async function handOver(opportunityId: string, consultationAtIso: string) {
+  if (!consultationAtIso) return { ok: false, error: 'Pick the consultation date and time.' } as ActionResult
+  return rpc('hand_over', { p_opportunity_id: opportunityId, p_consultation_at: consultationAtIso, p_user_id: await currentUserId() })
+}
+
+export async function recordWin(opportunityId: string, servicesWon: string[], convertedThrough: string) {
+  if (!servicesWon.length) return { ok: false, error: 'Pick at least one service won.' } as ActionResult
+  if (!convertedThrough) return { ok: false, error: 'Pick how it was won.' } as ActionResult
+  return rpc('record_win', { p_opportunity_id: opportunityId, p_services_won: servicesWon, p_converted_through: convertedThrough, p_user_id: await currentUserId() })
+}
+
+export async function assignConsultant(opportunityId: string, consultantId: string) {
+  if (!consultantId) return { ok: false, error: 'Pick a consultant.' } as ActionResult
+  return rpc('assign_consultant', { p_opportunity_id: opportunityId, p_consultant_id: consultantId })
+}
+
+export async function addNote(opportunityId: string, body: string) {
+  if (!body.trim()) return { ok: false, error: 'The note is empty.' } as ActionResult
+  return rpc('add_note', { p_opportunity_id: opportunityId, p_body: body })
+}
+
+export async function newPitch(businessId: string, services: string[], sourceOpportunityId?: string) {
+  if (!services.length) return { ok: false, error: 'Pick at least one service.' } as ActionResult
+  return rpc<string>('new_pitch', { p_business_id: businessId, p_services: services, p_source_opportunity_id: sourceOpportunityId ?? null })
+}
+
+export async function startThread(opportunityId: string, platform: string) {
+  return rpc<string>('start_thread', { p_opportunity_id: opportunityId, p_platform: platform })
+}
+
+// ---------- Messages ----------
+// Used for "Mark as sent" (manual send) and "Mark as done" (phone / walk-in)
+export async function markSent(threadId: string, body: string, subject?: string | null, templateId?: string | null) {
+  if (!body.trim()) return { ok: false, error: 'Write the message (or call notes) first.' } as ActionResult
+  return rpc('record_outbound', {
+    p_thread_id: threadId,
+    p_body: body,
+    p_subject: subject || null,
+    p_template_id: templateId || null,
+    p_send_method: 'manual',
+    p_external_message_id: null,
+    p_sent_by: await currentUserId(),
+  })
+}
+
+// ---------- Business details ----------
+const EDITABLE = [
+  'business_name', 'business_type', 'tier', 'room_count', 'area', 'address', 'postcode', 'maps_link',
+  'phone', 'whatsapp_number', 'email', 'instagram', 'facebook', 'existing_website', 'company_type', 'contact_name', 'notes',
+] as const
+
+export async function updateBusiness(businessId: string, fields: Record<string, string | number | null>) {
+  const supabase = await createClient()
+  const clean: Record<string, unknown> = {}
+  for (const k of EDITABLE) {
+    if (k in fields) {
+      const v = fields[k]
+      clean[k] = typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v
+    }
+  }
+  if ('business_name' in clean && !clean.business_name) return { ok: false, error: 'Business name is required.' } as ActionResult
+  if (typeof clean.instagram === 'string') clean.instagram = (clean.instagram as string).replace(/^.*instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@/, '') || null
+  if (typeof clean.email === 'string') clean.email = (clean.email as string).toLowerCase()
+  if (typeof clean.room_count === 'string') clean.room_count = parseInt(clean.room_count as string) || null
+
+  const { error, count } = await supabase.from('businesses').update(clean, { count: 'exact' }).eq('id', businessId)
+  if (error) {
+    if (/duplicate key/i.test(error.message)) return { ok: false, error: 'Another business already uses this phone or email.' } as ActionResult
+    return { ok: false, error: friendly(error.message) } as ActionResult
+  }
+  if (count === 0) return { ok: false, error: 'You cannot edit this business.' } as ActionResult
+  revalidatePath('/dashboard', 'layout')
+  return { ok: true } as ActionResult
+}
+
+// ---------- Admin bulk actions ----------
+export async function bulkAssign(opportunityIds: string[], salesId: string | null) {
+  return rpc<number>('assign_sales', { p_opportunity_ids: opportunityIds, p_sales_id: salesId })
+}
+export async function bulkServices(opportunityIds: string[], services: string[]) {
+  return rpc<number>('set_services', { p_opportunity_ids: opportunityIds, p_services: services })
+}
+export async function bulkArchive(businessIds: string[], archived: boolean) {
+  return rpc<number>('set_archived', { p_business_ids: businessIds, p_archived: archived })
+}
+
+// ---------- Bookings ----------
+export async function linkBooking(bookingId: string, opportunityId: string) {
+  return rpc('link_booking', { p_booking_id: bookingId, p_opportunity_id: opportunityId })
+}
+
+// ---------- Notifications ----------
+// ---------- Templates (admin only, checked in the database) ----------
+export async function saveTemplate(t: { id?: string | null; step: string; service: string; platform: string; subject: string; body: string }) {
+  return rpc<string>('save_template', { p_id: t.id || null, p_step: t.step, p_service: t.service, p_platform: t.platform, p_subject: t.subject, p_body: t.body })
+}
+export async function setTemplateActive(id: string, active: boolean) {
+  return rpc('set_template_active', { p_id: id, p_active: active })
+}
+
+export async function markNotificationsRead(ids: string[] | 'all') {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' } as ActionResult
+  let q = supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id)
+  if (ids !== 'all') q = q.in('id', ids)
+  const { error } = await q
+  if (error) return { ok: false, error: friendly(error.message) } as ActionResult
+  return { ok: true } as ActionResult
+}
+
+// ---------- Account ----------
+export async function signOut() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  redirect('/login')
+}

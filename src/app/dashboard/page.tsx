@@ -1,77 +1,32 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { requireProfile } from '@/lib/auth'
 import { DashboardHome } from '@/components/v2/DashboardHome'
-export const dynamic = 'force-dynamic'
-
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 
-const OPEN_STAGES = ['Active', 'Interested', 'Consultation']
-
-const THREAD_FIELDS = `
-  id,
-  platform,
-  step,
-  status,
-  next_due_on,
-  last_inbound_at,
-  last_outbound_at,
-  opportunities!inner (
-    id,
-    stage,
-    business_id,
-    businesses (
-      id,
-      business_name,
-      business_type
-    )
-  )
-`
+export const dynamic = 'force-dynamic'
 
 export default async function Page() {
-  const supabase = await createClient()
+  const { supabase, user, profile } = await requireProfile()
+  if (!profile) return null
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const today = new Date().toISOString().slice(0, 10)
-
-  const [statusRes, serviceRes, dueRes, repliedRes] = await Promise.all([
+  const [status, services, newOutreach, followUps, replies] = await Promise.all([
     supabase.rpc('v_dashboard_status_counts', { p_user: user.id }),
     supabase.rpc('v_service_counts', { p_user: user.id }),
-    // New outreach and follow-ups due today or overdue
-    supabase
-      .from('threads')
-      .select(THREAD_FIELDS)
-      .lte('next_due_on', today)
-      .in('status', ['Not contacted', 'Awaiting reply'])
-      .order('next_due_on', { ascending: true })
-      .limit(200),
-    // Replies waiting for us
-    supabase
-      .from('threads')
-      .select(THREAD_FIELDS)
-      .eq('status', 'Replied')
-      .limit(200),
+    supabase.rpc('v_due_today', { p_tab: 'New outreach', p_limit: 200 }),
+    supabase.rpc('v_due_today', { p_tab: 'Follow-ups', p_limit: 200 }),
+    supabase.rpc('v_due_today', { p_tab: 'Replies', p_limit: 200 }),
   ])
-
-  const replies = (repliedRes.data || []).filter((t: any) =>
-    OPEN_STAGES.includes(t.opportunities?.stage) &&
-    t.last_inbound_at &&
-    (!t.last_outbound_at || t.last_inbound_at > t.last_outbound_at)
-  )
-
-  const dueThreads = [
-    ...(dueRes.data || []).filter((t: any) => OPEN_STAGES.includes(t.opportunities?.stage)),
-    ...replies,
-  ]
+  const loadError = [status, services, newOutreach, followUps, replies].find(r => r.error)?.error?.message ?? null
 
   return (
     <>
       <BreadcrumbSetter breadcrumbs={[{ label: 'Dashboard' }]} />
       <DashboardHome
-        statusCounts={statusRes.data?.[0] || {}}
-        serviceCounts={serviceRes.data || []}
-        dueThreads={dueThreads}
+        name={profile.full_name.split(' ')[0]}
+        role={profile.role}
+        counts={status.data?.[0] ?? {}}
+        services={services.data ?? []}
+        due={{ new: newOutreach.data ?? [], followups: followUps.data ?? [], replies: replies.data ?? [] }}
+        loadError={loadError}
       />
     </>
   )

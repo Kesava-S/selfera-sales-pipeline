@@ -1,0 +1,3 @@
+business_name,business_type,services_to_pitch,area,address,postcode,phone,whatsapp_number,email,instagram,facebook,existing_website,maps_link,rating,reviews_count,company_type,contact_name,tier,room_count,demo_link,notes
+Example Cafe,Cafe,Website,Richmond,1 Example Street,TW9 1AA,07700 900000,,hello@example.com,examplecafe,,,,4.8,120,Unknown,Sam,,,,Delete this example row
+Example Hotel,Hotel,End-to-End Automation;Custom Dashboard,Reading,,RG1 1AA,0118 000 0000,,info@examplehotel.co.uk,,examplehotelpage,examplehotel.co.uk,,4.3,800,Limited company,,3 star,40,,Delete this example row

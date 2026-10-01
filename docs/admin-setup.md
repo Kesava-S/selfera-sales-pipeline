@@ -15,10 +15,17 @@ Open each file, copy all of it, paste, click **Run**, and wait for "Success" bef
 | 6 | `19_v2_missing_pieces.sql` | |
 | 7 | `20_v2_cadence_rules.sql` | |
 | 8 | `21_v2_auth_trigger.sql` | New users get a profile automatically (role: sales). |
-| 9 | `22_v2_fixes.sql` | Fixes from testing, plus the starter message templates. |
-| 10 | `supabase/import_marketing_leads.sql` | All 152 real leads, as "Needs review". The last result shows counts per service and type. |
+| 9 | `22_v2_fixes.sql` | Fixes from testing, plus the 34 starter message templates. |
+| 10 | `23_v2_app_functions.sql` | Functions the screens use (import, review queue, notes, lists, counts) and tighter access rules. |
+| 11 | `24_v2_insights.sql` | Numbers for the Insights page. |
+| 12 | `25_v2_templates.sql` | Templates screen: "All platforms" templates and admin-only editing. |
+| 13 | `26_v2_service_templates.sql` | 11 more templates: Micro Automation, End-to-End, Custom Dashboard, Reply and Upsell. Never overwrites your edits. |
 
-**Do not run:** `14_v2_data_migration.sql` (old v1 data) or `supabase/seed_sample_cafes.sql` (test data, it clashes with the real leads).
+Files 19 to 26 are safe to run again, as long as 23 to 26 run last, in that order.
+
+**Do not run:** `14_v2_data_migration.sql` (old v1 data), `supabase/seed_sample_cafes.sql` (test data) or `supabase/import_marketing_leads.sql` (only if you want the 152 spreadsheet leads; the app can import them itself through Lead Management > Import CSV).
+
+After running, turn on **Realtime** for the tables `messages` and `notifications` (Supabase > Database > Publications > supabase_realtime) if file 23 could not add them. Without it, new replies show after a page refresh instead of instantly.
 
 ## 2. Turn off public sign-ups
 
@@ -68,4 +75,4 @@ select stage, count(*) from "sales-pipe".opportunities group by stage;
 select count(*) as templates from "sales-pipe".templates;
 ```
 
-Expected after setup: your admin row, 152 pitches in "Needs review", 34 templates.
+Expected after setup: your admin row, 0 pitches, 45 templates.

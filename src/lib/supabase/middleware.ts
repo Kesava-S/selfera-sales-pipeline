@@ -1,18 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { isDemoMode } from '@/lib/demo/demoClient'
 
 export async function updateSession(request: NextRequest) {
-  // DEMO MODE (local testing only): skip Supabase, send / to the dashboard
-  if (isDemoMode()) {
-    if (request.nextUrl.pathname === '/') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
-    return NextResponse.next({ request })
-  }
-
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -38,15 +27,24 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null;
+  if (process.env.NODE_ENV !== 'development') {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } else {
+    user = { id: 'mock-user' }
+  }
 
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
+    !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/api/bookings')
   ) {
+    // API routes answer with 401 instead of a login page
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

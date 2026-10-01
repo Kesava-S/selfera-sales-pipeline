@@ -4,38 +4,16 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
+// Sign-in only. New staff are invited by an admin in Supabase (no public sign-up).
 export async function login(formData: FormData) {
   const supabase = await createClient()
+  const email = String(formData.get('email') || '').trim()
+  const password = String(formData.get('password') || '')
+  if (!email || !password) redirect('/login?error=' + encodeURIComponent('Enter your email and password.'))
 
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
-  }
-
-  const { error } = await supabase.auth.signInWithPassword(data)
-
-  if (error) {
-    return redirect('/login?error=Could not authenticate user')
-  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) redirect('/login?error=' + encodeURIComponent('Wrong email or password.'))
 
   revalidatePath('/', 'layout')
-  redirect('/')
-}
-
-export async function signup(formData: FormData) {
-  const supabase = await createClient()
-
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
-  }
-
-  const { error } = await supabase.auth.signUp(data)
-
-  if (error) {
-    return redirect('/login?error=Could not sign up user')
-  }
-
-  revalidatePath('/', 'layout')
-  redirect('/')
+  redirect('/dashboard')
 }

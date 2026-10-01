@@ -1,142 +1,53 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Sliders,
-  BarChart2,
-} from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2 } from 'lucide-react'
 
-export function Sidebar({ userProfile }: { userProfile: { full_name: string, role: string } }) {
+const NAV = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
+  { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
+  { href: '/dashboard/templates', label: 'Templates', icon: FileText },
+  { href: '/dashboard/settings', label: 'Settings', icon: Sliders },
+]
+
+const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
+
+export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string }; reviewCount: number }) {
   const pathname = usePathname()
-  const [openTasksCount, setOpenTasksCount] = useState<number>(0)
-
-  useEffect(() => {
-    let isMounted = true
-    const fetchCount = async () => {
-      try {
-        const { createClient } = await import('@/lib/supabase/client')
-        const supabase = createClient()
-        const { count, error } = await supabase
-          .from('tasks')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'open')
-        if (!error && count !== null && isMounted) {
-          setOpenTasksCount(count)
-        }
-      } catch {
-        // Safe fallback
-      }
-    }
-    fetchCount()
-    const interval = setInterval(fetchCount, 15000)
-    return () => {
-      isMounted = false
-      clearInterval(interval)
-    }
-  }, [pathname])
-
-  const navItems = [
-    {
-      href: '/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      badge: openTasksCount > 0 ? openTasksCount : null,
-    },
-    {
-      href: '/dashboard/leads',
-      label: 'Lead Management',
-      icon: Users,
-    },
-    {
-      href: '/dashboard/insights',
-      label: 'Insights',
-      icon: BarChart2,
-    },
-    {
-      href: '/dashboard/templates',
-      label: 'Templates',
-      icon: FileText,
-    },
-    {
-      href: '/dashboard/settings',
-      label: 'Settings',
-      icon: Sliders,
-    },
-  ]
+  const close = () => document.querySelector('.sidebar')?.classList.remove('open')
 
   return (
     <aside className="sidebar">
-      {/* Brand Header */}
-      <Link href="/dashboard" className="sidebar-logo" title="Selfera. - Sales Pipeline">
+      <Link href="/dashboard" className="sidebar-logo" onClick={close}>
         <div className="sidebar-logo-icon">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Selfera Logo" />
+          <img src="/logo.png" alt="" />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div
-            style={{
-              fontSize: '1.25rem',
-              fontWeight: 800,
-              letterSpacing: '-0.03em',
-              color: '#0f172a',
-              lineHeight: 1.1,
-            }}
-          >
-            Selfera<span style={{ color: '#0071e3' }}>.</span>
-          </div>
-          <div
-            style={{
-              fontSize: '0.725rem',
-              fontWeight: 600,
-              color: '#64748b',
-              letterSpacing: '0.01em',
-              marginTop: '2px',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Sales Pipeline
-          </div>
+        <div className="flex flex-col">
+          <span className="text-xl font-extrabold leading-tight tracking-tight text-slate-900">
+            Selfera<span className="text-primary">.</span>
+          </span>
+          <span className="text-xs font-semibold text-slate-500">Sales Pipeline</span>
         </div>
       </Link>
 
-      {/* Navigation */}
       <nav className="sidebar-nav">
-        {navItems.map((item) => {
-          const isActive =
+        {NAV.map(item => {
+          const active =
             item.href === '/dashboard'
-              ? pathname === '/dashboard'
-              : item.href === '/dashboard/leads'
-              ? pathname.startsWith('/dashboard/leads')
+              ? pathname.startsWith('/dashboard') && !SECTION_PREFIXES.some(p => pathname.startsWith(p))
               : pathname.startsWith(item.href)
           const Icon = item.icon
-
+          const badge = item.href === '/dashboard/leads' && reviewCount > 0 ? reviewCount : null
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-            >
-              <Icon size={18} style={{ color: isActive ? 'var(--primary)' : 'var(--muted)' }} />
-              <span style={{ flex: 1 }}>{item.label}</span>
-              {item.badge !== null && item.badge !== undefined && (
-                <span
-                  style={{
-                    backgroundColor: isActive ? 'var(--primary)' : 'var(--muted-bg)',
-                    color: isActive ? '#ffffff' : 'var(--foreground)',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    padding: '0.15rem 0.5rem',
-                    borderRadius: '9999px',
-                    minWidth: '20px',
-                    textAlign: 'center',
-                  }}
-                >
-                  {item.badge}
+            <Link key={item.href} href={item.href} onClick={close} className={`nav-item ${active ? 'active' : ''}`}>
+              <Icon size={18} />
+              <span className="flex-1 whitespace-nowrap">{item.label}</span>
+              {badge !== null && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" title="Leads waiting for review">
+                  {badge}
                 </span>
               )}
             </Link>
@@ -144,44 +55,14 @@ export function Sidebar({ userProfile }: { userProfile: { full_name: string, rol
         })}
       </nav>
 
-      {/* Staff User Footer */}
       <div className="sidebar-footer">
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.75rem',
-            backgroundColor: 'var(--muted-bg)',
-            borderRadius: '10px',
-            border: '1px solid var(--card-border)',
-          }}
-        >
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--primary)',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              textTransform: 'uppercase'
-            }}
-          >
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-white">
             {userProfile.full_name.charAt(0)}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userProfile.full_name}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'capitalize' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-              {userProfile.role}
-            </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{userProfile.full_name}</div>
+            <div className="text-xs capitalize text-slate-500">{userProfile.role}</div>
           </div>
         </div>
       </div>

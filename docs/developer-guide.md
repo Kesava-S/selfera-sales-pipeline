@@ -27,8 +27,9 @@ A sales tool for Selfera. Staff reach out to small businesses on several platfor
 | `NEXT_PUBLIC_SUPABASE_SCHEMA` | browser + server | `sales-pipe` |
 | `N8N_WEBHOOK_URL` | server only | n8n "Send" webhook |
 | `N8N_WEBHOOK_SECRET` | server only | shared secret checked by n8n |
-| `SUPABASE_SERVICE_ROLE_KEY` | server only | **to add**, for the website booking route (4.9) |
-| `NEXT_PUBLIC_DEMO_MODE` | local only | `true` runs on sample data with no Supabase. **Never set in Vercel.** Remove it to use the real database. |
+| `SEND_API_PLATFORMS` | server only | Platforms that send through n8n, e.g. `Email,WhatsApp`. Empty = every platform uses "Copy + open app, then Mark as sent" |
+| `META_HUMAN_AGENT` | server only | `true` only if Meta approved the human agent tag (7-day reply window on Instagram / Facebook) |
+| `SUPABASE_SERVICE_ROLE_KEY` | server only | for the website booking route (5.3) |
 
 ### Database
 Follow `docs/admin-setup.md` (run order, first admin, adding staff). Then:
@@ -75,7 +76,13 @@ Call with `supabase.rpc('<name>', { ... })`. Access checks are inside each funct
 | `v_business_type_counts(p_service, p_user)` | service page | Type boxes |
 | `v_business_cards(p_service, p_type, p_filter, p_search, p_limit, p_offset)` | business list | Paged cards with platform statuses |
 | `v_due_today(p_tab, p_limit, p_offset)` | home | Tabs: `New outreach`, `Follow-ups`, `Replies` |
-| `record_inbound(...)` | **n8n only** | Incoming message |
+| `list_pitches(p_service, p_type, p_filter, p_search, p_platform, p_assigned, p_include_archived, p_limit, p_offset)` | every list screen | Paged, role-scoped list with platform statuses and total count |
+| `import_businesses(p_rows)` / `find_duplicates(p_rows)` | Add business, CSV import | Saves as Needs review; one bad row never stops the rest |
+| `add_note`, `start_thread`, `new_pitch` | business page | Note, start another platform, pitch another service |
+| `assign_sales`, `set_services`, `set_archived` | admin bulk actions | No bulk messaging, by design |
+| `insights(p_from, p_to, p_service, p_user)` | Insights page | Funnel, reply rate by platform and step, wins, templates. Admin can pick a person, others see their own |
+| `save_template(p_id, p_step, p_service, p_platform, p_subject, p_body)` / `set_template_active(p_id, p_active)` | Templates page | Admin only. One template per step + service + platform. No delete (switch Off) |
+| `record_inbound(...)` | **n8n only** | Incoming message: pauses other platforms, discards old drafts, STOP = Do not contact |
 | `daily_update()` | **n8n only**, 09:00 Mon to Fri | Drafts due follow-ups, marks No reply / Went cold / No response, upsell reminders. Sends nothing |
 
 Automatic: new website bookings are matched by phone or email (trigger), and new users get a `sales` profile (trigger).
@@ -84,97 +91,44 @@ Automatic: new website bookings are matched by phone or email (trigger), and new
 
 ## 5. What's done and what's left
 
-**Done:** database (migrations 13 to 22, tested), 152 real leads imported, login and route protection, demo mode, drill-down pages load real data, breadcrumbs, basic chat view.
+The Settings screen is **not in scope yet** (still being planned).
 
-Insights, Templates and Settings screens are **not in scope yet** (still being planned).
+### 5.1 Done and tested (local Postgres + PostgREST, logged in as admin, two salespeople and a consultant)
+- **Getting leads in:** Add business form (with duplicate check), CSV import in 4 steps (column matching, type mapping, error rows download, duplicates: skip / update / new pitch), `public/import-template.csv`, review queue with Approve (single or selected).
+- **Lead Management:** minimal table (Business, Platforms reached, Next due), expand row, show more columns, filters, paging, admin bulk Assign / Change services / Archive / Export CSV.
+- **Home:** Due today (New outreach, Follow-ups, Replies), status boxes (admin also Needs consultant, Unmatched bookings), service boxes, review queue banner, empty state.
+- **Drill-down:** service > business type > business cards with filter chips, status pages, Needs consultant queue, Unmatched bookings linking.
+- **Business page:** platform boxes, start another platform, Change stage, Hand over, Record win (works out As pitched / Expanded / Narrowed / Switched), Assign consultant, Add note, New pitch, Edit details, history.
+- **Chat:** step indicator, drafts filled with business and salesperson names, template picker, the right button per platform (`src/lib/sending.ts`), Copy + open app, Mark as sent, Phone / Walk-in Mark as done, PECR confirm, 24-hour window messages, read-only after hand-over, opted out blocked, live updates.
+- **Sending route** `/api/send`: checks again on the server (access, window, PECR, placeholders, opted out), sends through n8n, then records. If n8n fails nothing is recorded and the text stays.
+- **Insights:** date range (last 30 days by default), service, person (admin). Five numbers, funnel, reply rate by platform and by step, wins, templates (under 10 sends shows "Too few to judge"). Phone and Walk-in show "Not tracked" because call outcomes are notes, not replies.
+- **Templates:** tabs by message type, filters for service and platform, On/Off switch, edit subject (Email and All platforms) and body with placeholder buttons. Admin edits, others view. Most specific template wins, service first: service + platform > service + All platforms > General + platform > General + All platforms (drafts and the chat picker). "All platforms" covers WhatsApp, Instagram, Facebook and Email only; Phone and Walk-in use their own notes. Templates describe clients anonymously, never by name.
+- **Top bar:** notification bell (live), log out. Login is invite only (no sign-up button).
+- **Database:** every change goes through checked functions; staff can only read and change what they are assigned (plus the unassigned review queue for salespeople).
 
-### 5.1 Must fix first (things are broken)
-1. **Wrong column names.** The chat page and Lead Management query `phone_number`, `email_address`, `instagram_handle`. The real columns are `phone`, `email`, `instagram`.
-2. **CSV import saves nothing.** `/api/leads/import` uses the wrong columns and sends an empty `services_pitched`, which the database rejects. It also assigns every lead to the importer. See 5.4.
-3. **Our own messages are invisible in chat.** The bubble uses `var(--accent)`, which isn't defined.
-4. **Platform dots are always grey** on business cards. They check `due`/`sent`/`replied`. Use the real thread statuses (section 3).
-5. **Sidebar** polls the old `tasks` table every 15 seconds. Remove it.
-6. **Layout** falls back to `test@example.com`. Remove that.
+### 5.2 Connect the platforms (next step)
+- **n8n "Send" webhook** (`N8N_WEBHOOK_URL`, header `Authorization: Bearer N8N_WEBHOOK_SECRET`).
+  - **Receives:** `{ platform, to, threadId, externalThreadId, body, subject, templateName, sentBy }`.
+  - **Must reply:** `{ ok: true, message_id }`, or `{ ok: false, error }`.
+  - **Must only send:** the app records the message itself, so update `v2-outbound-sender.json` and remove its "Record Outbound" node.
+- **Turn platforms on:** add each one to `SEND_API_PLATFORMS` as it is connected.
+- **Inbound:** WhatsApp and Instagram exist in n8n. Add **Facebook** and **Email**. All call `record_inbound` with the service key.
+- **Echoes:** messages sent from the phone apps can arrive as "echo" events. Ignore them (the salesperson already clicked Mark as sent).
+- **WhatsApp first contact:** needs Meta-approved templates. Put the approved name in the template's `whatsapp_template_name`.
+- **Old workflow:** delete `n8n/sales-follow-ups-daily.json` (v1).
 
-### 5.2 Home
-- Add the **status row**: Needs reply · Interested · Consultation · Went cold · No response. Admins also see Needs consultant · Unmatched bookings. The data is already loaded, just not shown.
-- Clicking a status box opens the business list filtered by that status.
-- Due today items need an **Open** button and a platform icon. Consider switching to `v_due_today`.
-- Remove the empty "Performance" column.
-
-### 5.3 Service, type and business pages
-- **Service page:** breadcrumb shows "Workspace". Set it to `Dashboard › Website`.
-- **Business list:** use filter **chips** (All · Needs reply · Interested · Went cold · No response) instead of the dropdown.
-- **Business page:**
-  - Platform **boxes** with status colour, "Step X of 4" and the paused label.
-  - Show services pitched and won, assigned salesperson and consultant, and other pitches for the same business.
-- **Business page buttons:**
-  - Change stage → `set_stage`
-  - Hand over (date and time) → `hand_over`
-  - Record win (services multi-select + converted through) → `record_win`
-  - Add note → insert a `system` message
-  - New pitch → new `opportunities` row with stage `Needs review`
-  - Admin: Assign consultant → `assign_consultant`
-
-### 5.4 Lead Management
-- **Table:** minimal columns **Business · Platforms reached · Next due**. Expand arrow per row for the rest. "Show more columns" option.
-- **Filters:** type, service, stage, platform, assigned to. Paged.
-- **Admin bulk actions:** Assign · Change services pitched · Archive · Export CSV. **No bulk messaging.**
-- **Add business** form.
-- **Review queue** for `Needs review` rows: fix missing data, then **Approve** (single or selected) → `approve_import`.
-- **CSV import in 4 steps:**
-  1. Upload with column mapping.
-  2. Check errors.
-  3. Duplicates (by phone, email, or name + postcode): Skip / Update details / Add new pitch.
-  4. Save as `Needs review`.
-  - Add `public/import-template.csv`.
-  - Required columns: `business_name`, `business_type`, `services_to_pitch` (`;` separated).
-
-### 5.5 Chat view
-- **Step indicator:** First contact ✓ · Follow-up 1 ✓ · Follow-up 2 ○ · Final check ○.
-- **Pre-fill the composer** with the open draft. The database has already filled in `{business_name}` and `{sender_name}`.
-- Change the hint to: "Draft from template. Review before sending."
-- **Right button per platform:**
-  - Email: **Send**
-  - WhatsApp:
-    - **Send** within 24 hours of their last message
-    - otherwise **Send template** if the template has a `whatsapp_template_name`
-    - otherwise **Copy + Open WhatsApp** (`https://wa.me/44...?text=...`), then **Mark as sent**
-  - Instagram / Facebook: **Send** within 24 hours, otherwise **Copy + Open app**, then **Mark as sent**
-  - Phone / Walk-in: **Mark as done** with a note
-  - "Mark as sent" and "Mark as done" call `record_outbound` with `p_send_method = 'manual'`.
-- **Messages to show:**
-  - "Window closed, reply in the app" when the API can't send.
-  - For sole trader + Email: "Sole traders need prior consent for marketing emails (PECR). Continue only if they agreed."
-- **Live updates:** Supabase Realtime on `messages` for the open thread.
-
-### 5.6 Top bar
-- **Notification bell:** unread count, list, mark as read, click opens `link`.
-- **Types:** `new_reply`, `booking_matched`, `booking_unmatched`, `needs_consultant`, `assigned_to_you`, `upsell_due`.
-
-### 5.7 Sending (`/api/send`)
-- **Already built:** it checks the user, forwards to n8n, and keeps the webhook secret server-side.
-- **n8n "Send" workflow:** add the Instagram, Facebook and Email branches. Only WhatsApp exists now. It must call `record_outbound` after a successful send.
-- **On failure:** return the error to the app and keep the draft.
-
-### 5.8 n8n
-- **Inbound:** WhatsApp and Instagram exist. Add **Facebook** and **Email**. All call `record_inbound` with the service key.
-- **Echoes:** messages sent from the phone apps can arrive as "echo" events. Store them as outbound with `send_method = manual`, and don't count them as replies.
-- **Daily:** `v2-daily-cron.json` calls `daily_update()`. Check it runs at 09:00 Europe/London.
-- **Old workflow:** delete `sales-follow-ups-daily.json` (it's for v1).
-
-### 5.9 Website booking form (selfera.co.uk)
-- Add a server route, e.g. `POST /api/bookings`. It checks a shared secret, then inserts into `consultation_bookings` with the **service role key**.
+### 5.3 Website booking form (selfera.co.uk)
+- Add `POST /api/bookings`. The middleware already lets it through without a login.
+- **The route:** checks a shared secret, then inserts into `consultation_bookings` using `createServiceClient()`.
 - **Fields:** `name`, `business_name`, `email`, `phone`, `booked_for`, `message`.
-- **The website must never write with the anon key.**
-- **Matching is automatic** (trigger). A match moves the pitch to Consultation and notifies the admin and the salesperson.
+- **Matching is automatic** (trigger).
 
-### 5.10 Clean-up
-- **Delete the old v1 components** that are no longer used: `TodayTasksView`, `LeadsView`, `LeadDetailView`, `CompanyLeadsView`, `AddLeadView`, `AddLeadModal`, `EditLeadModal`, `SendFollowupModal`, `ReplyChannelModal`, `ChangeServiceModal`, `TemplatesView`, `TemplateModal`, `CompanyAutocompleteInput`. Check each one before deleting.
-- **Remove `@types/pg` and `pg`** from `package.json` if nothing uses them.
-- **Don't run `supabase/seed_sample_cafes.sql` on the real database.** It clashes with the real leads.
-
----
+### 5.4 Clean-up still open
+- `supabase/migrations/merged_for_live.sql` holds older function versions. Do not run it after 24 or 25 (it would undo them). Delete it at the end.
+- `next.config.ts` has `typescript.ignoreBuildErrors: true`, an `eslint` key that Next 16 no longer accepts, and a v1 rewrite for `/leads/:id`.
+  - Remove all three, so build errors are not hidden.
+  - The app builds cleanly without them.
+- **Old v1 components** are no longer used. Delete them after a final check: `TodayTasksView`, `LeadsView`, `LeadDetailView`, `CompanyLeadsView`, `AddLeadView`, `AddLeadModal`, `AddLeadModalProvider`, `EditLeadModal`, `SendFollowupModal`, `ReplyChannelModal`, `ChangeServiceModal`, `TemplatesView` (the one in `src/components/`, not `v2/`), `TemplateModal`, `CompanyAutocompleteInput`, `EnvWarningBanner`.
 
 ## 6. Test before go-live
 

@@ -1,234 +1,319 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Send, MessageSquare, AlertCircle, CheckCircle, ChevronDown, ListPlus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone } from 'lucide-react'
+import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
+import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
+import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
+import { getSendRule, needsPecrConfirm } from '@/lib/sending'
+import { facebookLink, instagramLink, isUkMobile, mailtoLink, telLink, whatsappLink } from '@/lib/contact'
+import { markSent } from '@/app/dashboard/actions'
+import { createClient } from '@/lib/supabase/client'
+import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge } from '@/components/ui'
+import type { Profile } from '@/lib/auth'
 
-export function ChatInterface({ thread, activeDraft, templates = [], allThreads = [] }: { thread: any, activeDraft: any, templates?: any[], allThreads?: any[] }) {
-  const opp = thread.opportunities
-  const b = opp.businesses
+type Msg = { id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string }
+type Template = { id: string; name: string; platform: string; step: string; services: string[]; subject: string | null; body: string; whatsapp_template_name: string | null }
+
+const STEP_ORDER = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
+
+export function ChatInterface({
+  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent,
+}: {
+  thread: any; opp: any; draft: any; templates: Template[]; siblings: { id: string; platform: string; status: string }[]
+  people: { id: string; full_name: string }[]; me: Profile; senderName: string; apiPlatforms: string[]; humanAgent: boolean
+}) {
   const router = useRouter()
-  const [isSending, setIsSending] = useState(false)
-  const [draftBody, setDraftBody] = useState(activeDraft?.body || '')
-  const [subject, setSubject] = useState(activeDraft?.subject || '')
-  const [selectedTemplate, setSelectedTemplate] = useState(activeDraft?.template_id || '')
-  
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSending(true)
+  const b = opp.businesses
+  const platform: string = thread.platform
+  const messages: Msg[] = thread.messages
+  const bottom = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLTextAreaElement>(null)
+
+  const fill = (text: string) => fillPlaceholders(text, { business_name: b.business_name, sender_name: senderName, area: b.area, contact_name: b.contact_name })
+
+  // Pick the template that matches the next step, if there is no draft
+  const stepNow = thread.status === 'Replied' ? 'Reply' : thread.step >= 4 ? null : nextStepLabel(thread.step)
+  const defaultTemplate = !draft ? templates.find(t => t.step === stepNow) : undefined
+
+  const [templateId, setTemplateId] = useState<string>(draft?.template_id || defaultTemplate?.id || '')
+  const [body, setBody] = useState<string>(draft ? fill(draft.body) : defaultTemplate ? fill(defaultTemplate.body) : '')
+  const [subject, setSubject] = useState<string>(draft?.subject ? fill(draft.subject) : platform === 'Email' && defaultTemplate?.subject ? fill(defaultTemplate.subject) : '')
+  const [pecrOk, setPecrOk] = useState(false)
+  const [opened, setOpened] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const template = templates.find(t => t.id === templateId)
+  const rule = getSendRule({
+    platform, threadStatus: thread.status, stage: opp.stage, lastInboundAt: thread.last_inbound_at,
+    apiPlatforms, whatsappTemplateName: template?.whatsapp_template_name, humanAgent,
+  })
+
+  // Permissions (checked again in the database)
+  const handedOver = opp.stage === 'Consultation' && !!opp.assigned_consultant_id
+  const unassigned = !opp.assigned_sales_id && !opp.assigned_consultant_id
+  const canAct = me.role === 'admin' || me.id === opp.assigned_consultant_id || (me.id === opp.assigned_sales_id && !handedOver) || (me.role === 'sales' && unassigned)
+  const needsReview = opp.stage === 'Needs review'
+
+  // Where to send manually
+  const contactLink = useMemo(() => {
+    if (platform === 'WhatsApp') return whatsappLink(b.whatsapp_number || (isUkMobile(b.phone) ? b.phone : null), body)
+    if (platform === 'Instagram') return instagramLink(b.instagram)
+    if (platform === 'Facebook') return facebookLink(b.facebook)
+    if (platform === 'Email') return mailtoLink(b.email, subject, body)
+    if (platform === 'Phone') return telLink(b.phone)
+    return null
+  }, [platform, b, body, subject])
+  const missingContact =
+    platform === 'WhatsApp' && !b.whatsapp_number && !isUkMobile(b.phone) ? 'No WhatsApp number saved for this business.'
+      : platform === 'Instagram' && !b.instagram ? 'No Instagram handle saved.'
+        : platform === 'Facebook' && !b.facebook ? 'No Facebook page saved.'
+          : platform === 'Email' && !b.email ? 'No email address saved.'
+            : platform === 'Phone' && !b.phone ? 'No phone number saved.' : null
+
+  const unfilled = missingPlaceholders(body + ' ' + subject)
+  const pecr = needsPecrConfirm(platform, b.company_type)
+
+  // Live updates: new messages on this thread
+  useEffect(() => {
+    const supabase = createClient()
+    const ch = supabase
+      .channel(`thread-${thread.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'sales-pipe', table: 'messages', filter: `thread_id=eq.${thread.id}` }, () => router.refresh())
+      .subscribe()
+    return () => { supabase.removeChannel(ch).catch(() => {}) }
+  }, [thread.id, router])
+
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length])
+  useEffect(() => {
+    const el = area.current
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 320) + 'px' }
+  }, [body])
+
+  const pickTemplate = (id: string) => {
+    setTemplateId(id)
+    const t = templates.find(x => x.id === id)
+    if (t) {
+      setBody(fill(t.body))
+      setSubject(platform === 'Email' && t.subject ? fill(t.subject) : '')
+    }
+  }
+
+  const blockers = [
+    !body.trim() && (rule.mode === 'log' ? 'Write what happened first.' : 'Write a message first.'),
+    unfilled.length > 0 && `Fill in ${unfilled.join(', ')} first.`,
+    pecr && !pecrOk && rule.mode !== 'log' && 'Confirm consent first (sole trader / partnership).',
+    platform === 'Email' && rule.mode !== 'log' && !subject.trim() && 'Add a subject.',
+  ].filter(Boolean) as string[]
+
+  const afterSend = () => {
+    setBody('')
+    setSubject('')
+    setTemplateId('')
+    setOpened(false)
+    setPecrOk(false)
+    router.refresh()
+  }
+
+  const sendApi = async () => {
+    setBusy(true)
+    setError(null)
     try {
-      const response = await fetch('/api/send', {
+      const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          threadId: thread.id,
-          body: draftBody,
-          subject: subject || undefined,
-          templateId: selectedTemplate || undefined
-        })
+        body: JSON.stringify({ threadId: thread.id, body, subject: subject || null, templateId: templateId || null, mode: rule.mode, consentConfirmed: pecrOk }),
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to send')
-      }
-      
-      setDraftBody('') // Clear on success
-      setSubject('')
-      setSelectedTemplate('')
-      router.refresh()
-    } catch (err) {
-      console.error(err)
-      alert('Failed to send message.')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Could not send. Your message is still here.')
+      afterSend()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send. Your message is still here.')
     } finally {
-      setIsSending(false)
+      setBusy(false)
     }
   }
 
-  const handleTemplateSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const tId = e.target.value
-    setSelectedTemplate(tId)
-    const t = templates.find(temp => temp.id === tId)
-    if (t) {
-      setDraftBody(t.body)
-      if (t.subject) setSubject(t.subject)
+  const copyAndOpen = async () => {
+    try {
+      await navigator.clipboard.writeText(platform === 'Email' && subject ? `${subject}\n\n${body}` : body)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      // Clipboard can be blocked; the link still opens (WhatsApp and email carry the text anyway)
     }
+    if (contactLink) window.open(contactLink, platform === 'Email' || platform === 'Phone' ? '_self' : '_blank', 'noopener')
+    setOpened(true)
   }
 
-  const platforms = ['Email', 'WhatsApp', 'Instagram', 'Facebook']
+  const markAsSent = async () => {
+    setBusy(true)
+    setError(null)
+    const res = await markSent(thread.id, body, subject || null, templateId || null)
+    setBusy(false)
+    if (!res.ok) setError(res.error)
+    else afterSend()
+  }
+
+  // Templates grouped by step for the picker
+  const grouped = STEP_ORDER.map(s => [s, templates.filter(t => t.step === s)] as const).filter(([, ts]) => ts.length)
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-[calc(100vh-8rem)] flex flex-col">
+    <div className="flex h-[calc(100dvh-58px-3rem)] min-h-[560px] flex-col gap-3">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-4 border-b border-[var(--card-border)] shrink-0 gap-4">
-        <div className="flex items-center gap-4">
-          <Link href={`/dashboard/${opp.id}`} className="btn btn-outline btn-sm p-2">
-            <ArrowLeft size={16} />
-          </Link>
-          <div>
-            <h1 className="font-semibold text-lg">{b.business_name}</h1>
-            <div className="text-sm text-muted flex items-center gap-2">
-              <MessageSquare size={14} /> {thread.platform}
-              <span>•</span>
-              <span className={`badge ${
-                thread.status === 'Replied' ? 'bg-green-500/10 text-green-500' :
-                thread.status === 'Awaiting reply' ? 'bg-blue-500/10 text-blue-500' :
-                'badge-neutral'
-              }`}>{thread.status}</span>
-              <span>•</span>
-              <span>Step {thread.step}</span>
-            </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link href={`/dashboard/${opp.id}`} className="text-lg font-bold hover:text-primary">{b.business_name}</Link>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            <PlatformIcon platform={platform} /> {platform} <StatusBadge status={thread.status} /> <StageBadge stage={opp.stage} />
           </div>
         </div>
-        
-        {/* Platform Switcher */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          {platforms.map(p => {
-            const existing = allThreads.find(t => t.platform === p)
-            const isActive = thread.platform === p
-            
-            if (existing) {
-              return (
-                <Link 
-                  key={p} 
-                  href={`/dashboard/${opp.id}/thread/${existing.id}`}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                    isActive ? 'bg-[var(--accent)] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {p}
-                </Link>
-              )
-            } else {
-              // Could add an API route to create a new thread if needed, but for now just show disabled
-              return (
-                <button 
-                  key={p} 
-                  disabled
-                  title={`No ${p} thread`}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-slate-50 text-slate-400 opacity-50 cursor-not-allowed border border-dashed border-slate-200"
-                >
-                  + {p}
-                </button>
-              )
-            }
-          })}
+        <div className="flex flex-wrap gap-1.5">
+          {siblings.map(s => (
+            <Link
+              key={s.id}
+              href={`/dashboard/${opp.id}/thread/${s.id}`}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${s.id === thread.id ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[s.status]?.dot ?? 'bg-slate-300'}`} /> {s.platform}
+            </Link>
+          ))}
         </div>
       </div>
 
-      {/* Messages Window */}
-      <div className="flex-1 overflow-y-auto mb-4 pr-2 space-y-4">
-        {thread.messages?.length === 0 && (
-          <div className="text-center py-12 text-muted h-full flex flex-col items-center justify-center">
-            <MessageSquare size={32} className="opacity-30 mb-4" />
-            <p>No messages yet.</p>
-          </div>
-        )}
-        
-        {thread.messages?.map((msg: any) => {
-          const isOutbound = msg.direction === 'outbound'
-          const isSystem = msg.direction === 'system'
-
-          if (isSystem) {
-            return (
-              <div key={msg.id} className="flex justify-center my-4">
-                <div className="bg-gray-100 dark:bg-white/5 rounded-full px-4 py-1 text-xs text-muted flex items-center gap-2">
-                  <AlertCircle size={12} />
-                  {msg.body}
-                </div>
-              </div>
-            )
-          }
-
+      {/* Step indicator */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold">
+        {STEP_LABELS.map((s, i) => {
+          const done = thread.step > i
           return (
-            <div key={msg.id} className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl p-4 ${
-                isOutbound 
-                  ? 'bg-[var(--accent)] text-white rounded-br-sm' 
-                  : 'bg-gray-100 dark:bg-white/10 rounded-bl-sm'
-              }`}>
-                {msg.subject && <div className="font-semibold mb-1 text-sm opacity-90">{msg.subject}</div>}
-                <div className="whitespace-pre-wrap text-sm">{msg.body}</div>
-                <div className={`text-[10px] mt-2 text-right ${isOutbound ? 'text-white/70' : 'text-muted'}`}>
-                  {new Date(msg.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: false })}
+            <span key={s} className={`flex items-center gap-1.5 ${done ? 'text-emerald-700' : 'text-slate-400'}`}>
+              {done ? <Check size={14} /> : <span className="h-3 w-3 rounded-full border-2 border-current" />} {s}
+            </span>
+          )
+        })}
+        {thread.next_due_on && (thread.status === 'Awaiting reply' || thread.status === 'Not contacted') && (
+          <span className="ml-auto text-slate-500">Next due {formatDate(thread.next_due_on)}</span>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+        {messages.length === 0 && <p className="py-10 text-center text-sm text-slate-500">No messages yet. The first message is below.</p>}
+        {messages.map(m => {
+          if (m.direction === 'system') {
+            return <div key={m.id} className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
+          }
+          const ours = m.direction === 'outbound'
+          const who = ours ? people.find(p => p.id === m.sent_by)?.full_name : b.contact_name || b.business_name
+          return (
+            <div key={m.id} className={`flex ${ours ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
+                {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
+                <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
+                <div className={`mt-1 text-[11px] ${ours ? 'text-white/75' : 'text-slate-400'}`}>
+                  {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Phone' || platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+                    .filter(Boolean).join(' · ')}
                 </div>
               </div>
             </div>
           )
         })}
+        <div ref={bottom} />
       </div>
 
-      {/* Composer Area */}
-      <div className="shrink-0 pt-4 border-t border-[var(--card-border)]">
-        <form onSubmit={handleSend} className="card bg-gray-50 dark:bg-[#0a0a0a]">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-2">
-            <div className="font-semibold text-sm flex items-center gap-2">
-              {activeDraft ? (
-                <>
-                  <span className="badge bg-[var(--accent)]/10 text-[var(--accent)]">Draft: {activeDraft.step_label}</span>
-                  {activeDraft.status === 'needs_data' && (
-                    <span className="text-amber-500 text-xs flex items-center gap-1">
-                      <AlertCircle size={12} /> Missing data
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="badge badge-neutral">New Message</span>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:flex-none sm:min-w-[200px]">
-                <ListPlus size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-                <select 
-                  value={selectedTemplate}
-                  onChange={handleTemplateSelect}
-                  className="input w-full pl-8 py-1.5 text-xs bg-white dark:bg-black"
-                >
-                  <option value="">Insert template...</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+      {/* Banners */}
+      {thread.status === 'Paused' && (
+        <Banner tone="slate" icon={<PauseCircle size={16} />}>Paused: {String(thread.paused_reason || '').replace(/^Replied on/, 'replied on')}. Carry on the conversation there; you can still message here if needed.</Banner>
+      )}
+      {rule.mode === 'blocked' && <Banner tone="red" icon={<Ban size={16} />}>{rule.reason}</Banner>}
+      {needsReview && <Banner tone="amber" icon={<Info size={16} />}>This lead is waiting for review. Approve it on the business page first.</Banner>}
+      {!canAct && rule.mode !== 'blocked' && (
+        <Banner tone="slate" icon={<Lock size={16} />}>{handedOver && me.id === opp.assigned_sales_id ? 'Handed over to a consultant. You can read but not send.' : 'You can read this conversation but not send.'}</Banner>
+      )}
+
+      {/* Composer */}
+      {canAct && !needsReview && rule.mode !== 'blocked' && (
+        <div className="card space-y-3 !p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {draft && <span className="badge !bg-primary-bg !text-primary">Draft: {draft.step_label}</span>}
+            {rule.mode !== 'log' && (
+              <select className="input !w-auto min-w-56 !py-1.5" value={templateId} onChange={e => pickTemplate(e.target.value)}>
+                <option value="">{templates.length ? 'Pick a template…' : 'No templates for this platform'}</option>
+                {grouped.map(([step, ts]) => (
+                  <optgroup key={step} label={step}>
+                    {ts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            )}
+            <span className="ml-auto flex items-center gap-1 text-xs text-slate-500"><Info size={13} /> {rule.reason}</span>
           </div>
-          
-          {(subject || thread.platform === 'Email') && (
-            <div className="mb-2">
-              <input
-                type="text"
-                placeholder="Subject..."
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full bg-transparent border-b border-[var(--card-border)] focus:ring-0 p-2 text-sm font-medium"
-              />
-            </div>
+
+          {platform === 'Email' && rule.mode !== 'log' && (
+            <input className="input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} />
           )}
-          
           <textarea
-            className="w-full bg-transparent border-0 focus:ring-0 p-2 text-sm min-h-[100px] resize-y"
-            value={draftBody}
-            onChange={(e) => setDraftBody(e.target.value)}
-            placeholder="Type your message here..."
+            ref={area}
+            className="input min-h-24 resize-none"
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            placeholder={rule.mode === 'log' ? (platform === 'Phone' ? 'What happened on the call? Who did you speak to? Next step?' : 'What happened on the visit?') : 'Write your message…'}
           />
-          
-          <div className="flex justify-between items-center mt-3 pt-3 border-t border-[var(--card-border)]">
-            <div className="text-xs text-muted">
-              {activeDraft ? 'Review this message before sending. The system has drafted it based on your cadence.' : 'Write a custom message or pick a template above.'}
-            </div>
-            <button 
-              type="submit" 
-              className="btn btn-primary"
-              disabled={isSending || !draftBody.trim()}
-            >
-              {isSending ? 'Sending...' : (
-                <>Send <Send size={16} className="ml-2" /></>
-              )}
-            </button>
+          {rule.mode !== 'log' && body && <p className="text-xs text-slate-500">Draft from template. Review before sending.</p>}
+
+          {unfilled.length > 0 && <Banner tone="amber" icon={<AlertTriangle size={16} />}>Missing details: {unfilled.join(', ')}. Replace them in the text, or add the details to the business.</Banner>}
+          {missingContact && rule.mode !== 'log' && <Banner tone="amber" icon={<AlertTriangle size={16} />}>{missingContact} <Link href={`/dashboard/${opp.id}`} className="font-semibold underline">Add it</Link></Banner>}
+          {pecr && rule.mode !== 'log' && (
+            <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <input type="checkbox" className="mt-1" checked={pecrOk} onChange={e => setPecrOk(e.target.checked)} />
+              Sole traders need prior consent for marketing emails (PECR). Continue only if they agreed.
+            </label>
+          )}
+          <ErrorNote error={error} />
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {blockers.length > 0 && <span className="mr-auto text-xs text-slate-500">{blockers[0]}</span>}
+
+            {(rule.mode === 'api' || rule.mode === 'api-template') && (
+              <button className="btn btn-primary" disabled={busy || blockers.length > 0 || !!missingContact} onClick={sendApi}>
+                {busy ? <Spinner /> : <Send size={16} />} {rule.mode === 'api-template' ? 'Send template' : 'Send'}
+              </button>
+            )}
+
+            {rule.mode === 'manual' && (
+              <>
+                <button className="btn btn-secondary" disabled={blockers.length > 0 || !contactLink} onClick={copyAndOpen}>
+                  {copied ? <Check size={16} /> : platform === 'Email' ? <ExternalLink size={16} /> : <Copy size={16} />}
+                  {platform === 'Email' ? 'Open in email app' : `Copy + open ${platform}`}
+                </button>
+                <button className={`btn ${opened ? 'btn-primary' : 'btn-secondary'}`} disabled={busy || blockers.length > 0} onClick={markAsSent} title="Click after you have sent it">
+                  {busy ? <Spinner /> : <Check size={16} />} Mark as sent
+                </button>
+              </>
+            )}
+
+            {rule.mode === 'log' && (
+              <>
+                {platform === 'Phone' && contactLink && (
+                  <a href={contactLink} className="btn btn-secondary"><Phone size={16} /> Call {b.phone}</a>
+                )}
+                <button className="btn btn-primary" disabled={busy || blockers.length > 0} onClick={markAsSent}>
+                  {busy ? <Spinner /> : <Check size={16} />} Mark as done
+                </button>
+              </>
+            )}
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   )
+}
+
+function Banner({ tone, icon, children }: { tone: 'amber' | 'red' | 'slate'; icon: React.ReactNode; children: React.ReactNode }) {
+  const cls = tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : tone === 'red' ? 'border-red-200 bg-red-50 text-red-800' : 'border-slate-200 bg-slate-50 text-slate-700'
+  return <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${cls}`}><span className="mt-0.5 shrink-0">{icon}</span><span>{children}</span></div>
 }

@@ -2,129 +2,137 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { CONFIG } from '@/lib/config'
-import { CheckCircle, BarChart2 } from 'lucide-react'
+import { CheckCircle2, ChevronRight } from 'lucide-react'
+import { CONFIG, STATUS_PAGES } from '@/lib/config'
+import { dueLabel, stepLabel } from '@/lib/format'
+import { ErrorNote, PlatformIcon } from '@/components/ui'
 
-type TabType = 'new' | 'followup' | 'replies'
+type DueItem = { thread_id: string; opportunity_id: string; business_name: string; business_type: string; platform: string; step: number; status: string; next_due_on: string | null; draft_status: string | null }
+type ServiceRow = { service_name: string; businesses_count: number; replies_count: number; active_count: number; won_count: number }
 
-export function DashboardHome({ 
-  statusCounts, 
-  serviceCounts,
-  dueThreads 
-}: { 
-  statusCounts: any
-  serviceCounts: any[]
-  dueThreads: any[]
+const TABS = [
+  { key: 'new', label: 'New outreach' },
+  { key: 'followups', label: 'Follow-ups' },
+  { key: 'replies', label: 'Replies' },
+] as const
+
+export function DashboardHome({
+  name, role, counts, services, due, loadError,
+}: {
+  name: string; role: string; counts: Record<string, number>; services: ServiceRow[]
+  due: { new: DueItem[]; followups: DueItem[]; replies: DueItem[] }; loadError: string | null
 }) {
-  const [activeTab, setActiveTab] = useState<TabType>('new')
-
-  // Filter threads for the active tab
-  const newOutreach = dueThreads.filter(t => t.step === 0 && t.status !== 'Replied')
-  const followUps = dueThreads.filter(t => t.step > 0 && t.status !== 'Replied')
-  const replies = dueThreads.filter(t => t.status === 'Replied')
-
-  const displayedThreads = activeTab === 'new' ? newOutreach 
-    : activeTab === 'followup' ? followUps 
-    : replies
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>(due.replies.length ? 'replies' : due.new.length ? 'new' : 'followups')
+  const items = due[tab]
+  const isAdmin = role === 'admin'
+  const boxes = Object.entries(STATUS_PAGES).filter(([, s]) => !s.adminOnly || isAdmin)
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        
-        {/* Column 1: Due Today */}
-        <div className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-slate-800">Due Today</h2>
-          <div className="card flex flex-col min-h-[500px]">
-            <div className="flex gap-2 border-b border-[var(--card-border)] mb-4 px-2 pt-2">
-              <button 
-                onClick={() => setActiveTab('new')}
-                className={`pb-3 px-2 text-sm font-semibold transition-colors relative ${activeTab === 'new' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                New
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700">{newOutreach.length}</span>
-                {activeTab === 'new' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-blue-600 rounded-t-full" />}
-              </button>
-              <button 
-                onClick={() => setActiveTab('followup')}
-                className={`pb-3 px-2 text-sm font-semibold transition-colors relative ${activeTab === 'followup' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                Follow-ups
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700">{followUps.length}</span>
-                {activeTab === 'followup' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-blue-600 rounded-t-full" />}
-              </button>
-              <button 
-                onClick={() => setActiveTab('replies')}
-                className={`pb-3 px-2 text-sm font-semibold transition-colors relative ${activeTab === 'replies' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                Replies
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-green-100 text-green-700">{replies.length}</span>
-                {activeTab === 'replies' && <div className="absolute bottom-[-1px] left-0 w-full h-[2px] bg-blue-600 rounded-t-full" />}
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-2 flex-1 px-4 pb-4">
-              {displayedThreads.length === 0 ? (
-                <div className="flex flex-col items-center justify-center flex-1 text-slate-400 py-12">
-                  <CheckCircle size={32} className="mb-3 opacity-20" />
-                  <p className="text-sm font-medium">All caught up!</p>
-                </div>
-              ) : (
-                displayedThreads.map(thread => (
-                  <Link 
-                    href={`/dashboard/${thread.opportunities.id}/thread/${thread.id}`}
-                    key={thread.id} 
-                    className="flex flex-col gap-1.5 p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
-                        {thread.opportunities.businesses.business_name}
-                      </div>
-                      <span className="text-[10px] font-bold tracking-wider uppercase text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">
-                        {thread.platform}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 font-medium">
-                      {activeTab === 'new' ? 'First Contact' : activeTab === 'replies' ? 'Awaiting your reply' : `Follow-up ${thread.step}`}
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Column 2: Queue by service */}
-        <div className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-slate-800">Queue by service</h2>
-          <div className="flex flex-col gap-3">
-            {CONFIG.SERVICES.map(service => {
-              const stats = serviceCounts.find(s => s.service_name === service) || { replies_count: 0, active_count: 0, won_count: 0 }
-              
-              return (
-                <Link href={`/dashboard/service/${encodeURIComponent(service)}`} key={service} className="card p-5 hover:shadow-md transition-all duration-300 hover:border-blue-500/30 group cursor-pointer flex flex-col gap-4">
-                  <h3 className="font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">{service}</h3>
-                  <div className="flex justify-between items-center bg-slate-50 rounded-lg p-3 border border-slate-100">
-                    <div className="text-center flex-1 border-r border-slate-200 last:border-0">
-                      <div className="text-xl font-bold text-slate-700">{stats.active_count}</div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Active</div>
-                    </div>
-                    <div className="text-center flex-1 border-r border-slate-200 last:border-0">
-                      <div className="text-xl font-bold text-amber-600">{stats.replies_count}</div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Replies</div>
-                    </div>
-                    <div className="text-center flex-1">
-                      <div className="text-xl font-bold text-green-600">{stats.won_count}</div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Won</div>
-                    </div>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-
-
+    <div className="space-y-8">
+      <div>
+        <h1>Hello {name}</h1>
+        <p className="text-sm text-slate-500">Here&apos;s what needs you today.</p>
       </div>
+      <ErrorNote error={loadError} />
+
+      {Number(counts.needs_review ?? 0) > 0 && role !== 'consultant' && (
+        <Link href="/dashboard/leads?tab=review" className="card card-link flex items-center justify-between !border-amber-200 !bg-amber-50 !py-3">
+          <span className="text-sm font-semibold text-amber-900">{counts.needs_review} lead(s) waiting for review. Approve them to start outreach.</span>
+          <ChevronRight size={18} className="text-amber-700" />
+        </Link>
+      )}
+
+      {/* Due today */}
+      <section>
+        <h2 className="mb-3">Due today</h2>
+        <div className="card !p-0">
+          <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-2">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold ${tab === t.key ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                {t.label}
+                <span className={`rounded-full px-2 text-xs ${due[t.key].length ? 'bg-primary-bg text-primary' : 'bg-slate-100 text-slate-500'}`}>{due[t.key].length}</span>
+              </button>
+            ))}
+          </div>
+          {items.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
+              <CheckCircle2 size={18} className="text-emerald-500" /> Nothing here. All caught up.
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {items.map(i => {
+                const d = dueLabel(i.next_due_on)
+                return (
+                  <li key={i.thread_id} className="flex items-center gap-3 px-4 py-3">
+                    <PlatformIcon platform={i.platform} size={18} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold">{i.business_name}</div>
+                      <div className="text-xs text-slate-500">
+                        {i.business_type} · {tab === 'replies' ? `Replied on ${i.platform}` : `${stepLabel(i.step, i.status)} on ${i.platform}`}
+                        {tab !== 'replies' && d.tone === 'overdue' && <span className="ml-1 font-semibold text-red-600">· {d.text}</span>}
+                        {i.draft_status === 'needs_data' && <span className="ml-1 font-semibold text-amber-700">· draft needs details</span>}
+                      </div>
+                    </div>
+                    <Link href={`/dashboard/${i.opportunity_id}/thread/${i.thread_id}`} className="btn btn-primary btn-sm">Open</Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* Status boxes */}
+      <section>
+        <h2 className="mb-3">Status</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7">
+          {boxes.map(([key, s]) => {
+            const n = Number(counts[s.countKey] ?? 0)
+            return (
+              <Link key={key} href={`/dashboard/status/${key}`} className={`card card-link !p-4 ${s.adminOnly && n > 0 ? '!border-amber-300' : ''}`}>
+                <div className="text-2xl font-bold">{n}</div>
+                <div className="text-xs font-semibold text-slate-500">{s.label}</div>
+              </Link>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Services */}
+      <section>
+        <h2 className="mb-3">Services</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {CONFIG.SERVICES.map(name => {
+            const s = services.find(x => x.service_name === name)
+            return (
+              <Link key={name} href={`/dashboard/service/${encodeURIComponent(name)}`} className="card card-link flex flex-col gap-3 !p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">{name}</h3>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <Stat n={s?.replies_count} label="Replies" tone="text-emerald-700" />
+                  <Stat n={s?.active_count} label="Active" />
+                  <Stat n={s?.won_count} label="Won" tone="text-primary" />
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function Stat({ n, label, tone = '' }: { n?: number; label: string; tone?: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 py-2">
+      <div className={`text-lg font-bold ${tone}`}>{Number(n ?? 0)}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
     </div>
   )
 }

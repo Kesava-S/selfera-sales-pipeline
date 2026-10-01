@@ -109,47 +109,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- 7. v_due_today
-create or replace function "sales-pipe".v_due_today(
-  p_tab text,
-  p_limit int,
-  p_offset int
-)
-returns table (
-  thread_id uuid,
-  opportunity_id uuid,
-  business_name text,
-  platform text,
-  step int,
-  status text
-) as $$
-declare
-  v_uid uuid := auth.uid();
-  v_role text := "sales-pipe".get_user_role();
-begin
-  return query
-  select 
-    t.id as thread_id,
-    o.id as opportunity_id,
-    b.business_name,
-    t.platform,
-    t.step,
-    t.status
-  from "sales-pipe".threads t
-  join "sales-pipe".opportunities o on o.id = t.opportunity_id
-  join "sales-pipe".businesses b on b.id = o.business_id
-  where t.next_due_on <= current_date
-    and (
-      (p_tab = 'New outreach' and t.step = 1 and t.status = 'due') or
-      (p_tab = 'Follow-ups' and t.step > 1 and t.status = 'due') or
-      (p_tab = 'Replies' and t.status = 'replied') or
-      (p_tab = 'All')
-    )
-    and (v_role = 'admin' or o.assigned_sales_id = v_uid or o.assigned_consultant_id = v_uid)
-  order by t.next_due_on asc
-  limit p_limit offset p_offset;
-end;
-$$ language plpgsql security definer;
+-- 7. v_due_today: final version is in 23_v2_app_functions.sql
 
 -- 8. Assign consultant (admin only check)
 create or replace function "sales-pipe".assign_consultant(p_opportunity_id uuid, p_consultant_id uuid)

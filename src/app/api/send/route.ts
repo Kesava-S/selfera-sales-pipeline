@@ -1,77 +1,87 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getSendRule, needsPecrConfirm, parseApiPlatforms } from '@/lib/sending'
+import { isUkMobile, ukToInternational } from '@/lib/contact'
 
+// Sends ONE message through n8n after a person clicked Send, then records it.
+// Never called on a schedule. The n8n workflow must only send (it must not record).
 export async function POST(request: Request) {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
 
-    const { threadId, body, subject, templateId } = await request.json()
+  const input = await request.json().catch(() => null)
+  const threadId: string | undefined = input?.threadId
+  const body: string = String(input?.body ?? '').trim()
+  const subject: string | null = input?.subject ? String(input.subject).trim() : null
+  const templateId: string | null = input?.templateId || null
+  if (!threadId || !body) return NextResponse.json({ error: 'The message is empty' }, { status: 400 })
+  if (/\{[a-z_]+\}/.test(body + (subject ?? ''))) return NextResponse.json({ error: 'The message still has a {placeholder} in it' }, { status: 422 })
 
-    if (!threadId || !body) {
-      return NextResponse.json({ error: 'Missing threadId or body' }, { status: 400 })
-    }
+  // Reading the thread also checks this user may see it (database rules)
+  const { data: thread } = await supabase
+    .from('threads')
+    .select('id, platform, status, external_thread_id, last_inbound_at, opportunities (id, stage, businesses (phone, whatsapp_number, email, instagram, facebook, company_type))')
+    .eq('id', threadId)
+    .maybeSingle()
+  if (!thread) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+  const opp: any = thread.opportunities
+  const b: any = opp?.businesses
 
-    // Fetch thread platform
-    const { data: thread, error: threadErr } = await supabase
-      .from('threads')
-      .select('platform, opportunity_id')
-      .eq('id', threadId)
-      .single()
-
-    if (threadErr || !thread) {
-      return NextResponse.json({ error: 'Thread not found' }, { status: 404 })
-    }
-
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL
-
-    if (n8nWebhookUrl) {
-      // Hit n8n
-      const response = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.N8N_WEBHOOK_SECRET || ''}`
-        },
-        body: JSON.stringify({
-          threadId,
-          platform: thread.platform,
-          body,
-          subject,
-          templateId,
-          userId: user.id
-        })
-      })
-
-      if (!response.ok) {
-        console.error('n8n error:', await response.text())
-        return NextResponse.json({ error: 'Failed to send via n8n' }, { status: 500 })
-      }
-    } else {
-      console.warn('N8N_WEBHOOK_URL is missing. Simulating success by calling record_outbound directly.')
-      // Simulate success
-      const { error: rpcErr } = await supabase.rpc('record_outbound', {
-        p_thread_id: threadId,
-        p_body: body,
-        p_subject: subject || null,
-        p_template_id: templateId || null,
-        p_send_method: 'api',
-        p_external_message_id: 'local-' + Date.now(),
-        p_sent_by: user.id
-      })
-
-      if (rpcErr) {
-        console.error('Error simulating send:', rpcErr)
-        return NextResponse.json({ error: 'Failed to simulate send' }, { status: 500 })
-      }
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (err: any) {
-    console.error('API /send error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  const webhook = process.env.N8N_WEBHOOK_URL
+  const apiPlatforms = webhook ? parseApiPlatforms(process.env.SEND_API_PLATFORMS) : []
+  let templateName: string | null = null
+  if (templateId) {
+    const { data: t } = await supabase.from('templates').select('whatsapp_template_name').eq('id', templateId).maybeSingle()
+    templateName = t?.whatsapp_template_name ?? null
   }
+
+  // Same rule the screen uses, checked again here
+  const rule = getSendRule({
+    platform: thread.platform, threadStatus: thread.status, stage: opp.stage, lastInboundAt: thread.last_inbound_at,
+    apiPlatforms, whatsappTemplateName: templateName, humanAgent: process.env.META_HUMAN_AGENT === 'true',
+  })
+  if (rule.mode !== 'api' && rule.mode !== 'api-template') return NextResponse.json({ error: rule.reason }, { status: 422 })
+  if (needsPecrConfirm(thread.platform, b?.company_type) && input?.consentConfirmed !== true) {
+    return NextResponse.json({ error: 'Confirm the sole trader has agreed to marketing emails (PECR).' }, { status: 422 })
+  }
+
+  const to =
+    thread.platform === 'Email' ? b?.email
+      : thread.platform === 'WhatsApp' ? ukToInternational(b?.whatsapp_number || (isUkMobile(b?.phone) ? b?.phone : null))
+        : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
+  if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
+
+  // 1. Send through n8n
+  let externalId: string | null = null
+  try {
+    const res = await fetch(webhook!, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.N8N_WEBHOOK_SECRET || ''}` },
+      body: JSON.stringify({
+        platform: thread.platform, to, threadId, externalThreadId: thread.external_thread_id, body, subject,
+        templateName: rule.mode === 'api-template' ? templateName : null, sentBy: user.id,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || json?.ok === false) {
+      return NextResponse.json({ error: `Not sent: ${json?.error || `the ${thread.platform} service returned an error (${res.status})`}. Your message is still here.` }, { status: 502 })
+    }
+    externalId = json?.message_id ?? null
+  } catch {
+    return NextResponse.json({ error: `Not sent: could not reach the sending service. Your message is still here.` }, { status: 502 })
+  }
+
+  // 2. Record it (moves the follow-up step on)
+  const { error } = await supabase.rpc('record_outbound', {
+    p_thread_id: threadId, p_body: body, p_subject: subject, p_template_id: templateId,
+    p_send_method: 'api', p_external_message_id: externalId, p_sent_by: user.id,
+  })
+  if (error) {
+    return NextResponse.json({ error: `The message WAS sent, but saving it failed (${error.message}). Don't send it again; refresh the page.` }, { status: 500 })
+  }
+  revalidatePath('/dashboard', 'layout')
+  return NextResponse.json({ ok: true })
 }

@@ -1,26 +1,22 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { requireProfile } from '@/lib/auth'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
-import { TemplatesManager } from '@/components/v2/TemplatesManager'
+import { TemplatesView, type TemplateRow } from '@/components/v2/TemplatesView'
 
 export const dynamic = 'force-dynamic'
 
-export default async function Page() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+export default async function TemplatesPage() {
+  const { supabase, profile } = await requireProfile()
+  if (!profile) return null
 
-  const { data: templates } = await supabase
+  const { data, error } = await supabase
     .from('templates')
-    .select('*')
+    .select('id, name, platform, step, services, subject, body, is_active')
     .order('name')
 
   return (
     <>
       <BreadcrumbSetter breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Templates' }]} />
-      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <TemplatesManager initialTemplates={templates || []} />
-      </div>
+      <TemplatesView templates={(data as TemplateRow[]) || []} loadError={error?.message ?? null} isAdmin={profile.role === 'admin'} />
     </>
   )
 }
