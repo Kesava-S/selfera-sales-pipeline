@@ -48,7 +48,8 @@ export function getSendRule(opts: {
   if (platform === 'WhatsApp') {
     const open = hours <= REPLY_WINDOW_HOURS
     if (connected && open) return { mode: 'api', windowOpen: true, reason: 'They messaged in the last 24 hours, so you can reply here.' }
-    if (connected && whatsappTemplateName) return { mode: 'api-template', windowOpen: false, reason: `Outside the 24-hour window. Sends the approved template "${whatsappTemplateName}".` }
+    const activeTemplate = whatsappTemplateName || 'selfera_sales_pipeline_general'
+    if (connected && activeTemplate) return { mode: 'api-template', windowOpen: false, reason: `Outside 24h window. Sends approved template (${activeTemplate}).` }
     return {
       mode: 'manual',
       windowOpen: open,

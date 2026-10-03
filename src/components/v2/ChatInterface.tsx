@@ -328,7 +328,7 @@ export function ChatInterface({
 
             {(rule.mode === 'api' || rule.mode === 'api-template') && (
               <button className="btn btn-primary" disabled={busy || blockers.length > 0 || !!missingContact} onClick={sendApi}>
-                {busy ? <Spinner /> : <Send size={16} />} {rule.mode === 'api-template' ? 'Send template' : 'Send'}
+                {busy ? <Spinner /> : <Send size={16} />} {platform === 'WhatsApp' ? 'Send WhatsApp' : (rule.mode === 'api-template' ? 'Send template' : 'Send')}
               </button>
             )}
 

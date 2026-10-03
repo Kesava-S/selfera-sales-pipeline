@@ -50,6 +50,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
   let payload: any
 
   if (options.templateName) {
+    const lang = options.templateLanguage || process.env.WHATSAPP_DEFAULT_TEMPLATE_LANG || 'en'
     payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -57,7 +58,18 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       type: 'template',
       template: {
         name: options.templateName,
-        language: { code: options.templateLanguage || 'en_GB' },
+        language: { code: lang },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              {
+                type: 'text',
+                text: options.body,
+              },
+            ],
+          },
+        ],
       },
     }
   } else {

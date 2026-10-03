@@ -40,6 +40,9 @@ export async function POST(request: Request) {
     const { data: t } = await supabase.from('templates').select('whatsapp_template_name').eq('id', templateId).maybeSingle()
     templateName = t?.whatsapp_template_name ?? null
   }
+  if (!templateName && thread.platform === 'WhatsApp') {
+    templateName = process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+  }
 
   // Same rule the screen uses, checked again here
   const rule = getSendRule({
