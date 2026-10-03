@@ -41,7 +41,7 @@ export function CompanyAutocompleteInput({
         const { createClient } = await import('@/lib/supabase/client')
         const supabase = createClient()
         const { data, error } = await supabase
-          .from('leads')
+          .from('businesses')
           .select('business_name')
 
         if (!error && data && isMounted) {

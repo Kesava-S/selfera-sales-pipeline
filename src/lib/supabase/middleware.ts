@@ -27,12 +27,14 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  let user = null;
-  if (process.env.NODE_ENV !== 'development') {
-    const { data } = await supabase.auth.getUser()
-    user = data.user
-  } else {
-    user = { id: 'mock-user' }
+  let { data: { user } } = await supabase.auth.getUser()
+
+  if (!user && process.env.NODE_ENV === 'development') {
+    const { data: signInData } = await supabase.auth.signInWithPassword({
+      email: 'kesav@selfera.co.uk',
+      password: process.env.DATABASE_PASSWORD || 'Selfera@123!',
+    })
+    user = signInData?.user ?? null
   }
 
   if (

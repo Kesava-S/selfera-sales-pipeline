@@ -123,9 +123,9 @@ export function BusinessForm({
       {done ? (
         <div className="space-y-4">
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{done}</div>
-          <div className="flex justify-end gap-2">
-            <button className="btn btn-secondary" onClick={() => { setDone(null); setV({ company_type: 'Unknown' }); setServices([]) }}>Add another</button>
-            <button className="btn btn-primary" onClick={onClose}>Done</button>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
+            <button className="btn btn-secondary w-full sm:w-auto" onClick={() => { setDone(null); setV({ company_type: 'Unknown' }); setServices([]) }}>Add another</button>
+            <button className="btn btn-primary w-full sm:w-auto" onClick={onClose}>Done</button>
           </div>
         </div>
       ) : dup ? (
@@ -135,17 +135,17 @@ export function BusinessForm({
             {dup.open_pitches > 0 && ` It has ${dup.open_pitches} open pitch(es).`} What would you like to do?
           </p>
           <ErrorNote error={error} />
-          <div className="flex flex-wrap justify-end gap-2">
-            <button className="btn btn-secondary" onClick={() => setDup(null)} disabled={busy}>Go back</button>
-            <button className="btn btn-secondary" onClick={() => resolveDup('update')} disabled={busy}>Update its details</button>
-            <button className="btn btn-primary" onClick={() => resolveDup('new_pitch')} disabled={busy || !services.length}>
+          <div className="flex flex-col sm:flex-row flex-wrap justify-end gap-2">
+            <button className="btn btn-secondary w-full sm:w-auto" onClick={() => setDup(null)} disabled={busy}>Go back</button>
+            <button className="btn btn-secondary w-full sm:w-auto" onClick={() => resolveDup('update')} disabled={busy}>Update its details</button>
+            <button className="btn btn-primary w-full sm:w-auto" onClick={() => resolveDup('new_pitch')} disabled={busy || !services.length}>
               {busy && <Spinner />} Add a new pitch to it
             </button>
           </div>
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             {field('business_name', 'Business name *', { autoFocus: true })}
             <div>
               <label className="label">Business type *</label>
@@ -171,7 +171,7 @@ export function BusinessForm({
 
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">How to reach them</p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
               {field('phone', 'Phone', { inputMode: 'tel', placeholder: '07… or 020…' })}
               {field('whatsapp_number', 'WhatsApp (if different)', { inputMode: 'tel' })}
               {field('email', 'Email', { type: 'email' })}
@@ -183,7 +183,7 @@ export function BusinessForm({
 
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Where and what</p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
               {field('area', 'Area', { placeholder: 'e.g. Richmond' })}
               {field('postcode', 'Postcode')}
               {field('address', 'Address')}
@@ -219,9 +219,9 @@ export function BusinessForm({
           </div>
 
           <ErrorNote error={error} />
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" disabled={busy}>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+            <button type="button" className="btn btn-secondary w-full sm:w-auto" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary w-full sm:w-auto" disabled={busy}>
               {busy && <Spinner />} {mode === 'add' ? 'Save to review queue' : 'Save changes'}
             </button>
           </div>

@@ -14,8 +14,11 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/pg": "^8.23.1",
     "date-fns": "^4.4.0",
+    "imapflow": "^2.2.1",
     "lucide-react": "^1.48.0",
+    "mailparser": "^3.9.33",
     "next": "16.3.6",
+    "nodemailer": "^10.0.13",
     "papaparse": "^5.7.0",
     "pg": "^8.23.0",
     "postcss": "^8.5.28",
@@ -25,12 +28,16 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@types/imapflow": "^1.0.23",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

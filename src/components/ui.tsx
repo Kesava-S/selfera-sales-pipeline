@@ -67,20 +67,20 @@ export function Modal({ title, open, onClose, children, wide }: { title: string;
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:items-center" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} rounded-2xl bg-white shadow-xl`}
+        className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden`}
         onMouseDown={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
           <h2 className="text-base font-bold">{title}</h2>
           <button onClick={onClose} className="btn btn-ghost btn-sm !p-1.5" aria-label="Close">
             <X size={18} />
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
       </div>
     </div>
   )

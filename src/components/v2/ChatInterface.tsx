@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone, RefreshCw } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
@@ -28,9 +28,13 @@ export function ChatInterface({
   const router = useRouter()
   const b = opp.businesses
   const platform: string = thread.platform
-  const messages: Msg[] = thread.messages
+  const [messages, setMessages] = useState<Msg[]>(thread.messages || [])
   const bottom = useRef<HTMLDivElement>(null)
   const area = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    setMessages(thread.messages || [])
+  }, [thread.messages])
 
   const fill = (text: string) => fillPlaceholders(text, { business_name: b.business_name, sender_name: senderName, area: b.area, contact_name: b.contact_name })
 
@@ -46,6 +50,56 @@ export function ChatInterface({
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [syncingEmail, setSyncingEmail] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<string | null>(null)
+
+  const reloadMessages = async () => {
+    try {
+      const res = await fetch(`/api/messages?threadId=${thread.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.messages && Array.isArray(data.messages)) {
+          setMessages(data.messages as Msg[])
+        }
+      }
+    } catch {}
+  }
+
+  // Load the full up-to-date messages from the database on mount or thread change
+  useEffect(() => {
+    reloadMessages()
+  }, [thread.id])
+
+  const handleSyncEmail = async () => {
+    if (syncingEmail) return
+    setSyncingEmail(true)
+    setSyncStatus(null)
+    try {
+      const res = await fetch('/api/email/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unseenOnly: false, sinceDays: 7, threadId: thread.id }),
+      })
+      const data = await res.json()
+      if (data.messages && Array.isArray(data.messages)) {
+        setMessages(data.messages as Msg[])
+      } else {
+        await reloadMessages()
+      }
+      if (data.matched > 0) {
+        setSyncStatus(`Found ${data.matched} new ${data.matched === 1 ? 'reply' : 'replies'}`)
+      } else {
+        setSyncStatus('Up to date')
+      }
+      router.refresh()
+      setTimeout(() => setSyncStatus(null), 3500)
+    } catch {
+      setSyncStatus('Check failed')
+      setTimeout(() => setSyncStatus(null), 3500)
+    } finally {
+      setSyncingEmail(false)
+    }
+  }
 
   const template = templates.find(t => t.id === templateId)
   const rule = getSendRule({
@@ -83,10 +137,37 @@ export function ChatInterface({
     const supabase = createClient()
     const ch = supabase
       .channel(`thread-${thread.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'sales-pipe', table: 'messages', filter: `thread_id=eq.${thread.id}` }, () => router.refresh())
+      .on('postgres_changes', { event: 'INSERT', schema: 'sales-pipe', table: 'messages', filter: `thread_id=eq.${thread.id}` }, (payload) => {
+        if (payload?.new) {
+          const newMsg = payload.new as Msg
+          setMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev
+            return [...prev, newMsg]
+          })
+        }
+        reloadMessages()
+        router.refresh()
+      })
       .subscribe()
     return () => { supabase.removeChannel(ch).catch(() => {}) }
   }, [thread.id, router])
+
+  useEffect(() => {
+    if (platform === 'Email') {
+      fetch('/api/email/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unseenOnly: true }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data?.matched > 0) {
+            reloadMessages()
+          }
+        })
+        .catch(() => {})
+    }
+  }, [platform])
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length])
   useEffect(() => {
@@ -172,7 +253,18 @@ export function ChatInterface({
             <PlatformIcon platform={platform} /> {platform} <StatusBadge status={thread.status} /> <StageBadge stage={opp.stage} />
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {platform === 'Email' && (
+            <button
+              onClick={handleSyncEmail}
+              disabled={syncingEmail}
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-slate-50 transition-colors"
+              title="Check inbox for new customer replies"
+            >
+              <RefreshCw size={12} className={syncingEmail ? 'animate-spin text-primary' : 'text-slate-500'} />
+              <span>{syncStatus || (syncingEmail ? 'Checking...' : 'Check replies')}</span>
+            </button>
+          )}
           {siblings.map(s => (
             <Link
               key={s.id}

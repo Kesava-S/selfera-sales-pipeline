@@ -210,7 +210,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <label className="label">{f.label}{f.required && ' *'}</label>
                     <select className="input" value={map[f.key] || ''} onChange={e => setMap(m => ({ ...m, [f.key]: e.target.value || undefined }))}>
                       <option value="">Not in file</option>
-                      {headers.map(h => <option key={h}>{h}</option>)}
+                      {headers.map((h, i) => <option key={`${h}-${i}`}>{h}</option>)}
                     </select>
                   </div>
                 ))}

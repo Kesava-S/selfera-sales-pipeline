@@ -3,9 +3,13 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getSendRule, needsPecrConfirm, parseApiPlatforms } from '@/lib/sending'
 import { isUkMobile, ukToInternational } from '@/lib/contact'
+import { sendEmail } from '@/lib/mailer'
+import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 
-// Sends ONE message through n8n after a person clicked Send, then records it.
-// Never called on a schedule. The n8n workflow must only send (it must not record).
+export const dynamic = 'force-dynamic'
+
+// Sends ONE message directly (via SMTP for email, WhatsApp Cloud API, or n8n for other channels), then records it.
+// Never called on a schedule.
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -30,7 +34,7 @@ export async function POST(request: Request) {
   const b: any = opp?.businesses
 
   const webhook = process.env.N8N_WEBHOOK_URL
-  const apiPlatforms = webhook ? parseApiPlatforms(process.env.SEND_API_PLATFORMS) : []
+  const apiPlatforms = parseApiPlatforms(process.env.SEND_API_PLATFORMS)
   let templateName: string | null = null
   if (templateId) {
     const { data: t } = await supabase.from('templates').select('whatsapp_template_name').eq('id', templateId).maybeSingle()
@@ -53,25 +57,55 @@ export async function POST(request: Request) {
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
 
-  // 1. Send through n8n
+  // 1. Send the message
   let externalId: string | null = null
-  try {
-    const res = await fetch(webhook!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.N8N_WEBHOOK_SECRET || ''}` },
-      body: JSON.stringify({
-        platform: thread.platform, to, threadId, externalThreadId: thread.external_thread_id, body, subject,
-        templateName: rule.mode === 'api-template' ? templateName : null, sentBy: user.id,
-      }),
-      signal: AbortSignal.timeout(20_000),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok || json?.ok === false) {
-      return NextResponse.json({ error: `Not sent: ${json?.error || `the ${thread.platform} service returned an error (${res.status})`}. Your message is still here.` }, { status: 502 })
+
+  if (thread.platform === 'Email') {
+    try {
+      const res = await sendEmail({ to, subject: subject || '(No subject)', body })
+      externalId = res.messageId
+    } catch (e: any) {
+      console.error('Email send error:', e)
+      return NextResponse.json({ error: `Not sent: ${e?.message || 'Email delivery failed'}. Your message is still here.` }, { status: 502 })
     }
-    externalId = json?.message_id ?? null
-  } catch {
-    return NextResponse.json({ error: `Not sent: could not reach the sending service. Your message is still here.` }, { status: 502 })
+  } else if (thread.platform === 'WhatsApp' && isWhatsAppConfigured()) {
+    try {
+      const res = await sendWhatsAppMessage({
+        to,
+        body,
+        templateName: rule.mode === 'api-template' ? templateName : null,
+      })
+      if (!res.success) {
+        return NextResponse.json({ error: `WhatsApp send failed: ${res.error || 'Unknown error'}. Your message is still here.` }, { status: 502 })
+      }
+      externalId = res.messageId
+    } catch (e: any) {
+      console.error('WhatsApp send error:', e)
+      return NextResponse.json({ error: `Not sent: ${e?.message || 'WhatsApp delivery failed'}. Your message is still here.` }, { status: 502 })
+    }
+  } else {
+    // Non-email channels via n8n if configured
+    if (!webhook) {
+      return NextResponse.json({ error: `Not sent: ${thread.platform} sending service is not configured.` }, { status: 502 })
+    }
+    try {
+      const res = await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.N8N_WEBHOOK_SECRET || ''}` },
+        body: JSON.stringify({
+          platform: thread.platform, to, threadId, externalThreadId: thread.external_thread_id, body, subject,
+          templateName: rule.mode === 'api-template' ? templateName : null, sentBy: user.id,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json?.ok === false) {
+        return NextResponse.json({ error: `Not sent: ${json?.error || `the ${thread.platform} service returned an error (${res.status})`}. Your message is still here.` }, { status: 502 })
+      }
+      externalId = json?.message_id ?? null
+    } catch {
+      return NextResponse.json({ error: `Not sent: could not reach the sending service. Your message is still here.` }, { status: 502 })
+    }
   }
 
   // 2. Record it (moves the follow-up step on)
