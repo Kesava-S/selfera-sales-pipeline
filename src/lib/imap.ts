@@ -99,14 +99,14 @@ export async function syncEmailReplies(options?: {
   try {
     const supabase = createServiceClient()
 
-    // 1. Search criteria
+    // 1. Search criteria (must specify uid: true so ImapFlow returns actual UIDs, not sequence numbers)
     let uids: number[] = []
     if (unseenOnly) {
-      const searchRes = await client.search({ seen: false })
+      const searchRes = await client.search({ seen: false }, { uid: true })
       uids = Array.isArray(searchRes) ? searchRes : []
     } else {
       const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000)
-      const searchRes = await client.search({ since: sinceDate })
+      const searchRes = await client.search({ since: sinceDate }, { uid: true })
       uids = Array.isArray(searchRes) ? searchRes : []
     }
 
@@ -191,7 +191,7 @@ export async function syncEmailReplies(options?: {
 
         // Mark as seen in Gmail if requested
         if (markAsSeen) {
-          await client.messageFlagsAdd({ uid }, ['\\Seen'])
+          await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true })
         }
       } catch (err: any) {
         errors.push(`UID ${uid}: ${err?.message || String(err)}`)

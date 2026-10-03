@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone, RefreshCw } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
@@ -50,8 +50,6 @@ export function ChatInterface({
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [syncingEmail, setSyncingEmail] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<string | null>(null)
 
   const reloadMessages = async () => {
     try {
@@ -69,37 +67,6 @@ export function ChatInterface({
   useEffect(() => {
     reloadMessages()
   }, [thread.id])
-
-  const handleSyncEmail = async () => {
-    if (syncingEmail) return
-    setSyncingEmail(true)
-    setSyncStatus(null)
-    try {
-      const res = await fetch('/api/email/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unseenOnly: false, sinceDays: 7, threadId: thread.id }),
-      })
-      const data = await res.json()
-      if (data.messages && Array.isArray(data.messages)) {
-        setMessages(data.messages as Msg[])
-      } else {
-        await reloadMessages()
-      }
-      if (data.matched > 0) {
-        setSyncStatus(`Found ${data.matched} new ${data.matched === 1 ? 'reply' : 'replies'}`)
-      } else {
-        setSyncStatus('Up to date')
-      }
-      router.refresh()
-      setTimeout(() => setSyncStatus(null), 3500)
-    } catch {
-      setSyncStatus('Check failed')
-      setTimeout(() => setSyncStatus(null), 3500)
-    } finally {
-      setSyncingEmail(false)
-    }
-  }
 
   const template = templates.find(t => t.id === templateId)
   const rule = getSendRule({
@@ -254,17 +221,6 @@ export function ChatInterface({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {platform === 'Email' && (
-            <button
-              onClick={handleSyncEmail}
-              disabled={syncingEmail}
-              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400 hover:bg-slate-50 transition-colors"
-              title="Check inbox for new customer replies"
-            >
-              <RefreshCw size={12} className={syncingEmail ? 'animate-spin text-primary' : 'text-slate-500'} />
-              <span>{syncStatus || (syncingEmail ? 'Checking...' : 'Check replies')}</span>
-            </button>
-          )}
           {siblings.map(s => (
             <Link
               key={s.id}
