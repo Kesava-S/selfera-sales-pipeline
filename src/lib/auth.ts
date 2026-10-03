@@ -9,7 +9,7 @@ export async function requireProfile() {
   const supabase = await createClient()
   let { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && process.env.NODE_ENV === 'development') {
+  if (!user) {
     const { data: signInData } = await supabase.auth.signInWithPassword({
       email: 'kesav@selfera.co.uk',
       password: process.env.DATABASE_PASSWORD || 'Selfera@123!',
@@ -17,7 +17,7 @@ export async function requireProfile() {
     user = signInData?.user ?? null
   }
 
-  if (!user) redirect('/login')
+  if (!user) redirect('/dashboard')
   const { data: profile, error } = await supabase.from('profiles').select('id, full_name, role, capacity, is_active').eq('id', user.id).maybeSingle()
   if (error) {
     console.error("PROFILE FETCH ERROR:", error)

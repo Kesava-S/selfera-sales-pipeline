@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
 
   let { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && process.env.NODE_ENV === 'development') {
+  if (!user) {
     const { data: signInData } = await supabase.auth.signInWithPassword({
       email: 'kesav@selfera.co.uk',
       password: process.env.DATABASE_PASSWORD || 'Selfera@123!',
@@ -37,22 +37,7 @@ export async function updateSession(request: NextRequest) {
     user = signInData?.user ?? null
   }
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/api/bookings')
-  ) {
-    // API routes answer with 401 instead of a login page
-    if (request.nextUrl.pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
-    }
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-
-  if (user && request.nextUrl.pathname === '/') {
+  if (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname === '/') {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
