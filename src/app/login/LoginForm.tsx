@@ -21,6 +21,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
   const [emailError, setEmailError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(initialError || null)
+  const [isRedirecting, setIsRedirecting] = useState(false)
 
   const [isPending, startTransition] = useTransition()
 
@@ -79,7 +80,9 @@ export function LoginForm({ initialError }: { initialError?: string }) {
         if (!result.success) {
           setServerError(result.error || 'Invalid credentials or access denied.')
         } else {
-          window.location.href = next.startsWith('/') ? next : '/dashboard'
+          setIsRedirecting(true)
+          const target = next.startsWith('/') ? next : '/dashboard'
+          window.location.href = target
         }
       } catch (err: any) {
         setServerError(err?.message || 'Something went wrong. Please try again.')
@@ -87,9 +90,11 @@ export function LoginForm({ initialError }: { initialError?: string }) {
     })
   }
 
+  const showPreloader = isPending || isRedirecting
+
   return (
     <>
-      {isPending && <Preloader fullScreen />}
+      {showPreloader && <Preloader fullScreen />}
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {serverError && (
           <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50/90 p-3.5 text-xs text-red-700 animate-fadeIn">
@@ -185,10 +190,10 @@ export function LoginForm({ initialError }: { initialError?: string }) {
 
         <button
           type="submit"
-          disabled={isPending}
+          disabled={showPreloader}
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#067A52] py-3.5 text-base font-semibold text-white shadow-sm transition-all hover:bg-[#056845] active:scale-[0.99] disabled:opacity-70"
         >
-          {isPending ? (
+          {showPreloader ? (
             <>
               <Spinner />
               <span>Signing in...</span>

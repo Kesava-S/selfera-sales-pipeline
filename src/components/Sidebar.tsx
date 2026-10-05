@@ -80,6 +80,14 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
       </div>
     </aside>
 
+    {/* Mobile drawer backdrop */}
+    <div
+      tabIndex={-1}
+      aria-hidden="true"
+      onClick={close}
+      className="sidebar-overlay min-[901px]:hidden"
+    />
+
     <LogoutConfirmModal open={confirmLogout} onClose={() => setConfirmLogout(false)} />
     </>
   )

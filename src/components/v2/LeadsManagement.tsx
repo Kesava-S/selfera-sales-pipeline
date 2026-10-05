@@ -179,9 +179,9 @@ export function LeadsManagement({
       </div>
 
       {notice && (
-        <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-          <button className="font-semibold" onClick={() => setNotice(null)}>Close</button>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 break-words whitespace-normal leading-snug">
+          <span>{notice}</span>
+          <button className="shrink-0 font-semibold hover:underline" onClick={() => setNotice(null)}>Close</button>
         </div>
       )}
       <ErrorNote error={error || loadError} />

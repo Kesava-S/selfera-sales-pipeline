@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Role } from '@/lib/config'
@@ -23,7 +24,7 @@ export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): 
   return 'Sales Representative'
 }
 
-export async function requireProfile() {
+export const requireProfile = cache(async () => {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -80,4 +81,8 @@ export async function requireProfile() {
       display_role,
     } as Profile,
   }
-}
+})
+
+export const getDashboardStatusCounts = cache(async (supabase: any, userId: string) => {
+  return await supabase.rpc('v_dashboard_status_counts', { p_user: userId })
+})

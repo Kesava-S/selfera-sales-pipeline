@@ -1,4 +1,4 @@
-import { requireProfile } from '@/lib/auth'
+import { requireProfile, getDashboardStatusCounts } from '@/lib/auth'
 import { DashboardHome } from '@/components/v2/DashboardHome'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 
@@ -9,11 +9,11 @@ export default async function Page() {
   if (!profile) return null
 
   const [status, services, newOutreach, followUps, replies] = await Promise.all([
-    supabase.rpc('v_dashboard_status_counts', { p_user: user.id }),
+    getDashboardStatusCounts(supabase, user.id),
     supabase.rpc('v_service_counts', { p_user: user.id }),
-    supabase.rpc('v_due_today', { p_tab: 'New outreach', p_limit: 200 }),
-    supabase.rpc('v_due_today', { p_tab: 'Follow-ups', p_limit: 200 }),
-    supabase.rpc('v_due_today', { p_tab: 'Replies', p_limit: 200 }),
+    supabase.rpc('v_due_today', { p_tab: 'New outreach', p_limit: 60 }),
+    supabase.rpc('v_due_today', { p_tab: 'Follow-ups', p_limit: 60 }),
+    supabase.rpc('v_due_today', { p_tab: 'Replies', p_limit: 60 }),
   ])
   const loadError = [status, services, newOutreach, followUps, replies].find(r => r.error)?.error?.message ?? null
 

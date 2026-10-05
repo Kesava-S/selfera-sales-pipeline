@@ -112,7 +112,7 @@ export function useAction() {
 
 export function ErrorNote({ error }: { error?: string | null }) {
   if (!error) return null
-  return <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+  return <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 break-words whitespace-normal leading-snug">{error}</div>
 }
 
 export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {
