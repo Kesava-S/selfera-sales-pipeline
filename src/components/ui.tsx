@@ -4,6 +4,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
 import { MessageCircle, Camera, ThumbsUp, Mail, Phone, Footprints, X, Loader2, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
 import { STAGE_STYLE, STATUS_STYLE } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
@@ -114,8 +115,8 @@ export function ErrorNote({ error }: { error?: string | null }) {
   return <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
 }
 
-export function Spinner({ size = 16 }: { size?: number }) {
-  return <Loader2 size={size} className="animate-spin" />
+export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return <Loader2 size={size} className={`animate-spin shrink-0 text-current ${className}`} />
 }
 
 // ---------- Empty state ----------

@@ -1,8 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2 } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut } from 'lucide-react'
+import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -14,11 +16,13 @@ const NAV = [
 
 const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
 
-export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string }; reviewCount: number }) {
+export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
   const pathname = usePathname()
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const close = () => document.querySelector('.sidebar')?.classList.remove('open')
 
   return (
+    <>
     <aside className="sidebar">
       <Link href="/dashboard" className="sidebar-logo" onClick={close}>
         <div className="sidebar-logo-icon">
@@ -56,16 +60,27 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
       </nav>
 
       <div className="sidebar-footer">
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold uppercase text-white">
             {userProfile.full_name.charAt(0)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{userProfile.full_name}</div>
-            <div className="text-xs capitalize text-slate-500">{userProfile.role}</div>
+            <div className="truncate text-xs font-medium text-slate-500">{userProfile.display_role || userProfile.role}</div>
           </div>
+          <button
+            type="button"
+            onClick={() => setConfirmLogout(true)}
+            title="Sign out"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-rose-600 transition-colors"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </aside>
+
+    <LogoutConfirmModal open={confirmLogout} onClose={() => setConfirmLogout(false)} />
+    </>
   )
 }

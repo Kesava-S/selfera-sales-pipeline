@@ -274,7 +274,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <td className="font-semibold">{r.data.business_name || <i className="text-slate-400">missing</i>}</td>
                     <td>{r.data.business_type || <i className="text-slate-400">?</i>}</td>
                     <td className="text-xs">{r.services.join(', ')}</td>
-                    <td className="text-xs text-slate-600">{[r.data.phone, r.data.email, r.data.instagram && `@${r.data.instagram}`].filter(Boolean).join(' · ') || '–'}</td>
+                    <td className="text-xs text-slate-600">{[r.data.phone, r.data.email, r.data.instagram && `@${r.data.instagram}`].filter(Boolean).join(' · ') || '-'}</td>
                     <td className="text-xs">
                       {r.errors.length ? <span className="text-red-700">{r.errors.join('; ')}</span>
                         : r.warnings.length ? <span className="text-amber-700">{r.warnings.join('; ')}</span>

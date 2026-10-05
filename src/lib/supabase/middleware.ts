@@ -27,17 +27,33 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  let { data: { user } } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    const { data: signInData } = await supabase.auth.signInWithPassword({
-      email: 'kesav@selfera.co.uk',
-      password: process.env.DATABASE_PASSWORD || 'Selfera@123!',
-    })
-    user = signInData?.user ?? null
+  const pathname = request.nextUrl.pathname
+
+  const isPublicRoute =
+    pathname.startsWith('/api/whatsapp/webhook') ||
+    pathname.startsWith('/api/email/sync') ||
+    pathname.startsWith('/_next') ||
+    pathname === '/logo.png' ||
+    pathname === '/favicon.ico'
+
+  if (isPublicRoute) {
+    return supabaseResponse
   }
 
-  if (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname === '/') {
+  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/auth')
+
+  if (!user && !isAuthRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    if (pathname !== '/' && pathname !== '/dashboard') {
+      url.searchParams.set('next', pathname)
+    }
+    return NextResponse.redirect(url)
+  }
+
+  if (user && (isAuthRoute || pathname === '/')) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

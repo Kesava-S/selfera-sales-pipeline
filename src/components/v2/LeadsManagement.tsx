@@ -320,7 +320,7 @@ export function LeadsManagement({
                                 <td><StageBadge stage={r.stage} /></td>
                                 <td className="text-xs">{r.services_pitched.join(', ')}</td>
                                 <td className="text-sm">{r.assigned_sales_name || <span className="text-slate-400">Unassigned</span>}</td>
-                                <td className="text-sm">{r.area || '–'}</td>
+                                <td className="text-sm">{r.area || '-'}</td>
                               </>
                             )}
                           </>
@@ -334,10 +334,10 @@ export function LeadsManagement({
                               <Detail label="Services pitched">{r.services_pitched.join(', ')}</Detail>
                               {r.services_won?.length ? <Detail label="Services won">{r.services_won.join(', ')}</Detail> : null}
                               <Detail label="Assigned to">{r.assigned_sales_name || 'Unassigned'}{r.assigned_consultant_name ? ` (consultant: ${r.assigned_consultant_name})` : ''}</Detail>
-                              <Detail label="Area">{[r.area, r.postcode].filter(Boolean).join(', ') || '–'}</Detail>
-                              <Detail label="Phone">{r.phone || '–'}</Detail>
-                              <Detail label="Email">{r.email || '–'}</Detail>
-                              <Detail label="Instagram">{r.instagram ? `@${r.instagram}` : '–'}</Detail>
+                              <Detail label="Area">{[r.area, r.postcode].filter(Boolean).join(', ') || '-'}</Detail>
+                              <Detail label="Phone">{r.phone || '-'}</Detail>
+                              <Detail label="Email">{r.email || '-'}</Detail>
+                              <Detail label="Instagram">{r.instagram ? `@${r.instagram}` : '-'}</Detail>
                               <Detail label="Company type">{r.company_type || 'Unknown'}</Detail>
                               <Detail label="Added">{formatDate(r.created_at)}</Detail>
                             </div>

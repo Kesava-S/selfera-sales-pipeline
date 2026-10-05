@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone, RotateCw } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
@@ -50,6 +50,7 @@ export function ChatInterface({
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const reloadMessages = async () => {
     try {
@@ -61,6 +62,18 @@ export function ChatInterface({
         }
       }
     } catch {}
+  }
+
+  const handleManualRefresh = async () => {
+    setRefreshing(true)
+    try {
+      if (platform === 'Email') {
+        await fetch('/api/email/sync', { method: 'POST' }).catch(() => {})
+      }
+      await reloadMessages()
+    } finally {
+      setTimeout(() => setRefreshing(false), 350)
+    }
   }
 
   // Load the full up-to-date messages from the database on mount or thread change
@@ -230,6 +243,16 @@ export function ChatInterface({
               <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[s.status]?.dot ?? 'bg-slate-300'}`} /> {s.platform}
             </Link>
           ))}
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+            title="Refresh chat"
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-xs hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 transition-colors disabled:opacity-60"
+          >
+            <RotateCw size={12} className={refreshing ? 'animate-spin text-primary' : 'text-slate-500'} />
+            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
         </div>
       </div>
 
