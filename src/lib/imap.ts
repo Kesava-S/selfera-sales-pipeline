@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { createServiceClient } from '@/lib/supabase/server'
+import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
 /**
  * Strips quoted email thread history (e.g. "On [Date], [Sender] wrote:",
@@ -161,19 +162,26 @@ export async function syncEmailReplies(options?: {
           continue
         }
 
-        // Call database record_inbound
-        const { error: rpcError } = await supabase.rpc('record_inbound', {
+        const inboundArgs = {
           p_platform: 'Email',
           p_external_thread_id: inReplyTo,
           p_from: fromAddress,
           p_body: body,
           p_external_message_id: messageId,
           p_media_url: null,
-        })
+        }
+
+        const { error: rpcError } = await supabase.rpc('record_inbound', inboundArgs)
 
         if (rpcError) {
           errors.push(`UID ${uid} (${fromAddress}): ${rpcError.message}`)
           continue
+        }
+
+        if (isDualWriteEnabled()) {
+          replicateRpcToSecondary('record_inbound', inboundArgs).catch(err => {
+            console.warn('[DualWrite] Failed to replicate email record_inbound:', err)
+          })
         }
 
         // Check if the message was successfully stored in "sales-pipe".messages

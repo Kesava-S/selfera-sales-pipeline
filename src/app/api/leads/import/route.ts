@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
-// POST { rows: [...] } -> import_businesses. Rows are checked again in the database.
-// New leads are saved as "Needs review": no drafts until someone approves them.
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,6 +14,13 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase.rpc('import_businesses', { p_rows: rows })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  if (isDualWriteEnabled()) {
+    replicateRpcToSecondary('import_businesses', { p_rows: rows }).catch(err => {
+      console.warn('[DualWrite] Failed to replicate import_businesses:', err)
+    })
+  }
+
   revalidatePath('/dashboard', 'layout')
   return NextResponse.json(data)
 }

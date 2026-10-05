@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,20 +70,26 @@ export async function POST(request: Request) {
 
           console.log(`[WhatsApp Webhook] 📩 Inbound message from ${from}: "${body}" (${messageId})`)
 
-          // Store reply into database
-          const { error: rpcError } = await supabase.rpc('record_inbound', {
+          const inboundArgs = {
             p_platform: 'WhatsApp',
             p_external_thread_id: null,
             p_from: from,
             p_body: body,
             p_external_message_id: messageId,
             p_media_url: null,
-          })
+          }
+
+          const { error: rpcError } = await supabase.rpc('record_inbound', inboundArgs)
 
           if (rpcError) {
             console.error('[WhatsApp Webhook] record_inbound error:', rpcError.message)
           } else {
-            console.log(`[WhatsApp Webhook] ✅ Recorded inbound WhatsApp reply from ${from}`)
+            console.log(`[WhatsApp Webhook] Recorded inbound WhatsApp reply from ${from}`)
+            if (isDualWriteEnabled()) {
+              replicateRpcToSecondary('record_inbound', inboundArgs).catch(err => {
+                console.warn('[DualWrite] Failed to replicate whatsapp record_inbound:', err)
+              })
+            }
           }
         }
       }

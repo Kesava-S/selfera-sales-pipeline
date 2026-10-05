@@ -5,6 +5,7 @@ import { getSendRule, needsPecrConfirm, parseApiPlatforms } from '@/lib/sending'
 import { isUkMobile, ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
+import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,14 +112,21 @@ export async function POST(request: Request) {
     }
   }
 
-  // 2. Record it (moves the follow-up step on)
-  const { error } = await supabase.rpc('record_outbound', {
+  const rpcArgs = {
     p_thread_id: threadId, p_body: body, p_subject: subject, p_template_id: templateId,
     p_send_method: 'api', p_external_message_id: externalId, p_sent_by: user.id,
-  })
+  }
+  const { error } = await supabase.rpc('record_outbound', rpcArgs)
   if (error) {
     return NextResponse.json({ error: `The message WAS sent, but saving it failed (${error.message}). Don't send it again; refresh the page.` }, { status: 500 })
   }
+
+  if (isDualWriteEnabled()) {
+    replicateRpcToSecondary('record_outbound', rpcArgs).catch(err => {
+      console.warn('[DualWrite] Failed to replicate record_outbound:', err)
+    })
+  }
+
   revalidatePath('/dashboard', 'layout')
   return NextResponse.json({ ok: true })
 }

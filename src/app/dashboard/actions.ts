@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -24,6 +25,13 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
   const supabase = await createClient()
   const { data, error } = await supabase.rpc(fn, args)
   if (error) return { ok: false, error: friendly(error.message) }
+
+  if (isDualWriteEnabled()) {
+    replicateRpcToSecondary(fn, args).catch(err => {
+      console.warn(`[DualWrite] RPC "${fn}" replication error:`, err)
+    })
+  }
+
   revalidatePath('/dashboard', 'layout')
   return { ok: true, data: data as T }
 }
