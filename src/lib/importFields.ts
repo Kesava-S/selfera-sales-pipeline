@@ -1,5 +1,5 @@
-// CSV import helpers: column matching, cleaning messy values, validation.
 import { BUSINESS_TYPES, CONFIG } from '@/lib/config'
+import { parseAndValidatePhone } from '@/lib/contact'
 
 export type FieldKey =
   | 'business_name' | 'business_type' | 'services_to_pitch' | 'area' | 'address' | 'postcode' | 'maps_link'
@@ -117,8 +117,7 @@ export function splitAreaPostcode(area: string, postcode: string): { area: strin
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 export function phoneLooksValid(p: string): boolean {
-  const d = p.replace(/\D/g, '')
-  return d.length >= 10 && d.length <= 13
+  return parseAndValidatePhone(p).valid
 }
 
 export function parseServices(v: string, fallback: string[]): { services: string[]; unknown: string[] } {
@@ -177,7 +176,28 @@ export function buildRow(
     }
   }
 
-  const phone = get('phone')
+  const rawPhone = get('phone')
+  let cleanPhone = rawPhone
+  if (rawPhone) {
+    const pCheck = parseAndValidatePhone(rawPhone)
+    if (!pCheck.valid) {
+      errors.push(pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)')
+    } else if (pCheck.normalized) {
+      cleanPhone = pCheck.normalized
+    }
+  }
+
+  const rawWa = get('whatsapp_number')
+  let cleanWa = rawWa
+  if (rawWa) {
+    const waCheck = parseAndValidatePhone(rawWa)
+    if (!waCheck.valid) {
+      errors.push(waCheck.error ? `WhatsApp: ${waCheck.error}` : 'WhatsApp must include country code (e.g. +44, 44, or 0...)')
+    } else if (waCheck.normalized) {
+      cleanWa = waCheck.normalized
+    }
+  }
+
   const svc = parseServices(get('services_to_pitch'), defaultServices)
 
   if (!name) errors.push('Business name is missing')
@@ -186,12 +206,11 @@ export function buildRow(
   if (!svc.services.length) errors.push('No service to pitch')
   if (svc.unknown.length) errors.push(`Unknown service "${svc.unknown.join(', ')}"`)
   if (email && !EMAIL_RE.test(email)) errors.push('Email looks wrong')
-  if (phone && !phoneLooksValid(phone)) errors.push('Phone looks wrong')
   if (rawType && type && rawType.toLowerCase() !== type.toLowerCase() && !typeOverrides[rawType]) notes.push(`Sheet type: ${rawType}`)
 
   const ig = get('instagram')
   const fb = get('facebook')
-  if (!phone && !email && !ig && !fb && !area && !postcode && !get('address')) warnings.push('No way to contact yet')
+  if (!cleanPhone && !email && !ig && !fb && !area && !postcode && !get('address')) warnings.push('No way to contact yet')
 
   const extraNotes = get('notes')
   if (extraNotes) notes.unshift(extraNotes)
@@ -213,8 +232,8 @@ export function buildRow(
       maps_link: get('maps_link'),
       google_rating: rating,
       google_reviews_count: reviews.replace(/\D/g, ''),
-      phone,
-      whatsapp_number: get('whatsapp_number'),
+      phone: cleanPhone,
+      whatsapp_number: cleanWa,
       email,
       instagram: /^(instagram|yes|y|check|instagram \(check\))$/i.test(ig) ? '' : ig,
       facebook: /^(facebook|yes|y)$/i.test(fb) ? '' : fb,

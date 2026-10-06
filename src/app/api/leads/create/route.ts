@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { parseAndValidatePhone, isUkMobile } from '@/lib/contact'
 
 export async function POST(request: Request) {
   try {
@@ -30,7 +31,14 @@ export async function POST(request: Request) {
     const cleanBusinessType = (business_type || 'Other').trim()
     const cleanService = (service_pitched || 'Website').trim()
     const cleanEmail = email?.trim() || null
-    const cleanPhone = phone?.trim() || null
+    let normalizedPhone: string | null = null
+    if (phone?.trim()) {
+      const pCheck = parseAndValidatePhone(phone.trim())
+      if (!pCheck.valid) {
+        return NextResponse.json({ error: pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)' }, { status: 400 })
+      }
+      normalizedPhone = pCheck.normalized
+    }
     const cleanInstagram = instagram?.trim() ? instagram.trim().replace(/^@/, '') : null
     const cleanArea = area?.trim() || null
     const cleanContact = contact_name?.trim() || null
@@ -45,7 +53,7 @@ export async function POST(request: Request) {
         area: cleanArea,
         contact_name: cleanContact,
         email: cleanEmail,
-        phone: cleanPhone,
+        phone: normalizedPhone,
         instagram: cleanInstagram,
         facebook: cleanFacebook
       })
@@ -77,8 +85,8 @@ export async function POST(request: Request) {
     // 3. Create initial threads for provided contact channels
     const platforms: string[] = []
     if (cleanEmail) platforms.push('Email')
-    if (cleanPhone) {
-      const isMobile = /^(07|447|\+447)/.test(cleanPhone.replace(/[\s-]/g, ''))
+    if (normalizedPhone) {
+      const isMobile = isUkMobile(normalizedPhone)
       platforms.push(isMobile ? 'WhatsApp' : 'Phone')
     }
     if (cleanInstagram) platforms.push('Instagram')

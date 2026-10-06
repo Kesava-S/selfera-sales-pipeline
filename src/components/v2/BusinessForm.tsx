@@ -4,7 +4,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CONFIG } from '@/lib/config'
-import { EMAIL_RE, phoneLooksValid } from '@/lib/importFields'
+import { EMAIL_RE } from '@/lib/importFields'
+import { parseAndValidatePhone } from '@/lib/contact'
 import { updateBusiness } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
 
@@ -28,8 +29,10 @@ export function BusinessForm({
   const [dup, setDup] = useState<Dup | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
-  const set = (k: keyof BusinessValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof BusinessValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setV(prev => ({ ...prev, [k]: e.target.value }))
+    if (errors[k]) setErrors(prev => { const next = { ...prev }; delete next[k]; return next })
+  }
 
   const isAccommodation = CONFIG.BUSINESS_CATEGORIES.Accommodation.includes(v.business_type || '')
 
@@ -39,16 +42,35 @@ export function BusinessForm({
     if (!v.business_type) e.business_type = 'Required'
     if (mode === 'add' && !services.length) e.services = 'Pick at least one'
     if (v.email && !EMAIL_RE.test(v.email.trim())) e.email = 'Looks wrong'
-    if (v.phone && !phoneLooksValid(v.phone)) e.phone = 'Looks wrong'
-    if (v.whatsapp_number && !phoneLooksValid(v.whatsapp_number)) e.whatsapp_number = 'Looks wrong'
+    if (v.phone?.trim()) {
+      const p = parseAndValidatePhone(v.phone)
+      if (!p.valid) e.phone = p.error || 'Must include country code (e.g. +44, 44, or 0...)'
+    }
+    if (v.whatsapp_number?.trim()) {
+      const w = parseAndValidatePhone(v.whatsapp_number)
+      if (!w.valid) e.whatsapp_number = w.error ? w.error.replace(/^Phone/, 'WhatsApp') : 'Must include country code (e.g. +44, 44, or 0...)'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
-  const payload = (action: string, existingId?: string) => ({
-    idx: 0, action, existing_id: existingId, services,
-    ...Object.fromEntries(Object.entries(v).map(([k, val]) => [k, typeof val === 'string' ? val.trim() : val ?? ''])),
-  })
+  const payload = (action: string, existingId?: string) => {
+    const rawEntries = Object.entries(v).map(([k, val]) => {
+      let trimmed = typeof val === 'string' ? val.trim() : val ?? ''
+      if ((k === 'phone' || k === 'whatsapp_number') && typeof trimmed === 'string' && trimmed) {
+        const p = parseAndValidatePhone(trimmed)
+        if (p.valid && p.normalized) trimmed = p.normalized
+      }
+      return [k, trimmed]
+    })
+    return {
+      idx: 0,
+      action,
+      existing_id: existingId,
+      services,
+      ...Object.fromEntries(rawEntries),
+    }
+  }
 
   const importRow = async (action: string, existingId?: string) => {
     const res = await fetch('/api/leads/import', {
@@ -68,7 +90,16 @@ export function BusinessForm({
     setBusy(true)
     try {
       if (mode === 'edit' && businessId) {
-        const res = await updateBusiness(businessId, v as Record<string, string | null>)
+        const editData = { ...v }
+        if (typeof editData.phone === 'string' && editData.phone) {
+          const p = parseAndValidatePhone(editData.phone)
+          if (p.valid) editData.phone = p.normalized
+        }
+        if (typeof editData.whatsapp_number === 'string' && editData.whatsapp_number) {
+          const w = parseAndValidatePhone(editData.whatsapp_number)
+          if (w.valid) editData.whatsapp_number = w.normalized
+        }
+        const res = await updateBusiness(businessId, editData as Record<string, string | null>)
         if (!res.ok) throw new Error(res.error)
         router.refresh()
         onClose()
@@ -172,8 +203,8 @@ export function BusinessForm({
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">How to reach them</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-              {field('phone', 'Phone', { inputMode: 'tel', placeholder: '07… or 020…' })}
-              {field('whatsapp_number', 'WhatsApp (if different)', { inputMode: 'tel' })}
+              {field('phone', 'Phone', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
+              {field('whatsapp_number', 'WhatsApp (if different)', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
               {field('email', 'Email', { type: 'email' })}
               {field('contact_name', 'Contact name')}
               {field('instagram', 'Instagram handle', { placeholder: 'without @' })}

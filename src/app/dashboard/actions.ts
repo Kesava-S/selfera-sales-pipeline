@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
+import { parseAndValidatePhone } from '@/lib/contact'
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -117,6 +118,17 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
   if (typeof clean.instagram === 'string') clean.instagram = (clean.instagram as string).replace(/^.*instagram\.com\//i, '').replace(/[/?#].*$/, '').replace(/^@/, '') || null
   if (typeof clean.email === 'string') clean.email = (clean.email as string).toLowerCase()
   if (typeof clean.room_count === 'string') clean.room_count = parseInt(clean.room_count as string) || null
+
+  if (typeof clean.phone === 'string' && clean.phone) {
+    const pCheck = parseAndValidatePhone(clean.phone as string)
+    if (!pCheck.valid) return { ok: false, error: pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)' } as ActionResult
+    clean.phone = pCheck.normalized
+  }
+  if (typeof clean.whatsapp_number === 'string' && clean.whatsapp_number) {
+    const waCheck = parseAndValidatePhone(clean.whatsapp_number as string)
+    if (!waCheck.valid) return { ok: false, error: waCheck.error ? `WhatsApp: ${waCheck.error}` : 'WhatsApp must include country code (e.g. +44, 44, or 0...)' } as ActionResult
+    clean.whatsapp_number = waCheck.normalized
+  }
 
   const { error, count } = await supabase.from('businesses').update(clean, { count: 'exact' }).eq('id', businessId)
   if (error) {

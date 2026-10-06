@@ -1,3 +1,5 @@
+import { parseAndValidatePhone } from '@/lib/contact'
+
 /**
  * Meta WhatsApp Cloud API Client
  * Sends messages directly via Meta Graph API v21.0
@@ -8,14 +10,18 @@ export function isWhatsAppConfigured(): boolean {
 }
 
 export function formatWhatsAppNumber(phone: string): string {
-  // Strip all non-digit characters
+  const res = parseAndValidatePhone(phone)
+  if (res.valid && res.normalized) {
+    if (res.normalized.startsWith('+44')) return res.normalized.slice(1)
+    if (res.normalized.startsWith('+0')) return '44' + res.normalized.slice(2)
+    if (res.normalized.startsWith('0')) return '44' + res.normalized.slice(1)
+    if (res.normalized.startsWith('44')) return res.normalized
+    return res.normalized.replace(/^\+/, '')
+  }
   let digits = phone.replace(/\D/g, '')
-
-  // If UK local number starting with 0 (e.g. 07123456789), convert to 447123456789
   if (digits.startsWith('0') && digits.length === 11) {
     digits = '44' + digits.slice(1)
   }
-
   return digits
 }
 
