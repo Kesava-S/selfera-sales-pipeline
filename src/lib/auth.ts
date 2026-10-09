@@ -25,6 +25,21 @@ export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): 
 }
 
 export const requireProfile = cache(async () => {
+  if (process.env.NODE_ENV === 'development') {
+    return {
+      supabase: createServiceClient(),
+      user: { id: 'dev-bypass-user-id', email: 'dev@example.com' } as any,
+      profile: {
+        id: 'dev-bypass-user-id',
+        full_name: 'Dev Admin',
+        role: 'admin',
+        capacity: null,
+        is_active: true,
+        company_role: 'founder',
+        display_role: 'Founder',
+      } as Profile,
+    }
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

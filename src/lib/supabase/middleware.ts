@@ -38,7 +38,7 @@ export async function updateSession(request: NextRequest) {
     pathname === '/logo.png' ||
     pathname === '/favicon.ico'
 
-  if (isPublicRoute) {
+  if (isPublicRoute || process.env.NODE_ENV === 'development') {
     return supabaseResponse
   }
 
