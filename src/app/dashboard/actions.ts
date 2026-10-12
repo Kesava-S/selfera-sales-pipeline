@@ -244,7 +244,59 @@ export async function markNotificationsRead(ids: string[] | 'all') {
   return { ok: true } as ActionResult
 }
 
-// ---------- Email Campaigns ----------
+// ---------- Email Databases & Campaigns ----------
+export type EmailDatabaseInput = {
+  id?: string | null
+  name: string
+  description?: string | null
+  contacts: Array<{
+    id?: string
+    business_name: string
+    email: string
+    contact_name?: string | null
+    category?: string | null
+    business_type?: string | null
+  }>
+}
+
+export async function saveEmailDatabase(input: EmailDatabaseInput): Promise<ActionResult<{ id: string }>> {
+  if (!input.name.trim()) return { ok: false, error: 'Database name is required.' }
+  const cleanContacts = (input.contacts || []).filter(c => c.email && c.email.includes('@'))
+  if (cleanContacts.length === 0) return { ok: false, error: 'Please add at least one valid contact with an email address.' }
+
+  const supabase = await createClient()
+  const userId = await currentUserId()
+
+  const payload: Record<string, unknown> = {
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    contacts: JSON.stringify(cleanContacts),
+    contact_count: cleanContacts.length,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (input.id) {
+    const { error } = await supabase.from('email_databases').update(payload).eq('id', input.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/campaigns')
+    return { ok: true, data: { id: input.id } }
+  } else {
+    payload.created_by = userId
+    const { data, error } = await supabase.from('email_databases').insert(payload).select('id').single()
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/campaigns')
+    return { ok: true, data: { id: data.id } }
+  }
+}
+
+export async function deleteEmailDatabase(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase.from('email_databases').delete().eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/campaigns')
+  return { ok: true }
+}
+
 export type EmailCampaignInput = {
   id?: string | null
   name: string
@@ -252,8 +304,8 @@ export type EmailCampaignInput = {
   preheader?: string | null
   body: string
   service?: string
-  targetCategory?: string
-  targetStage?: string
+  databaseId?: string | null
+  databaseName?: string | null
   status?: 'draft' | 'scheduled' | 'sent' | 'archived'
   recipientCount?: number
   recipients?: Array<{ id: string; business_name: string; email: string; contact_name?: string | null }>
@@ -274,8 +326,8 @@ export async function saveEmailCampaign(input: EmailCampaignInput): Promise<Acti
     preheader: input.preheader?.trim() || null,
     body: input.body.trim(),
     service: input.service || 'General',
-    target_category: input.targetCategory || 'All',
-    target_stage: input.targetStage || 'All',
+    database_id: input.databaseId || null,
+    database_name: input.databaseName || null,
     status: input.status || 'draft',
     recipient_count: input.recipientCount ?? (input.recipients ? input.recipients.length : 0),
     recipients: JSON.stringify(input.recipients || []),

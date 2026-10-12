@@ -1,6 +1,12 @@
 import { requireProfile } from '@/lib/auth'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
-import { EmailCampaignsView, type CampaignRow, type LeadRecipient, type EmailTemplate } from '@/components/v2/EmailCampaignsView'
+import {
+  EmailCampaignsView,
+  type CampaignRow,
+  type EmailDatabaseRow,
+  type PipelineLead,
+  type EmailTemplate,
+} from '@/components/v2/EmailCampaignsView'
 import { ErrorNote } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
@@ -15,7 +21,13 @@ export default async function CampaignsPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
-  // 2. Fetch all leads/businesses with email
+  // 2. Fetch custom email databases
+  const { data: databaseRows, error: databaseError } = await supabase
+    .from('email_databases')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  // 3. Fetch all pipeline businesses with email (for populating databases)
   const { data: leadRows, error: leadsError } = await supabase
     .from('businesses')
     .select('id, business_name, contact_name, email, category, business_type')
@@ -23,7 +35,7 @@ export default async function CampaignsPage() {
     .neq('email', '')
     .order('business_name')
 
-  // 3. Fetch email templates
+  // 4. Fetch email templates
   const { data: templateRows } = await supabase
     .from('templates')
     .select('id, name, subject, body, step')
@@ -39,7 +51,16 @@ export default async function CampaignsPage() {
         : [],
   }))
 
-  const leads: LeadRecipient[] = (leadRows || []) as LeadRecipient[]
+  const parsedDatabases: EmailDatabaseRow[] = (databaseRows || []).map((d: any) => ({
+    ...d,
+    contacts: Array.isArray(d.contacts)
+      ? d.contacts
+      : typeof d.contacts === 'string'
+        ? JSON.parse(d.contacts)
+        : [],
+  }))
+
+  const pipelineLeads: PipelineLead[] = (leadRows || []) as PipelineLead[]
   const templates: EmailTemplate[] = (templateRows || []) as EmailTemplate[]
 
   return (
@@ -52,12 +73,15 @@ export default async function CampaignsPage() {
       />
       {campaignError ? (
         <ErrorNote error={campaignError.message} />
+      ) : databaseError ? (
+        <ErrorNote error={databaseError.message} />
       ) : leadsError ? (
         <ErrorNote error={leadsError.message} />
       ) : (
         <EmailCampaignsView
           campaigns={parsedCampaigns}
-          leads={leads}
+          databases={parsedDatabases}
+          pipelineLeads={pipelineLeads}
           templates={templates}
           userEmail={user.email || ''}
         />

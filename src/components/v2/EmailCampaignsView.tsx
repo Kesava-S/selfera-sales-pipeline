@@ -15,27 +15,40 @@ import {
   Eye,
   Check,
   Search,
-  Filter,
+  Database,
+  Layers,
+  FileSpreadsheet,
+  X,
 } from 'lucide-react'
 import { CONFIG } from '@/lib/config'
 import {
   saveEmailCampaign,
   deleteEmailCampaign,
+  saveEmailDatabase,
+  deleteEmailDatabase,
   sendTestEmailCampaign,
   launchEmailCampaign,
   type EmailCampaignInput,
+  type EmailDatabaseInput,
 } from '@/app/dashboard/actions'
 import { Modal, useAction, ErrorNote, Spinner } from '@/components/ui'
 
-export type LeadRecipient = {
-  id: string
+export type DatabaseContact = {
+  id?: string
   business_name: string
-  contact_name: string | null
   email: string
-  category: string | null
-  business_type: string | null
-  stage?: string | null
-  services?: string[] | null
+  contact_name?: string | null
+  category?: string | null
+  business_type?: string | null
+}
+
+export type EmailDatabaseRow = {
+  id: string
+  name: string
+  description: string | null
+  contacts: DatabaseContact[]
+  contact_count: number
+  created_at: string
 }
 
 export type CampaignRow = {
@@ -45,11 +58,11 @@ export type CampaignRow = {
   preheader: string | null
   body: string
   service: string
-  target_category: string
-  target_stage: string
+  database_id: string | null
+  database_name: string | null
   status: 'draft' | 'scheduled' | 'sent' | 'archived'
   recipient_count: number
-  recipients: LeadRecipient[]
+  recipients: DatabaseContact[]
   scheduled_at: string | null
   sent_at: string | null
   created_at: string
@@ -63,35 +76,59 @@ export type EmailTemplate = {
   step?: string | null
 }
 
+export type PipelineLead = {
+  id: string
+  business_name: string
+  contact_name: string | null
+  email: string
+  category: string | null
+  business_type: string | null
+}
+
 const SERVICES = ['General', ...CONFIG.SERVICES]
-const CATEGORIES = ['All', ...Object.keys(CONFIG.BUSINESS_CATEGORIES)]
 
 export function EmailCampaignsView({
   campaigns: initialCampaigns,
-  leads,
+  databases: initialDatabases,
+  pipelineLeads,
   templates,
   userEmail,
 }: {
   campaigns: CampaignRow[]
-  leads: LeadRecipient[]
+  databases: EmailDatabaseRow[]
+  pipelineLeads: PipelineLead[]
   templates: EmailTemplate[]
   userEmail: string
 }) {
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'databases'>('campaigns')
   const [campaigns, setCampaigns] = useState<CampaignRow[]>(initialCampaigns)
-  const [isCreating, setIsCreating] = useState(false)
-  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [databases, setDatabases] = useState<EmailDatabaseRow[]>(initialDatabases)
 
-  // Form State
-  const [name, setName] = useState('')
+  // Campaign Form State
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
+  const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null)
+  const [campaignName, setCampaignName] = useState('')
   const [service, setService] = useState('General')
-  const [categoryFilter, setCategoryFilter] = useState('All')
+  const [selectedDatabaseId, setSelectedDatabaseId] = useState<string>(
+    initialDatabases[0]?.id || ''
+  )
   const [subject, setSubject] = useState('')
   const [preheader, setPreheader] = useState('')
   const [body, setBody] = useState('')
-  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set())
-  const [showRecipientList, setShowRecipientList] = useState(false)
-  const [recipientSearch, setRecipientSearch] = useState('')
+
+  // Database Creation / Edit Modal
+  const [dbModalOpen, setDbModalOpen] = useState(false)
+  const [editingDb, setEditingDb] = useState<EmailDatabaseRow | null>(null)
+  const [dbName, setDbName] = useState('')
+  const [dbDescription, setDbDescription] = useState('')
+  const [dbContacts, setDbContacts] = useState<DatabaseContact[]>([])
+  const [pasteInput, setPasteInput] = useState('')
+  const [leadPickerSearch, setLeadPickerSearch] = useState('')
+  const [addMode, setAddMode] = useState<'pick' | 'paste'>('pick')
+
+  // Deletion modals
+  const [deleteCampaignId, setDeleteCampaignId] = useState<string | null>(null)
+  const [deleteDbId, setDeleteDbId] = useState<string | null>(null)
 
   // Test send modal
   const [testEmailOpen, setTestEmailOpen] = useState(false)
@@ -103,89 +140,184 @@ export function EmailCampaignsView({
   const [launchSuccessInfo, setLaunchSuccessInfo] = useState<{ count: number; simulated?: boolean } | null>(null)
 
   const { run, pending, error } = useAction()
+  const { run: runDb, pending: dbPending, error: dbError } = useAction()
   const { run: runTest, pending: testPending, error: testError } = useAction()
   const { run: runLaunch, pending: launchPending, error: launchError } = useAction()
 
-  // Filtered leads based on category
-  const categoryMatchedLeads = useMemo(() => {
-    return leads.filter(l => {
-      if (categoryFilter !== 'All' && l.category !== categoryFilter) return false
-      return true
-    })
-  }, [leads, categoryFilter])
+  // Selected database object for the campaign
+  const activeSelectedDb = useMemo(() => {
+    return databases.find(d => d.id === selectedDatabaseId) || databases[0] || null
+  }, [databases, selectedDatabaseId])
 
-  // Search filtered leads
-  const displayedLeads = useMemo(() => {
-    if (!recipientSearch.trim()) return categoryMatchedLeads
-    const q = recipientSearch.toLowerCase()
-    return categoryMatchedLeads.filter(
-      l =>
-        l.business_name.toLowerCase().includes(q) ||
-        l.email.toLowerCase().includes(q) ||
-        (l.contact_name && l.contact_name.toLowerCase().includes(q))
-    )
-  }, [categoryMatchedLeads, recipientSearch])
-
-  // Open Create Mode
+  // Start new campaign
   const startNewCampaign = () => {
     setEditingCampaign(null)
-    setName('')
+    setCampaignName('')
     setService('General')
-    setCategoryFilter('All')
+    setSelectedDatabaseId(databases[0]?.id || '')
     setSubject('')
     setPreheader('')
     setBody(
-      'Hi {contact_name},\n\nI came across {business_name} and was really impressed by what you are building.\n\nWe help UK businesses automate customer bookings, outreach, and inquiries so you never miss a prospective client.\n\nWould you be open to a quick 5-minute chat this week?\n\nBest regards,\nSales Team'
+      'Hi {contact_name},\n\nI noticed the great work {business_name} is doing.\n\nWe help businesses streamline customer bookings, follow ups, and inquiries into a unified queue so you never miss a client.\n\nWould you be open to a quick 5-minute chat this week?\n\nBest regards,\nSales Team'
     )
-    // Select all leads by default
-    setSelectedLeadIds(new Set(leads.map(l => l.id)))
-    setIsCreating(true)
+    setIsCreatingCampaign(true)
   }
 
   // Edit existing campaign
   const startEditCampaign = (c: CampaignRow) => {
     setEditingCampaign(c)
-    setName(c.name)
+    setCampaignName(c.name)
     setService(c.service || 'General')
-    setCategoryFilter(c.target_category || 'All')
+    setSelectedDatabaseId(c.database_id || databases[0]?.id || '')
     setSubject(c.subject)
     setPreheader(c.preheader || '')
     setBody(c.body)
-
-    const existingIds = new Set(
-      (Array.isArray(c.recipients) ? c.recipients : []).map(r => r.id)
-    )
-    if (existingIds.size > 0) {
-      setSelectedLeadIds(existingIds)
-    } else {
-      setSelectedLeadIds(new Set(leads.map(l => l.id)))
-    }
-    setIsCreating(true)
+    setIsCreatingCampaign(true)
   }
 
-  const cancelEdit = () => {
-    setIsCreating(false)
+  const cancelCampaignEdit = () => {
+    setIsCreatingCampaign(false)
     setEditingCampaign(null)
   }
 
-  // Toggle lead selection
-  const toggleLead = (id: string) => {
-    const next = new Set(selectedLeadIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setSelectedLeadIds(next)
+  // Open modal to create database
+  const openCreateDatabase = () => {
+    setEditingDb(null)
+    setDbName('')
+    setDbDescription('')
+    setDbContacts([])
+    setPasteInput('')
+    setAddMode('pick')
+    setDbModalOpen(true)
   }
 
-  const selectAllCategoryLeads = () => {
-    const next = new Set(selectedLeadIds)
-    categoryMatchedLeads.forEach(l => next.add(l.id))
-    setSelectedLeadIds(next)
+  // Open modal to edit database
+  const openEditDatabase = (db: EmailDatabaseRow) => {
+    setEditingDb(db)
+    setDbName(db.name)
+    setDbDescription(db.description || '')
+    setDbContacts(Array.isArray(db.contacts) ? [...db.contacts] : [])
+    setPasteInput('')
+    setAddMode('pick')
+    setDbModalOpen(true)
   }
 
-  const deselectAllCategoryLeads = () => {
-    const next = new Set(selectedLeadIds)
-    categoryMatchedLeads.forEach(l => next.delete(l.id))
-    setSelectedLeadIds(next)
+  // Add parsed contacts from paste input
+  const handleAddPastedContacts = () => {
+    if (!pasteInput.trim()) return
+    const lines = pasteInput.split('\n')
+    const added: DatabaseContact[] = []
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      if (!line) continue
+
+      // Support: "business_name, email, contact_name" or "email" or "business, email"
+      const parts = line.split(',').map(p => p.trim())
+      let email = ''
+      let business_name = ''
+      let contact_name = ''
+
+      if (parts.length === 1) {
+        email = parts[0]
+        business_name = email.split('@')[0]
+      } else if (parts.length === 2) {
+        business_name = parts[0]
+        email = parts[1]
+      } else {
+        business_name = parts[0]
+        email = parts[1]
+        contact_name = parts[2]
+      }
+
+      if (email && email.includes('@')) {
+        added.push({
+          business_name: business_name || 'Business',
+          email: email.toLowerCase(),
+          contact_name: contact_name || null,
+        })
+      }
+    }
+
+    if (added.length > 0) {
+      setDbContacts(prev => [...prev, ...added])
+      setPasteInput('')
+    }
+  }
+
+  // Toggle contact from pipeline
+  const togglePipelineContact = (lead: PipelineLead) => {
+    setDbContacts(prev => {
+      const exists = prev.some(c => c.email.toLowerCase() === lead.email.toLowerCase())
+      if (exists) {
+        return prev.filter(c => c.email.toLowerCase() !== lead.email.toLowerCase())
+      } else {
+        return [
+          ...prev,
+          {
+            id: lead.id,
+            business_name: lead.business_name,
+            email: lead.email,
+            contact_name: lead.contact_name,
+            category: lead.category,
+            business_type: lead.business_type,
+          },
+        ]
+      }
+    })
+  }
+
+  const removeContactFromDb = (email: string) => {
+    setDbContacts(prev => prev.filter(c => c.email !== email))
+  }
+
+  // Save database handler
+  const handleSaveDatabase = () => {
+    const payload: EmailDatabaseInput = {
+      id: editingDb?.id || null,
+      name: dbName,
+      description: dbDescription.trim() || null,
+      contacts: dbContacts,
+    }
+
+    runDb(
+      () => saveEmailDatabase(payload),
+      res => {
+        if (res?.ok && res.data) {
+          const newDbRow: EmailDatabaseRow = {
+            id: res.data.id,
+            name: payload.name,
+            description: payload.description || null,
+            contacts: dbContacts,
+            contact_count: dbContacts.length,
+            created_at: new Date().toISOString(),
+          }
+
+          setDatabases(prev => {
+            const exists = prev.some(d => d.id === newDbRow.id)
+            if (exists) return prev.map(d => (d.id === newDbRow.id ? newDbRow : d))
+            return [newDbRow, ...prev]
+          })
+
+          setSelectedDatabaseId(newDbRow.id)
+          setDbModalOpen(false)
+        }
+      }
+    )
+  }
+
+  // Delete database handler
+  const handleDeleteDatabase = (id: string) => {
+    run(
+      () => deleteEmailDatabase(id),
+      () => {
+        setDatabases(prev => prev.filter(d => d.id !== id))
+        if (selectedDatabaseId === id) {
+          setSelectedDatabaseId(databases.find(d => d.id !== id)?.id || '')
+        }
+        setDeleteDbId(null)
+      }
+    )
   }
 
   // Insert variable tag into body
@@ -203,19 +335,15 @@ export function EmailCampaignsView({
 
   // Sample lead for live preview
   const sampleLead = useMemo(() => {
-    const firstSelected = leads.find(l => selectedLeadIds.has(l.id))
-    return (
-      firstSelected ||
-      leads[0] || {
-        id: 'sample',
-        business_name: 'The Crown Tavern',
-        contact_name: 'Alex Morgan',
-        email: 'alex@crowntavern.co.uk',
-        category: 'Food & Drink',
-        business_type: 'Pub / Bar',
-      }
-    )
-  }, [leads, selectedLeadIds])
+    if (activeSelectedDb && activeSelectedDb.contacts.length > 0) {
+      return activeSelectedDb.contacts[0]
+    }
+    return {
+      business_name: 'The Crown Hotel',
+      contact_name: 'Alex Morgan',
+      email: 'alex@crownhotel.co.uk',
+    }
+  }, [activeSelectedDb])
 
   // Formatted preview content
   const previewSubject = useMemo(() => {
@@ -233,28 +361,27 @@ export function EmailCampaignsView({
   }, [body, sampleLead, service])
 
   // Save campaign handler
-  const handleSaveDraft = (status: 'draft' | 'scheduled' = 'draft') => {
-    const chosenRecipients = leads
-      .filter(l => selectedLeadIds.has(l.id))
-      .map(l => ({
-        id: l.id,
-        business_name: l.business_name,
-        contact_name: l.contact_name,
-        email: l.email,
-      }))
+  const handleSaveCampaign = (status: 'draft' | 'scheduled' = 'draft') => {
+    const db = activeSelectedDb
+    const recipients = db?.contacts || []
 
     const payload: EmailCampaignInput = {
       id: editingCampaign?.id || null,
-      name,
+      name: campaignName,
       subject,
       preheader: preheader.trim() || null,
       body,
       service,
-      targetCategory: categoryFilter,
-      targetStage: 'All',
+      databaseId: db?.id || null,
+      databaseName: db?.name || 'Custom Database',
       status,
-      recipientCount: chosenRecipients.length,
-      recipients: chosenRecipients,
+      recipientCount: recipients.length,
+      recipients: recipients.map(r => ({
+        id: r.id || r.email,
+        business_name: r.business_name,
+        contact_name: r.contact_name || null,
+        email: r.email,
+      })),
     }
 
     run(
@@ -268,11 +395,11 @@ export function EmailCampaignsView({
             preheader: payload.preheader || null,
             body: payload.body,
             service: payload.service || 'General',
-            target_category: payload.targetCategory || 'All',
-            target_stage: payload.targetStage || 'All',
+            database_id: payload.databaseId || null,
+            database_name: payload.databaseName || null,
             status: payload.status || 'draft',
             recipient_count: payload.recipientCount || 0,
-            recipients: chosenRecipients,
+            recipients: payload.recipients || [],
             scheduled_at: null,
             sent_at: null,
             created_at: new Date().toISOString(),
@@ -283,13 +410,13 @@ export function EmailCampaignsView({
             if (exists) return prev.map(c => (c.id === updatedCampaign.id ? updatedCampaign : c))
             return [updatedCampaign, ...prev]
           })
-          setIsCreating(false)
+          setIsCreatingCampaign(false)
         }
       }
     )
   }
 
-  // Handle launch
+  // Execute launch
   const executeLaunch = (cId: string) => {
     runLaunch(
       () => launchEmailCampaign(cId),
@@ -312,20 +439,27 @@ export function EmailCampaignsView({
   }
 
   // Delete campaign
-  const handleDelete = (id: string) => {
+  const handleDeleteCampaign = (id: string) => {
     run(
       () => deleteEmailCampaign(id),
       () => {
         setCampaigns(prev => prev.filter(c => c.id !== id))
-        setDeleteConfirmId(null)
+        setDeleteCampaignId(null)
       }
     )
   }
 
-  // Overview stats
-  const totalCampaigns = campaigns.length
-  const totalSent = campaigns.filter(c => c.status === 'sent').reduce((acc, c) => acc + (c.recipient_count || 0), 0)
-  const activeDrafts = campaigns.filter(c => c.status === 'draft').length
+  // Filtered pipeline leads for modal picker
+  const filteredPipelineLeads = useMemo(() => {
+    if (!leadPickerSearch.trim()) return pipelineLeads
+    const q = leadPickerSearch.toLowerCase()
+    return pipelineLeads.filter(
+      l =>
+        l.business_name.toLowerCase().includes(q) ||
+        l.email.toLowerCase().includes(q) ||
+        (l.contact_name && l.contact_name.toLowerCase().includes(q))
+    )
+  }, [pipelineLeads, leadPickerSearch])
 
   return (
     <div className="space-y-6">
@@ -339,37 +473,72 @@ export function EmailCampaignsView({
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            Create, target, and launch simple personalized outbound email campaigns.
+            Organize custom target databases and run simple, personalized email campaigns.
           </p>
         </div>
 
-        <div>
-          {isCreating ? (
+        {/* View Switcher / New Action */}
+        <div className="flex items-center gap-2">
+          {!isCreatingCampaign && (
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setActiveTab('campaigns')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  activeTab === 'campaigns'
+                    ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Campaigns ({campaigns.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('databases')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                  activeTab === 'databases'
+                    ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Database size={13} /> Target Databases ({databases.length})
+              </button>
+            </div>
+          )}
+
+          {isCreatingCampaign ? (
             <button
-              onClick={cancelEdit}
+              onClick={cancelCampaignEdit}
               className="btn btn-secondary btn-sm flex items-center gap-1.5"
             >
               <ArrowLeft size={15} /> Back to campaigns
             </button>
-          ) : (
+          ) : activeTab === 'campaigns' ? (
             <button
               onClick={startNewCampaign}
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
               <Plus size={16} /> New Campaign
             </button>
+          ) : (
+            <button
+              onClick={openCreateDatabase}
+              className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus size={16} /> Create Database
+            </button>
           )}
         </div>
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* VIEW A: CAMPAIGN CREATION AREA                                */}
+      {/* VIEW: CREATE / EDIT CAMPAIGN (TARGET DATABASE-DRIVEN)         */}
       {/* ------------------------------------------------------------- */}
-      {isCreating ? (
+      {isCreatingCampaign ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* LEFT COLUMN: Campaign Builder Form */}
+          {/* LEFT: Builder */}
           <div className="lg:col-span-7 space-y-6">
-            {/* Step 1: Campaign Info */}
+            {/* Step 1: Campaign Details */}
             <div className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -387,15 +556,15 @@ export function EmailCampaignsView({
                   <input
                     type="text"
                     className="input"
-                    placeholder="e.g. London Coffee Shops - Automation Pitch"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
+                    placeholder="e.g. October London Boutiques Outreach"
+                    value={campaignName}
+                    onChange={e => setCampaignName(e.target.value)}
                     autoFocus
                   />
                 </div>
 
                 <div>
-                  <label className="label">Target Service Focus</label>
+                  <label className="label">Service Focus</label>
                   <select
                     className="input"
                     value={service}
@@ -411,137 +580,100 @@ export function EmailCampaignsView({
               </div>
             </div>
 
-            {/* Step 2: Audience Filter */}
+            {/* Step 2: Target Database Selector */}
             <div className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                     2
                   </span>
-                  <h2 className="font-semibold text-base text-slate-900">Target Audience</h2>
+                  <h2 className="font-semibold text-base text-slate-900">Select Target Database</h2>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    {selectedLeadIds.size} recipient{selectedLeadIds.size === 1 ? '' : 's'}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={openCreateDatabase}
+                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                >
+                  <Plus size={13} /> Create New Database
+                </button>
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <label className="label">Filter by Business Category</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {CATEGORIES.map(cat => {
-                      const active = categoryFilter === cat
-                      const count = leads.filter(l => cat === 'All' || l.category === cat).length
+                <p className="text-xs text-slate-500">
+                  Pick the database you want to run this campaign against. Each database contains your curated list of business contacts.
+                </p>
+
+                {databases.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center space-y-2">
+                    <Database size={24} className="mx-auto text-slate-400" />
+                    <p className="text-xs text-slate-600 font-medium">No target databases created yet.</p>
+                    <button
+                      type="button"
+                      onClick={openCreateDatabase}
+                      className="btn btn-primary btn-sm mx-auto"
+                    >
+                      Create your first database
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {databases.map(db => {
+                      const selected = db.id === selectedDatabaseId
                       return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setCategoryFilter(cat)}
-                          className={`px-3 py-1 text-xs font-medium rounded-lg border transition-all ${
-                            active
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                        <div
+                          key={db.id}
+                          onClick={() => setSelectedDatabaseId(db.id)}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                            selected
+                              ? 'border-primary bg-primary-bg/30 ring-1 ring-primary'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
-                          {cat} <span className="opacity-70 ml-0.5">({count})</span>
-                        </button>
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-sm text-slate-900 truncate">
+                                {db.name}
+                              </span>
+                              {selected && (
+                                <span className="h-4 w-4 rounded-full bg-primary text-white flex items-center justify-center shrink-0">
+                                  <Check size={10} />
+                                </span>
+                              )}
+                            </div>
+                            {db.description && (
+                              <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                                {db.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-slate-400 font-medium pt-3 mt-2 border-t border-slate-100">
+                            <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                              <Users size={12} className="text-primary" /> {db.contact_count} contact
+                              {db.contact_count === 1 ? '' : 's'}
+                            </span>
+                            <span className="text-[11px]">Ready</span>
+                          </div>
+                        </div>
                       )
                     })}
                   </div>
-                </div>
+                )}
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-700">
-                      {categoryMatchedLeads.length} leads in category with email
+                {activeSelectedDb && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between text-xs text-slate-600">
+                    <span className="font-medium">
+                      Active: <strong>{activeSelectedDb.name}</strong> ({activeSelectedDb.contact_count} contacts)
                     </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={selectAllCategoryLeads}
-                        className="text-primary hover:underline font-semibold"
-                      >
-                        Select all
-                      </button>
-                      <span className="text-slate-300">|</span>
-                      <button
-                        type="button"
-                        onClick={deselectAllCategoryLeads}
-                        className="text-slate-500 hover:underline"
-                      >
-                        Deselect all
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openEditDatabase(activeSelectedDb)}
+                      className="text-primary hover:underline font-semibold"
+                    >
+                      View / Edit contacts
+                    </button>
                   </div>
-
-                  {/* Toggle view recipient list */}
-                  <button
-                    type="button"
-                    onClick={() => setShowRecipientList(!showRecipientList)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium bg-white rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Users size={14} className="text-slate-500" />
-                      {showRecipientList ? 'Hide recipient list' : 'View & customize recipient list'}
-                    </span>
-                    <span className="text-slate-400 font-mono text-[11px]">
-                      {selectedLeadIds.size} selected
-                    </span>
-                  </button>
-
-                  {showRecipientList && (
-                    <div className="space-y-2 pt-1 border-t border-slate-200">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search recipients by business or email..."
-                          className="input !text-xs !py-1.5 !pl-8"
-                          value={recipientSearch}
-                          onChange={e => setRecipientSearch(e.target.value)}
-                        />
-                      </div>
-
-                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 bg-white rounded-lg border border-slate-200 text-xs">
-                        {displayedLeads.length === 0 ? (
-                          <div className="p-3 text-center text-slate-400">No matching leads with email.</div>
-                        ) : (
-                          displayedLeads.map(lead => {
-                            const isChecked = selectedLeadIds.has(lead.id)
-                            return (
-                              <label
-                                key={lead.id}
-                                className="flex items-center justify-between p-2.5 hover:bg-slate-50 cursor-pointer"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => toggleLead(lead.id)}
-                                    className="rounded border-slate-300 text-primary focus:ring-primary"
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-slate-800 truncate">
-                                      {lead.business_name}
-                                    </div>
-                                    <div className="text-slate-400 text-[11px] truncate">
-                                      {lead.email} {lead.contact_name ? `(${lead.contact_name})` : ''}
-                                    </div>
-                                  </div>
-                                </div>
-                                <span className="text-[10px] text-slate-400 font-medium shrink-0">
-                                  {lead.business_type || lead.category || ''}
-                                </span>
-                              </label>
-                            )
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 
@@ -595,7 +727,7 @@ export function EmailCampaignsView({
                   <input
                     type="text"
                     className="input !text-xs text-slate-600"
-                    placeholder="e.g. A quick note on streamlining customer inquiries this week"
+                    placeholder="e.g. A quick note on streamlining inquiries"
                     value={preheader}
                     onChange={e => setPreheader(e.target.value)}
                   />
@@ -610,7 +742,6 @@ export function EmailCampaignsView({
                         type="button"
                         onClick={() => insertVariable('business_name')}
                         className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
-                        title="Insert Business Name"
                       >
                         {'{business_name}'}
                       </button>
@@ -618,7 +749,6 @@ export function EmailCampaignsView({
                         type="button"
                         onClick={() => insertVariable('contact_name')}
                         className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
-                        title="Insert Contact Name"
                       >
                         {'{contact_name}'}
                       </button>
@@ -626,7 +756,6 @@ export function EmailCampaignsView({
                         type="button"
                         onClick={() => insertVariable('service')}
                         className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
-                        title="Insert Service"
                       >
                         {'{service}'}
                       </button>
@@ -635,7 +764,7 @@ export function EmailCampaignsView({
                   <textarea
                     rows={9}
                     className="input font-sans text-sm leading-relaxed"
-                    placeholder="Hi {contact_name},\n\nWrite your outreach message here..."
+                    placeholder="Hi {contact_name},\n\nWrite your message here..."
                     value={body}
                     onChange={e => setBody(e.target.value)}
                   />
@@ -646,7 +775,7 @@ export function EmailCampaignsView({
             {/* Error Display */}
             <ErrorNote error={error} />
 
-            {/* Bottom Actions */}
+            {/* Actions */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <button
                 type="button"
@@ -660,7 +789,7 @@ export function EmailCampaignsView({
               <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
-                  onClick={cancelEdit}
+                  onClick={cancelCampaignEdit}
                   className="btn btn-ghost btn-sm"
                   disabled={pending}
                 >
@@ -668,8 +797,8 @@ export function EmailCampaignsView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSaveDraft('draft')}
-                  disabled={pending || !name.trim() || !subject.trim() || !body.trim()}
+                  onClick={() => handleSaveCampaign('draft')}
+                  disabled={pending || !campaignName.trim() || !subject.trim() || !body.trim()}
                   className="btn btn-secondary btn-sm"
                 >
                   {pending && <Spinner size={14} />} Save draft
@@ -677,15 +806,16 @@ export function EmailCampaignsView({
                 <button
                   type="button"
                   onClick={() => {
-                    handleSaveDraft('draft')
+                    handleSaveCampaign('draft')
                     setLaunchModalOpen(true)
                   }}
                   disabled={
                     pending ||
-                    !name.trim() ||
+                    !campaignName.trim() ||
                     !subject.trim() ||
                     !body.trim() ||
-                    selectedLeadIds.size === 0
+                    !activeSelectedDb ||
+                    activeSelectedDb.contact_count === 0
                   }
                   className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
                 >
@@ -695,10 +825,9 @@ export function EmailCampaignsView({
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Live Interactive Email Preview */}
+          {/* RIGHT: Live Preview */}
           <div className="lg:col-span-5 sticky top-20 space-y-4">
             <div className="card p-0 overflow-hidden shadow-sm border border-slate-200">
-              {/* Fake Email Client Header */}
               <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">
@@ -709,11 +838,10 @@ export function EmailCampaignsView({
                   <span className="text-xs font-semibold text-slate-600 ml-2">Inbox Preview</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium bg-white px-2 py-0.5 rounded-md border border-slate-200/60">
-                  <Eye size={12} /> Live preview
+                  <Eye size={12} /> Target: {activeSelectedDb?.name || 'Database'}
                 </div>
               </div>
 
-              {/* Email Envelope Metadata */}
               <div className="p-4 bg-slate-50/50 border-b border-slate-100 space-y-2 text-xs">
                 <div className="flex items-baseline gap-2">
                   <span className="text-slate-400 w-14 shrink-0 font-medium">From:</span>
@@ -740,10 +868,8 @@ export function EmailCampaignsView({
                 )}
               </div>
 
-              {/* Email Body Rendering */}
               <div className="p-6 bg-white min-h-[300px] flex flex-col justify-between">
                 <div className="space-y-4">
-                  {/* Selfera Minimal Branded Top Bar */}
                   <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                     <span className="text-sm font-extrabold tracking-tight text-slate-900">
                       Selfera<span className="text-primary">.</span>
@@ -753,13 +879,11 @@ export function EmailCampaignsView({
                     </span>
                   </div>
 
-                  {/* Rendered Text with paragraph breaks */}
                   <div className="text-sm text-slate-800 leading-relaxed space-y-3 whitespace-pre-wrap font-sans">
                     {previewBody}
                   </div>
                 </div>
 
-                {/* Email Footer Branding */}
                 <div className="pt-8 mt-6 border-t border-slate-100 text-[11px] text-slate-400 space-y-1">
                   <div>Selfera &middot; London, United Kingdom</div>
                   <div>Direct customer engagement & pipeline automation.</div>
@@ -767,61 +891,28 @@ export function EmailCampaignsView({
               </div>
             </div>
 
-            {/* Info note */}
             <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-3 text-xs text-sky-800 space-y-1">
               <div className="font-semibold flex items-center gap-1.5">
-                <CheckCircle2 size={13} className="text-sky-600" /> Human-in-the-Loop Safe
+                <CheckCircle2 size={13} className="text-sky-600" /> Database-Powered
               </div>
               <p className="text-sky-700 leading-normal">
-                Variables like <code className="bg-sky-100 px-1 py-0.5 rounded text-[11px]">{"{business_name}"}</code> are dynamically personalized per recipient upon sending.
+                Emails are sent directly to all <strong>{activeSelectedDb?.contact_count || 0}</strong> contacts in your selected database.
               </p>
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'campaigns' ? (
         /* ------------------------------------------------------------- */
-        /* VIEW B: CAMPAIGN OVERVIEW & LIST                              */
+        /* TAB 1: CAMPAIGNS LIST                                         */
         /* ------------------------------------------------------------- */
         <div className="space-y-6">
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="card p-4 flex items-center gap-3 border border-slate-200">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-primary">
-                <Mail size={20} />
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Total Campaigns</div>
-                <div className="text-xl font-bold text-slate-900">{totalCampaigns}</div>
-              </div>
-            </div>
-
-            <div className="card p-4 flex items-center gap-3 border border-slate-200">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                <Clock size={20} />
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Drafts Ready</div>
-                <div className="text-xl font-bold text-slate-900">{activeDrafts}</div>
-              </div>
-            </div>
-
-            <div className="card p-4 flex items-center gap-3 border border-slate-200">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                <CheckCircle2 size={20} />
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500">Emails Dispatched</div>
-                <div className="text-xl font-bold text-slate-900">{totalSent}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Campaign List */}
           <div className="card p-0 overflow-hidden border border-slate-200 shadow-sm">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="font-semibold text-slate-900">Your Campaigns</h2>
-                <p className="text-xs text-slate-500">Manage all draft and sent email outreach sequences.</p>
+                <h2 className="font-semibold text-slate-900">Your Email Campaigns</h2>
+                <p className="text-xs text-slate-500">
+                  Campaigns linked to your custom target databases.
+                </p>
               </div>
               <button
                 onClick={startNewCampaign}
@@ -837,9 +928,9 @@ export function EmailCampaignsView({
                   <Mail size={24} />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-semibold text-slate-800">No email campaigns created yet</h3>
+                  <h3 className="font-semibold text-slate-800">No campaigns created yet</h3>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    Design a minimalist outreach email and send it to your targeted prospective businesses in a few clicks.
+                    Select a target database and create your first targeted email campaign.
                   </p>
                 </div>
                 <button
@@ -879,12 +970,15 @@ export function EmailCampaignsView({
                           <span className="font-medium text-slate-700">Subject:</span> {c.subject}
                         </div>
 
-                        <div className="flex items-center gap-4 text-xs text-slate-400 font-medium pt-0.5">
-                          <span className="flex items-center gap-1 text-slate-500">
-                            <Users size={13} /> {c.recipient_count || 0} recipient{c.recipient_count === 1 ? '' : 's'}
+                        <div className="flex items-center gap-4 text-xs text-slate-500 font-medium pt-0.5">
+                          <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                            <Database size={13} className="text-primary" /> Database:{' '}
+                            <span className="text-slate-900">{c.database_name || 'Primary'}</span>
                           </span>
                           <span>&middot;</span>
-                          <span>Category: {c.target_category || 'All'}</span>
+                          <span className="flex items-center gap-1">
+                            <Users size={13} /> {c.recipient_count || 0} recipient{c.recipient_count === 1 ? '' : 's'}
+                          </span>
                           {c.sent_at && (
                             <>
                               <span>&middot;</span>
@@ -894,7 +988,7 @@ export function EmailCampaignsView({
                         </div>
                       </div>
 
-                      {/* Action buttons */}
+                      {/* Actions */}
                       <div className="flex items-center gap-2 shrink-0">
                         {!isSent && (
                           <button
@@ -914,7 +1008,7 @@ export function EmailCampaignsView({
                           <Edit3 size={13} /> {isSent ? 'View' : 'Edit'}
                         </button>
                         <button
-                          onClick={() => setDeleteConfirmId(c.id)}
+                          onClick={() => setDeleteCampaignId(c.id)}
                           className="btn btn-ghost btn-sm text-slate-400 hover:text-rose-600"
                           title="Delete campaign"
                         >
@@ -928,6 +1022,309 @@ export function EmailCampaignsView({
             )}
           </div>
         </div>
+      ) : (
+        /* ------------------------------------------------------------- */
+        /* TAB 2: TARGET DATABASES MANAGER                               */
+        /* ------------------------------------------------------------- */
+        <div className="space-y-6">
+          <div className="card p-0 overflow-hidden border border-slate-200 shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-slate-900">Your Target Databases</h2>
+                <p className="text-xs text-slate-500">
+                  Custom contact lists created in the system to run campaigns against.
+                </p>
+              </div>
+              <button
+                onClick={openCreateDatabase}
+                className="btn btn-primary btn-sm flex items-center gap-1.5"
+              >
+                <Plus size={15} /> Create Database
+              </button>
+            </div>
+
+            {databases.length === 0 ? (
+              <div className="text-center py-16 px-4 space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <Database size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-slate-800">No databases created yet</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Create a database by picking pipeline leads or pasting email lists.
+                  </p>
+                </div>
+                <button
+                  onClick={openCreateDatabase}
+                  className="btn btn-primary btn-sm mx-auto flex items-center gap-1.5"
+                >
+                  <Plus size={15} /> Create Database
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {databases.map(db => (
+                  <div
+                    key={db.id}
+                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-slate-900 truncate">{db.name}</h3>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 border border-slate-200">
+                          {db.contact_count} contact{db.contact_count === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      {db.description && (
+                        <p className="text-xs text-slate-500">{db.description}</p>
+                      )}
+                      <div className="text-xs text-slate-400 pt-1 flex items-center gap-2">
+                        <span>Created {new Date(db.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setSelectedDatabaseId(db.id)
+                          startNewCampaign()
+                        }}
+                        className="btn btn-primary btn-sm flex items-center gap-1.5"
+                      >
+                        <Mail size={13} /> Run Campaign
+                      </button>
+                      <button
+                        onClick={() => openEditDatabase(db)}
+                        className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                      >
+                        <Edit3 size={13} /> Edit Contacts
+                      </button>
+                      <button
+                        onClick={() => setDeleteDbId(db.id)}
+                        className="btn btn-ghost btn-sm text-slate-400 hover:text-rose-600"
+                        title="Delete database"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: CREATE / EDIT DATABASE                                 */}
+      {/* ------------------------------------------------------------- */}
+      {dbModalOpen && (
+        <Modal
+          title={editingDb ? `Edit Database: ${editingDb.name}` : 'Create Target Database'}
+          open
+          onClose={() => setDbModalOpen(false)}
+          wide
+        >
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Database Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. London Boutique Hotels, Q4 Cafes"
+                  value={dbName}
+                  onChange={e => setDbName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="label">Description (Optional)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. Accounts targeted for website and booking automation"
+                  value={dbDescription}
+                  onChange={e => setDbDescription(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Contacts Management in Database */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-sm text-slate-900">Database Contacts</h4>
+                  <p className="text-xs text-slate-500">
+                    Currently <strong>{dbContacts.length}</strong> contact{dbContacts.length === 1 ? '' : 's'} in this database.
+                  </p>
+                </div>
+
+                <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-medium border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('pick')}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      addMode === 'pick'
+                        ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Select from Pipeline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('paste')}
+                    className={`px-3 py-1 rounded-md transition-all ${
+                      addMode === 'paste'
+                        ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Paste / Quick Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Mode A: Select from Pipeline */}
+              {addMode === 'pick' ? (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search pipeline leads with email..."
+                      className="input !text-xs !py-1.5 !pl-8"
+                      value={leadPickerSearch}
+                      onChange={e => setLeadPickerSearch(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 bg-white rounded-lg border border-slate-200 text-xs">
+                    {filteredPipelineLeads.length === 0 ? (
+                      <div className="p-4 text-center text-slate-400">No matching leads found with email.</div>
+                    ) : (
+                      filteredPipelineLeads.map(lead => {
+                        const inDb = dbContacts.some(
+                          c => c.email.toLowerCase() === lead.email.toLowerCase()
+                        )
+                        return (
+                          <div
+                            key={lead.id}
+                            onClick={() => togglePipelineContact(lead)}
+                            className="flex items-center justify-between p-2.5 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={inDb}
+                                onChange={() => {}}
+                                className="rounded border-slate-300 text-primary focus:ring-primary"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-800 truncate">
+                                  {lead.business_name}
+                                </div>
+                                <div className="text-slate-400 text-[11px] truncate">
+                                  {lead.email} {lead.contact_name ? `(${lead.contact_name})` : ''}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                              {lead.category || ''}
+                            </span>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Mode B: Paste */
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <p className="text-xs text-slate-500">
+                    Paste contacts (one per line). Format: <code>Business Name, email@domain.com, Contact Name</code> or simply <code>email@domain.com</code>
+                  </p>
+                  <textarea
+                    rows={4}
+                    className="input font-mono !text-xs"
+                    placeholder="Grand Hotel, manager@grandhotel.co.uk, John Doe&#10;Cafe Nero, hello@cafenero.com"
+                    value={pasteInput}
+                    onChange={e => setPasteInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPastedContacts}
+                    disabled={!pasteInput.trim()}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Add to database contacts
+                  </button>
+                </div>
+              )}
+
+              {/* Current Contacts List inside Database */}
+              {dbContacts.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <div className="text-xs font-semibold text-slate-700">
+                    Current Database Members ({dbContacts.length}):
+                  </div>
+                  <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white text-xs">
+                    {dbContacts.map(c => (
+                      <div
+                        key={c.email}
+                        className="p-2 flex items-center justify-between hover:bg-slate-50"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-semibold text-slate-800">
+                            {c.business_name || 'Business'}
+                          </span>
+                          <span className="text-slate-400 ml-2 font-mono text-[11px]">
+                            {c.email}
+                          </span>
+                          {c.contact_name && (
+                            <span className="text-slate-500 ml-1 text-[11px]">
+                              ({c.contact_name})
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeContactFromDb(c.email)}
+                          className="text-slate-400 hover:text-rose-600 p-1"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <ErrorNote error={dbError} />
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setDbModalOpen(false)}
+                disabled={dbPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm flex items-center gap-1.5"
+                disabled={dbPending || !dbName.trim() || dbContacts.length === 0}
+                onClick={handleSaveDatabase}
+              >
+                {dbPending && <Spinner size={14} />} Save Database
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ------------------------------------------------------------- */}
@@ -1040,7 +1437,7 @@ export function EmailCampaignsView({
                     onClick={() => {
                       setLaunchModalOpen(false)
                       setLaunchSuccessInfo(null)
-                      setIsCreating(false)
+                      setIsCreatingCampaign(false)
                     }}
                   >
                     Done
@@ -1050,22 +1447,24 @@ export function EmailCampaignsView({
             ) : (
               <>
                 <p className="text-xs text-slate-600">
-                  Please review campaign summary before launching:
+                  Please review the campaign summary before launching:
                 </p>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-slate-500">Campaign Name:</span>
-                    <span className="font-semibold text-slate-800">{name || editingCampaign?.name}</span>
+                    <span className="font-semibold text-slate-800">{campaignName || editingCampaign?.name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Target Service:</span>
-                    <span className="font-medium text-slate-800">{service || editingCampaign?.service}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Total Recipients:</span>
+                    <span className="text-slate-500">Target Database:</span>
                     <span className="font-bold text-slate-900">
-                      {selectedLeadIds.size || editingCampaign?.recipient_count || 0} leads
+                      {activeSelectedDb?.name || editingCampaign?.database_name}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Total Contacts:</span>
+                    <span className="font-bold text-primary">
+                      {activeSelectedDb?.contact_count || editingCampaign?.recipient_count || 0} contacts
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -1077,7 +1476,7 @@ export function EmailCampaignsView({
                 </div>
 
                 <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
-                  This action will queue emails for all matching leads. Outbound communications comply with human review policies.
+                  This will dispatch outbound emails to all contacts in your target database.
                 </div>
 
                 <ErrorNote error={launchError} />
@@ -1112,13 +1511,13 @@ export function EmailCampaignsView({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* MODAL: DELETE CONFIRMATION                                    */}
+      {/* MODAL: DELETE CAMPAIGN CONFIRMATION                           */}
       {/* ------------------------------------------------------------- */}
-      {deleteConfirmId && (
+      {deleteCampaignId && (
         <Modal
           title="Delete Campaign"
           open
-          onClose={() => setDeleteConfirmId(null)}
+          onClose={() => setDeleteCampaignId(null)}
         >
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
@@ -1129,7 +1528,7 @@ export function EmailCampaignsView({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={() => setDeleteConfirmId(null)}
+                onClick={() => setDeleteCampaignId(null)}
               >
                 Cancel
               </button>
@@ -1137,9 +1536,44 @@ export function EmailCampaignsView({
                 type="button"
                 className="btn btn-danger btn-sm"
                 disabled={pending}
-                onClick={() => handleDelete(deleteConfirmId)}
+                onClick={() => handleDeleteCampaign(deleteCampaignId)}
               >
                 {pending && <Spinner size={14} />} Delete
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: DELETE DATABASE CONFIRMATION                           */}
+      {/* ------------------------------------------------------------- */}
+      {deleteDbId && (
+        <Modal
+          title="Delete Target Database"
+          open
+          onClose={() => setDeleteDbId(null)}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Are you sure you want to delete this target database? Campaigns already sent will keep their records.
+            </p>
+            <ErrorNote error={error} />
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setDeleteDbId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={pending}
+                onClick={() => handleDeleteDatabase(deleteDbId)}
+              >
+                {pending && <Spinner size={14} />} Delete Database
               </button>
             </div>
           </div>
