@@ -244,6 +244,153 @@ export async function markNotificationsRead(ids: string[] | 'all') {
   return { ok: true } as ActionResult
 }
 
+// ---------- Email Campaigns ----------
+export type EmailCampaignInput = {
+  id?: string | null
+  name: string
+  subject: string
+  preheader?: string | null
+  body: string
+  service?: string
+  targetCategory?: string
+  targetStage?: string
+  status?: 'draft' | 'scheduled' | 'sent' | 'archived'
+  recipientCount?: number
+  recipients?: Array<{ id: string; business_name: string; email: string; contact_name?: string | null }>
+  scheduledAt?: string | null
+}
+
+export async function saveEmailCampaign(input: EmailCampaignInput): Promise<ActionResult<{ id: string }>> {
+  if (!input.name.trim()) return { ok: false, error: 'Campaign name is required.' }
+  if (!input.subject.trim()) return { ok: false, error: 'Subject line is required.' }
+  if (!input.body.trim()) return { ok: false, error: 'Email body cannot be empty.' }
+
+  const supabase = await createClient()
+  const userId = await currentUserId()
+
+  const payload: Record<string, unknown> = {
+    name: input.name.trim(),
+    subject: input.subject.trim(),
+    preheader: input.preheader?.trim() || null,
+    body: input.body.trim(),
+    service: input.service || 'General',
+    target_category: input.targetCategory || 'All',
+    target_stage: input.targetStage || 'All',
+    status: input.status || 'draft',
+    recipient_count: input.recipientCount ?? (input.recipients ? input.recipients.length : 0),
+    recipients: JSON.stringify(input.recipients || []),
+    scheduled_at: input.scheduledAt || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (input.id) {
+    const { error } = await supabase.from('email_campaigns').update(payload).eq('id', input.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/campaigns')
+    return { ok: true, data: { id: input.id } }
+  } else {
+    payload.created_by = userId
+    const { data, error } = await supabase.from('email_campaigns').insert(payload).select('id').single()
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/campaigns')
+    return { ok: true, data: { id: data.id } }
+  }
+}
+
+export async function deleteEmailCampaign(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase.from('email_campaigns').delete().eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/campaigns')
+  return { ok: true }
+}
+
+export async function sendTestEmailCampaign({
+  to,
+  subject,
+  body,
+}: {
+  to: string
+  subject: string
+  body: string
+}): Promise<ActionResult> {
+  if (!to || !to.includes('@')) return { ok: false, error: 'Enter a valid email address.' }
+  try {
+    const { isSmtpConfigured, sendEmail } = await import('@/lib/mailer')
+    if (!isSmtpConfigured()) {
+      return { ok: false, error: 'SMTP is not configured in .env.local (SMTP_PASS is required).' }
+    }
+    await sendEmail({
+      to,
+      subject: `[TEST] ${subject}`,
+      body,
+    })
+    return { ok: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to send test email.'
+    return { ok: false, error: msg }
+  }
+}
+
+export async function launchEmailCampaign(id: string): Promise<ActionResult<{ sentCount: number; simulated?: boolean }>> {
+  const supabase = await createClient()
+  const { data: campaign, error } = await supabase.from('email_campaigns').select('*').eq('id', id).single()
+  if (error || !campaign) return { ok: false, error: 'Campaign not found.' }
+
+  const recipients = Array.isArray(campaign.recipients)
+    ? campaign.recipients
+    : typeof campaign.recipients === 'string'
+      ? JSON.parse(campaign.recipients)
+      : []
+
+  if (recipients.length === 0) {
+    return { ok: false, error: 'No recipients selected for this campaign.' }
+  }
+
+  const { isSmtpConfigured, sendEmail } = await import('@/lib/mailer')
+  const smtpReady = isSmtpConfigured()
+
+  let sentCount = 0
+
+  for (const r of recipients) {
+    if (!r.email) continue
+    const personalisedBody = campaign.body
+      .replace(/\{business_name\}/g, r.business_name || 'your business')
+      .replace(/\{contact_name\}/g, r.contact_name || 'there')
+      .replace(/\{service\}/g, campaign.service || 'our services')
+
+    const personalisedSubject = campaign.subject
+      .replace(/\{business_name\}/g, r.business_name || 'your business')
+      .replace(/\{contact_name\}/g, r.contact_name || 'there')
+      .replace(/\{service\}/g, campaign.service || 'our services')
+
+    if (smtpReady) {
+      try {
+        await sendEmail({
+          to: r.email,
+          subject: personalisedSubject,
+          body: personalisedBody,
+        })
+        sentCount++
+      } catch (err) {
+        console.error(`Failed to send campaign email to ${r.email}:`, err)
+      }
+    } else {
+      sentCount++
+    }
+  }
+
+  await supabase.from('email_campaigns').update({
+    status: 'sent',
+    sent_at: new Date().toISOString(),
+    recipient_count: sentCount,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+
+  revalidatePath('/dashboard/campaigns')
+  return { ok: true, data: { sentCount, simulated: !smtpReady } }
+}
+
 // ---------- Account ----------
 export async function signOut() {
   const supabase = await createClient()

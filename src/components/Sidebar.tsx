@@ -3,18 +3,19 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
+  { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
   { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/settings', label: 'Settings', icon: Sliders },
 ]
 
-const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
+const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
 
 export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
   const pathname = usePathname()
