@@ -82,7 +82,8 @@ export async function GET(request: NextRequest) {
   try {
     // 1. OIDC Authorization Code Flow
     if (code) {
-      const issuerUrl = process.env.OIDC_ISSUER_URL || 'http://localhost:3001'
+      const rawIssuer = process.env.OIDC_ISSUER_URL;
+      const issuerUrl = (!rawIssuer || rawIssuer === 'https://admin.selfera.co.uk' || rawIssuer.includes('automaitee-admin.vercel.app')) ? 'https://selfera-admin-api.vercel.app' : rawIssuer;
       const clientId = process.env.OIDC_CLIENT_ID
       const clientSecret = process.env.OIDC_CLIENT_SECRET
 
