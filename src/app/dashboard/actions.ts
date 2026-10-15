@@ -6,7 +6,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
+import { headers, cookies } from 'next/headers'
+import crypto from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
@@ -445,6 +446,30 @@ export async function launchEmailCampaign(id: string): Promise<ActionResult<{ se
 
 // ---------- Account ----------
 export async function signOut() {
+  try {
+    const cookieStore = await cookies()
+    const refreshToken = cookieStore.get('refreshToken')?.value || cookieStore.get('selfera_refresh_token')?.value
+    if (refreshToken) {
+      const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex')
+      const service = createServiceClient()
+      await service
+        .schema('shared')
+        .from('refresh_tokens')
+        .update({
+          revoked: true,
+          revoked_at: new Date().toISOString(),
+          revoked_reason: 'user_logout',
+        })
+        .eq('token_hash', tokenHash)
+
+      cookieStore.delete('refreshToken')
+      cookieStore.delete('selfera_refresh_token')
+    }
+    cookieStore.delete('accessToken')
+  } catch (err) {
+    console.warn('[signOut] Failed to revoke session token:', err)
+  }
+
   const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/login')
