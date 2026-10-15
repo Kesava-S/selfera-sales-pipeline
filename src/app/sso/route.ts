@@ -92,7 +92,9 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(new URL('/login?error=ConfigurationError', request.url))
       }
 
-      const redirectUri = new URL(request.nextUrl.pathname, request.url).toString()
+      const proto = request.headers.get("x-forwarded-proto") || (request.url.startsWith("https") ? "https" : "http");
+      const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+      const redirectUri = host ? `${proto}://${host}${request.nextUrl.pathname}` : new URL(request.nextUrl.pathname, request.url).toString();
 
       const tokenRes = await fetch(`${issuerUrl}/api/oauth/token`, {
         method: 'POST',
