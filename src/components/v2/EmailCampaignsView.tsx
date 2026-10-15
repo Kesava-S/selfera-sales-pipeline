@@ -282,10 +282,10 @@ export function EmailCampaignsView({
 
     runDb(
       () => saveEmailDatabase(payload),
-      res => {
-        if (res?.ok && res.data) {
+      data => {
+        if (data?.id) {
           const newDbRow: EmailDatabaseRow = {
-            id: res.data.id,
+            id: data.id,
             name: payload.name,
             description: payload.description || null,
             contacts: dbContacts,
@@ -386,10 +386,10 @@ export function EmailCampaignsView({
 
     run(
       () => saveEmailCampaign(payload),
-      res => {
-        if (res?.ok && res.data) {
+      data => {
+        if (data?.id) {
           const updatedCampaign: CampaignRow = {
-            id: res.data.id,
+            id: data.id,
             name: payload.name,
             subject: payload.subject,
             preheader: payload.preheader || null,
@@ -420,16 +420,16 @@ export function EmailCampaignsView({
   const executeLaunch = (cId: string) => {
     runLaunch(
       () => launchEmailCampaign(cId),
-      res => {
-        if (res?.ok && res.data) {
+      data => {
+        if (data) {
           setLaunchSuccessInfo({
-            count: res.data.sentCount,
-            simulated: res.data.simulated,
+            count: data.sentCount,
+            simulated: data.simulated,
           })
           setCampaigns(prev =>
             prev.map(c =>
               c.id === cId
-                ? { ...c, status: 'sent', sent_at: new Date().toISOString(), recipient_count: res.data!.sentCount }
+                ? { ...c, status: 'sent', sent_at: new Date().toISOString(), recipient_count: data.sentCount }
                 : c
             )
           )
