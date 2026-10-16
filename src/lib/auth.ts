@@ -26,14 +26,32 @@ export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): 
 
 export const requireProfile = cache(async () => {
   if (process.env.NODE_ENV === 'development') {
+    const service = createServiceClient()
+    let devProfile: any = null
+    try {
+      const { data } = await service
+        .from('profiles')
+        .select('id, full_name, role, capacity, is_active')
+        .eq('role', 'admin')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+      devProfile = data
+    } catch (err) {
+      console.warn('[requireProfile] Could not fetch dev admin profile from database:', err)
+    }
+
+    const devId = devProfile?.id || '00000000-0000-0000-0000-000000000000'
+    const devName = devProfile?.full_name || 'Dev Admin'
+
     return {
-      supabase: createServiceClient(),
-      user: { id: 'dev-bypass-user-id', email: 'dev@example.com' } as any,
+      supabase: service,
+      user: { id: devId, email: 'dev@example.com' } as any,
       profile: {
-        id: 'dev-bypass-user-id',
-        full_name: 'Dev Admin',
-        role: 'admin',
-        capacity: null,
+        id: devId,
+        full_name: devName,
+        role: (devProfile?.role || 'admin') as Role,
+        capacity: devProfile?.capacity ?? null,
         is_active: true,
         company_role: 'founder',
         display_role: 'Founder',
