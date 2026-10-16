@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import PresenceHeartbeat from '@/components/PresenceHeartbeat'
 
 export const metadata: Metadata = {
   title: 'Selfera. | Sales Pipeline',
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <PresenceHeartbeat />
         {children}
       </body>
     </html>
