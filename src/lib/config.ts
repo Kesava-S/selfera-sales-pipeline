@@ -30,6 +30,20 @@ export const CONFIG = {
 }
 
 export const BUSINESS_TYPES: string[] = Object.values(CONFIG.BUSINESS_CATEGORIES).flat()
+export const LEAD_CATEGORIES = [
+  'Hotel',
+  'Restaurant or cafe',
+  'Pub',
+  'Property management',
+] as const
+export type LeadCategory = (typeof LEAD_CATEGORIES)[number]
+
+export const APPROVAL_QUEUE_TYPES = [
+  'Restaurants and cafes',
+  'Hotels',
+  'Pubs',
+  'Property Management',
+] as const
 export const OPEN_STAGES = ['Active', 'Interested', 'Consultation']
 export const STEP_LABELS = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check'] as const
 

@@ -104,6 +104,7 @@ export async function markSent(threadId: string, body: string, subject?: string 
 const EDITABLE = [
   'business_name', 'business_type', 'tier', 'room_count', 'area', 'address', 'postcode', 'maps_link',
   'phone', 'whatsapp_number', 'email', 'instagram', 'facebook', 'existing_website', 'company_type', 'contact_name', 'notes',
+  'owner_contact', 'existing_tech_partner', 'gaps_found', 'has_no_website',
 ] as const
 
 export async function updateBusiness(businessId: string, fields: Record<string, string | number | null>) {

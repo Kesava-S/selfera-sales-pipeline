@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import { Upload, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { CONFIG, BUSINESS_TYPES } from '@/lib/config'
+import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
 import { FIELDS, autoMap, buildRow, guessType, clean, type FieldKey, type ImportRow } from '@/lib/importFields'
 import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
 
@@ -102,7 +102,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
 
   const mappingProblems = [
     !map.business_name && 'Match the "Business name" column.',
-    !map.business_type && 'Match the "Business type" column.',
+    !map.business_type && 'Match the "Category" column.',
     !map.services_to_pitch && !defaultServices.length && 'Pick the services to pitch (or match a services column).',
   ].filter(Boolean) as string[]
 
@@ -229,14 +229,14 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
               )}
               {unknownTypes.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="mb-3 text-sm font-semibold text-amber-900">These business types aren&apos;t in our list. Pick the closest one (or leave them to skip those rows):</p>
+                  <p className="mb-3 text-sm font-semibold text-amber-900">These categories aren&apos;t in our list. Pick the closest one (or leave them to skip those rows):</p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {unknownTypes.map(([val, n]) => (
                       <div key={val} className="flex items-center gap-2">
                         <span className="w-1/2 truncate text-sm" title={val}>{val} <span className="text-slate-500">({n})</span></span>
                         <select className="input !py-1" value={typeOverrides[val] || ''} onChange={e => setTypeOverrides(o => ({ ...o, [val]: e.target.value }))}>
                           <option value="">Skip these rows</option>
-                          {BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}
+                          {LEAD_CATEGORIES.map(t => <option key={t}>{t}</option>)}
                         </select>
                       </div>
                     ))}
@@ -265,7 +265,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           <div className="table-wrap max-h-96 overflow-y-auto">
             <table className="table">
               <thead>
-                <tr><th>Row</th><th>Business</th><th>Type</th><th>Services</th><th>Contact</th><th>Check</th></tr>
+                <tr><th>Row</th><th>Business</th><th>Category</th><th>Services</th><th>Contact</th><th>Check</th></tr>
               </thead>
               <tbody>
                 {[...invalid, ...valid].slice(0, 300).map(r => (
@@ -274,7 +274,15 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <td className="font-semibold">{r.data.business_name || <i className="text-slate-400">missing</i>}</td>
                     <td>{r.data.business_type || <i className="text-slate-400">?</i>}</td>
                     <td className="text-xs">{r.services.join(', ')}</td>
-                    <td className="text-xs text-slate-600">{[r.data.phone, r.data.email, r.data.instagram && `@${r.data.instagram}`].filter(Boolean).join(' · ') || '-'}</td>
+                    <td className="text-xs text-slate-600">
+                      {[
+                        r.data.email,
+                        r.data.whatsapp_number && `WA: ${r.data.whatsapp_number}`,
+                        r.data.phone && `Tel: ${r.data.phone}`,
+                        r.data.instagram && `@${r.data.instagram}`,
+                        r.data.facebook && 'Facebook',
+                      ].filter(Boolean).join(' · ') || '-'}
+                    </td>
                     <td className="text-xs">
                       {r.errors.length ? <span className="text-red-700">{r.errors.join('; ')}</span>
                         : r.warnings.length ? <span className="text-amber-700">{r.warnings.join('; ')}</span>

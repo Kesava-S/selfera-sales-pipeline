@@ -3,7 +3,7 @@
 // Add a business (saved as "Needs review") or edit an existing one.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CONFIG } from '@/lib/config'
+import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
 import { EMAIL_RE } from '@/lib/importFields'
 import { parseAndValidatePhone } from '@/lib/contact'
 import { updateBusiness } from '@/app/dashboard/actions'
@@ -11,8 +11,9 @@ import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
 
 export type BusinessValues = Partial<Record<
   | 'business_name' | 'business_type' | 'tier' | 'room_count' | 'area' | 'address' | 'postcode' | 'maps_link' | 'phone'
-  | 'whatsapp_number' | 'email' | 'instagram' | 'facebook' | 'existing_website' | 'company_type' | 'contact_name' | 'notes',
-  string | null
+  | 'whatsapp_number' | 'email' | 'instagram' | 'facebook' | 'existing_website' | 'has_no_website' | 'company_type' | 'contact_name'
+  | 'owner_contact' | 'existing_tech_partner' | 'gaps_found' | 'notes',
+  string | boolean | null
 >>
 
 type Dup = { business_id: string; business_name: string; matched_by: string; open_pitches: number }
@@ -32,30 +33,54 @@ export function BusinessForm({
   const set = (k: keyof BusinessValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setV(prev => ({ ...prev, [k]: e.target.value }))
     if (errors[k]) setErrors(prev => { const next = { ...prev }; delete next[k]; return next })
+    if (errors.contact && (k === 'email' || k === 'whatsapp_number' || k === 'instagram' || k === 'facebook' || k === 'phone')) {
+      setErrors(prev => { const next = { ...prev }; delete next.contact; return next })
+    }
   }
 
-  const isAccommodation = CONFIG.BUSINESS_CATEGORIES.Accommodation.includes(v.business_type || '')
-
+  // Exactly 4 required checks:
+  // 1. Business name
+  // 2. Category: Hotel, Restaurant or cafe, Pub, or Property management
+  // 3. Service to pitch: Website, Micro Automation, End-to-End Automation, Custom Dashboard, or Cold Outreach
+  // 4. At least one contact: any one of email, WhatsApp, Instagram or Facebook (or phone)
   const validate = () => {
     const e: Record<string, string> = {}
-    if (!v.business_name?.trim()) e.business_name = 'Required'
-    if (!v.business_type) e.business_type = 'Required'
-    if (mode === 'add' && !services.length) e.services = 'Pick at least one'
-    if (v.email && !EMAIL_RE.test(v.email.trim())) e.email = 'Looks wrong'
-    if (v.phone?.trim()) {
-      const p = parseAndValidatePhone(v.phone)
+    if (!v.business_name || !String(v.business_name).trim()) e.business_name = 'Business name is required'
+    if (!v.business_type || !String(v.business_type).trim()) e.business_type = 'Category is required'
+    if (mode === 'add' && !services.length) e.services = 'Pick at least one service to pitch'
+
+    const hasContact = Boolean(
+      (typeof v.email === 'string' && v.email.trim()) ||
+      (typeof v.whatsapp_number === 'string' && v.whatsapp_number.trim()) ||
+      (typeof v.instagram === 'string' && v.instagram.trim()) ||
+      (typeof v.facebook === 'string' && v.facebook.trim()) ||
+      (typeof v.phone === 'string' && v.phone.trim())
+    )
+    if (!hasContact) {
+      e.contact = 'At least one contact is required (Email, WhatsApp, Instagram, or Facebook)'
+    }
+
+    if (v.email && typeof v.email === 'string' && v.email.trim() && !EMAIL_RE.test(v.email.trim())) {
+      e.email = 'Email looks invalid'
+    }
+    if (v.phone && typeof v.phone === 'string' && v.phone.trim()) {
+      const p = parseAndValidatePhone(v.phone.trim())
       if (!p.valid) e.phone = p.error || 'Must include country code (e.g. +44, 44, or 0...)'
     }
-    if (v.whatsapp_number?.trim()) {
-      const w = parseAndValidatePhone(v.whatsapp_number)
+    if (v.whatsapp_number && typeof v.whatsapp_number === 'string' && v.whatsapp_number.trim()) {
+      const w = parseAndValidatePhone(v.whatsapp_number.trim())
       if (!w.valid) e.whatsapp_number = w.error ? w.error.replace(/^Phone/, 'WhatsApp') : 'Must include country code (e.g. +44, 44, or 0...)'
     }
+
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
   const payload = (action: string, existingId?: string) => {
     const rawEntries = Object.entries(v).map(([k, val]) => {
+      if (k === 'has_no_website') {
+        return [k, Boolean(val)]
+      }
       let trimmed = typeof val === 'string' ? val.trim() : val ?? ''
       if ((k === 'phone' || k === 'whatsapp_number') && typeof trimmed === 'string' && trimmed) {
         const p = parseAndValidatePhone(trimmed)
@@ -99,7 +124,10 @@ export function BusinessForm({
           const w = parseAndValidatePhone(editData.whatsapp_number)
           if (w.valid) editData.whatsapp_number = w.normalized
         }
-        const res = await updateBusiness(businessId, editData as Record<string, string | null>)
+        if (editData.has_no_website) {
+          editData.existing_website = null
+        }
+        const res = await updateBusiness(businessId, editData as Record<string, string | number | null>)
         if (!res.ok) throw new Error(res.error)
         router.refresh()
         onClose()
@@ -108,7 +136,15 @@ export function BusinessForm({
       // Check for an existing business first
       const d = await fetch('/api/leads/duplicates', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: [{ idx: 0, business_name: v.business_name, phone: v.phone, email: v.email, postcode: v.postcode }] }),
+        body: JSON.stringify({
+          rows: [{
+            idx: 0,
+            business_name: v.business_name,
+            phone: v.phone || v.whatsapp_number,
+            email: v.email,
+            postcode: v.postcode,
+          }],
+        }),
       }).then(r => r.json())
       if (d.error) throw new Error(d.error)
       if (d.matches?.length) {
@@ -144,7 +180,7 @@ export function BusinessForm({
   const field = (k: keyof BusinessValues, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div>
       <label className="label">{label}</label>
-      <input className={`input ${errors[k] ? '!border-red-400' : ''}`} value={v[k] ?? ''} onChange={set(k)} {...props} />
+      <input className={`input ${errors[k] ? '!border-red-400' : ''}`} value={(v[k] as string) ?? ''} onChange={set(k)} {...props} />
       {errors[k] && <p className="mt-1 text-xs text-red-600">{errors[k]}</p>}
     </div>
   )
@@ -175,78 +211,164 @@ export function BusinessForm({
           </div>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-            {field('business_name', 'Business name *', { autoFocus: true })}
-            <div>
-              <label className="label">Business type *</label>
-              <select className={`input ${errors.business_type ? '!border-red-400' : ''}`} value={v.business_type ?? ''} onChange={set('business_type')}>
-                <option value="">Choose…</option>
-                {Object.entries(CONFIG.BUSINESS_CATEGORIES).map(([group, types]) => (
-                  <optgroup key={group} label={group}>
-                    {types.map(t => <option key={t}>{t}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-              {errors.business_type && <p className="mt-1 text-xs text-red-600">{errors.business_type}</p>}
-            </div>
-          </div>
-
-          {mode === 'add' && (
-            <div>
-              <label className="label">Services to pitch *</label>
-              <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
-              {errors.services && <p className="mt-1 text-xs text-red-600">{errors.services}</p>}
-            </div>
-          )}
-
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">How to reach them</p>
+        <form onSubmit={submit} className="space-y-6">
+          {/* Required Fields Section */}
+          <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-              {field('phone', 'Phone', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
-              {field('whatsapp_number', 'WhatsApp (if different)', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
-              {field('email', 'Email', { type: 'email' })}
-              {field('contact_name', 'Contact name')}
-              {field('instagram', 'Instagram handle', { placeholder: 'without @' })}
-              {field('facebook', 'Facebook page')}
+              {field('business_name', 'Business name *', { autoFocus: true, placeholder: 'e.g. The Grand Hotel' })}
+              <div>
+                <label className="label">Category *</label>
+                <select
+                  className={`input ${errors.business_type ? '!border-red-400' : ''}`}
+                  value={(v.business_type as string) ?? ''}
+                  onChange={set('business_type')}
+                >
+                  <option value="">Choose category…</option>
+                  {LEAD_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  {v.business_type && !LEAD_CATEGORIES.includes(v.business_type as any) && (
+                    <option value={v.business_type as string}>{v.business_type as string}</option>
+                  )}
+                </select>
+                {errors.business_type && <p className="mt-1 text-xs text-red-600">{errors.business_type}</p>}
+              </div>
+            </div>
+
+            {mode === 'add' && (
+              <div>
+                <label className="label">Service to pitch *</label>
+                <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
+                {errors.services && <p className="mt-1 text-xs text-red-600">{errors.services}</p>}
+              </div>
+            )}
+          </div>
+
+          {/* Contact Details Section (At least 1 required) */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contact Details *</p>
+              <span className="text-xs text-slate-500">Provide at least one: Email, WhatsApp, Instagram, or Facebook</span>
+            </div>
+
+            {errors.contact && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-700">
+                {errors.contact}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+              {field('email', 'Business Email', { type: 'email', placeholder: 'hello@business.com' })}
+              {field('whatsapp_number', 'Business WhatsApp', { inputMode: 'tel', placeholder: '+44 7…' })}
+              {field('instagram', 'Business Instagram', { placeholder: 'handle without @' })}
+              {field('facebook', 'Business Facebook', { placeholder: 'Page link or handle' })}
+              {field('phone', 'Business Phone (optional)', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
+            </div>
+
+            <div className="border-t border-slate-200 pt-3">
+              <p className="mb-2 text-xs font-semibold text-slate-600">Owner Details (Optional)</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+                {field('contact_name', 'Owner name', { placeholder: 'e.g. John Doe' })}
+                {field('owner_contact', 'Owner contact', { placeholder: 'Email, WhatsApp, LinkedIn or socials' })}
+              </div>
             </div>
           </div>
 
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Where and what</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
-              {field('area', 'Area', { placeholder: 'e.g. Richmond' })}
-              {field('postcode', 'Postcode')}
-              {field('address', 'Address')}
-              {field('existing_website', 'Current website')}
-              {field('maps_link', 'Google Maps link')}
-              <div>
-                <label className="label">Company type</label>
-                <select className="input" value={v.company_type ?? 'Unknown'} onChange={set('company_type')}>
-                  {CONFIG.COMPANY_TYPES.map(c => <option key={c}>{c}</option>)}
-                </select>
-                {(v.company_type === 'Sole trader' || v.company_type === 'Partnership') && (
-                  <p className="mt-1 text-xs text-amber-700">Marketing emails need their consent first (PECR).</p>
-                )}
+          {/* Online Presence & Location Section */}
+          <div className="space-y-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Website & Location (Optional)</p>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                <div className="sm:col-span-2">
+                  <label className="label">Website link</label>
+                  <input
+                    className={`input ${v.has_no_website ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                    placeholder="https://example.com"
+                    value={v.has_no_website ? '' : ((v.existing_website as string) ?? '')}
+                    onChange={set('existing_website')}
+                    disabled={Boolean(v.has_no_website)}
+                  />
+                </div>
+                <div className="pt-1 sm:pt-6">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-primary focus:ring-primary h-4 w-4"
+                      checked={Boolean(v.has_no_website)}
+                      onChange={e => {
+                        const checked = e.target.checked
+                        setV(prev => ({
+                          ...prev,
+                          has_no_website: checked,
+                          existing_website: checked ? null : prev.existing_website,
+                        }))
+                      }}
+                    />
+                    Tick &ldquo;No site&rdquo;
+                  </label>
+                </div>
               </div>
-              {isAccommodation && (
-                <>
-                  <div>
-                    <label className="label">Tier</label>
-                    <select className="input" value={v.tier ?? ''} onChange={set('tier')}>
-                      <option value="">Not known</option>
-                      {CONFIG.TIERS.map(t => <option key={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  {field('room_count', 'Rooms', { inputMode: 'numeric' })}
-                </>
+              {v.has_no_website && (
+                <p className="mt-1 text-xs text-amber-700 font-medium">Marked as having no website.</p>
               )}
             </div>
+
+            <div>
+              <label className="label">Location (one address, or for a group each branch listed)</label>
+              <textarea
+                className="input min-h-16"
+                placeholder="e.g. 10 High Street, London or Branch 1: Soho, Branch 2: Richmond"
+                value={(v.address as string) ?? ''}
+                onChange={e => {
+                  const val = e.target.value
+                  setV(prev => ({ ...prev, address: val }))
+                }}
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="label">Notes</label>
-            <textarea className="input min-h-20" value={v.notes ?? ''} onChange={set('notes')} />
+          {/* Tech & Audit Gaps Section */}
+          <div className="space-y-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Tech & Audit (Optional)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="label">Existing tech partner</label>
+                <input
+                  className="input"
+                  placeholder="Agency (name it), DIY (tool e.g. Wix), or None"
+                  value={(v.existing_tech_partner as string) ?? ''}
+                  onChange={set('existing_tech_partner')}
+                />
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                  <span>Quick pick:</span>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'None' }))}>None</button>
+                  <span>·</span>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'DIY (Wix)' }))}>DIY (Wix)</button>
+                  <span>·</span>
+                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'Agency' }))}>Agency</button>
+                </div>
+              </div>
+              <div>
+                <label className="label">Gaps found</label>
+                <textarea
+                  className="input min-h-20"
+                  placeholder="Free text: no online booking, slow site, no follow-up automation..."
+                  value={(v.gaps_found as string) ?? ''}
+                  onChange={set('gaps_found')}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Additional notes</label>
+              <textarea
+                className="input min-h-16"
+                placeholder="Any extra comments or observations"
+                value={(v.notes as string) ?? ''}
+                onChange={set('notes')}
+              />
+            </div>
           </div>
 
           <ErrorNote error={error} />

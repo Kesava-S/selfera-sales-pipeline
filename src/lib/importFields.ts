@@ -1,33 +1,39 @@
-import { BUSINESS_TYPES, CONFIG } from '@/lib/config'
+import { CONFIG, LEAD_CATEGORIES, LeadCategory } from '@/lib/config'
 import { parseAndValidatePhone } from '@/lib/contact'
 
 export type FieldKey =
-  | 'business_name' | 'business_type' | 'services_to_pitch' | 'area' | 'address' | 'postcode' | 'maps_link'
-  | 'rating' | 'reviews_count' | 'phone' | 'whatsapp_number' | 'email' | 'instagram' | 'facebook'
-  | 'existing_website' | 'company_type' | 'contact_name' | 'tier' | 'room_count' | 'demo_link' | 'notes'
+  | 'business_name' | 'business_type' | 'services_to_pitch' | 'has_no_website' | 'existing_website'
+  | 'address' | 'area' | 'postcode' | 'contact_name' | 'owner_contact'
+  | 'email' | 'whatsapp_number' | 'phone' | 'instagram' | 'facebook'
+  | 'existing_tech_partner' | 'gaps_found' | 'notes' | 'maps_link'
+  | 'rating' | 'reviews_count' | 'company_type' | 'tier' | 'room_count' | 'demo_link'
 
 export const FIELDS: { key: FieldKey; label: string; required?: boolean; synonyms: string[] }[] = [
   { key: 'business_name', label: 'Business name', required: true, synonyms: ['business_name', 'business', 'name', 'business name', 'company', 'company name', 'hotel', 'venue'] },
-  { key: 'business_type', label: 'Business type', required: true, synonyms: ['business_type', 'type', 'category', 'business type', 'sector'] },
-  { key: 'services_to_pitch', label: 'Services to pitch', synonyms: ['services_to_pitch', 'services', 'service', 'pitch', 'offer'] },
-  { key: 'area', label: 'Area', synonyms: ['area', 'location', 'town', 'borough', 'city', 'neighbourhood'] },
-  { key: 'address', label: 'Address', synonyms: ['address', 'street', 'full address'] },
+  { key: 'business_type', label: 'Category', required: true, synonyms: ['business_type', 'category', 'type', 'business type', 'sector', 'industry'] },
+  { key: 'services_to_pitch', label: 'Service to pitch', required: true, synonyms: ['services_to_pitch', 'services', 'service', 'pitch', 'offer', 'service to pitch', 'services to pitch'] },
+  { key: 'email', label: 'Business Email', synonyms: ['email', 'business_email', 'business email', 'e-mail', 'mail', 'email address'] },
+  { key: 'whatsapp_number', label: 'Business WhatsApp', synonyms: ['whatsapp_number', 'business_whatsapp', 'whatsapp', 'wa', 'business whatsapp', 'wa number'] },
+  { key: 'instagram', label: 'Business Instagram', synonyms: ['instagram', 'business_instagram', 'ig', 'insta', 'instagram handle', 'business instagram'] },
+  { key: 'facebook', label: 'Business Facebook', synonyms: ['facebook', 'business_facebook', 'fb', 'facebook page', 'business facebook'] },
+  { key: 'phone', label: 'Business Phone (optional)', synonyms: ['phone', 'phone number', 'telephone', 'tel', 'mobile', 'contact number', 'business phone'] },
+  { key: 'existing_website', label: 'Website', synonyms: ['existing_website', 'website', 'site', 'url', 'web', 'link'] },
+  { key: 'has_no_website', label: 'No site (tick / yes)', synonyms: ['has_no_website', 'no_site', 'no site', 'no_website', 'no website', 'without website'] },
+  { key: 'address', label: 'Location (address or branches)', synonyms: ['address', 'location', 'locations', 'branches', 'street', 'full address'] },
+  { key: 'contact_name', label: 'Owner name', synonyms: ['contact_name', 'owner_name', 'owner name', 'owner', 'contact', 'manager', 'contact name'] },
+  { key: 'owner_contact', label: 'Owner contact (email/WA/socials)', synonyms: ['owner_contact', 'owner contact', 'owner phone', 'owner email', 'owner socials', 'owner linkedin', 'owner whatsapp'] },
+  { key: 'existing_tech_partner', label: 'Existing tech partner', synonyms: ['existing_tech_partner', 'tech_partner', 'existing tech partner', 'tech partner', 'agency', 'diy'] },
+  { key: 'gaps_found', label: 'Gaps found', synonyms: ['gaps_found', 'gaps', 'gaps found', 'issues', 'audit', 'observations'] },
+  { key: 'area', label: 'Area', synonyms: ['area', 'town', 'borough', 'city', 'neighbourhood'] },
   { key: 'postcode', label: 'Postcode', synonyms: ['postcode', 'post code', 'zip', 'postal code'] },
+  { key: 'notes', label: 'Notes', synonyms: ['notes', 'comments', 'remarks'] },
   { key: 'maps_link', label: 'Google Maps link', synonyms: ['maps_link', 'maps', 'google maps', 'maps url', 'map link'] },
   { key: 'rating', label: 'Rating', synonyms: ['rating', 'google_rating', 'google rating', 'stars', 'note'] },
   { key: 'reviews_count', label: 'Reviews count', synonyms: ['reviews_count', 'reviews', 'review count', 'google_reviews_count'] },
-  { key: 'phone', label: 'Phone', synonyms: ['phone', 'phone number', 'telephone', 'tel', 'mobile', 'contact number'] },
-  { key: 'whatsapp_number', label: 'WhatsApp number', synonyms: ['whatsapp_number', 'whatsapp', 'wa'] },
-  { key: 'email', label: 'Email', synonyms: ['email', 'e-mail', 'mail', 'email address'] },
-  { key: 'instagram', label: 'Instagram', synonyms: ['instagram', 'ig', 'insta', 'instagram handle'] },
-  { key: 'facebook', label: 'Facebook', synonyms: ['facebook', 'fb', 'facebook page'] },
-  { key: 'existing_website', label: 'Website', synonyms: ['existing_website', 'website', 'site', 'url', 'web'] },
   { key: 'company_type', label: 'Company type', synonyms: ['company_type', 'company type', 'legal type'] },
-  { key: 'contact_name', label: 'Contact name', synonyms: ['contact_name', 'contact', 'owner', 'contact name', 'manager'] },
   { key: 'tier', label: 'Tier', synonyms: ['tier', 'star rating', 'stars class'] },
   { key: 'room_count', label: 'Rooms', synonyms: ['room_count', 'rooms', 'room count', 'number of rooms'] },
   { key: 'demo_link', label: 'Demo link', synonyms: ['demo_link', 'demo', 'demo url'] },
-  { key: 'notes', label: 'Notes', synonyms: ['notes', 'comments', 'remarks'] },
 ]
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -45,30 +51,83 @@ export function autoMap(headers: string[]): Partial<Record<FieldKey, string>> {
   return map
 }
 
-// Common words in scraped data mapped to our business types
-const TYPE_SYNONYMS: Record<string, string> = {
-  cafe: 'Cafe', 'coffee shop': 'Cafe', coffee: 'Cafe', 'park cafe': 'Cafe', 'cafe bar': 'Cafe', 'tea room': 'Cafe',
-  restaurant: 'Restaurant', bistro: 'Restaurant', bakery: 'Bakery', takeaway: 'Takeaway', pub: 'Pub / Bar', bar: 'Pub / Bar',
-  hotel: 'Hotel', '3 star': 'Hotel', '4 star': 'Hotel', '5 star': 'Hotel', 'boutique hotel': 'Boutique hotel',
-  'b b': 'B&B / Guesthouse', bnb: 'B&B / Guesthouse', guesthouse: 'B&B / Guesthouse', 'guest house': 'B&B / Guesthouse', inn: 'B&B / Guesthouse',
-  'pub with rooms': 'B&B / Guesthouse', 'barge b b': 'B&B / Guesthouse', airbnb: 'Short-let / Airbnb host', 'short let': 'Short-let / Airbnb host',
-  'serviced apartments': 'Serviced apartments', 'co living': 'Serviced apartments', aparthotel: 'Serviced apartments', hostel: 'Hostel',
-  hairdresser: 'Hair salon', 'hair salon': 'Hair salon', salon: 'Hair salon', 'hair beauty': 'Hair salon', 'hair colour head spa': 'Hair salon',
-  barber: 'Barber', barbers: 'Barber', barbershop: 'Barber',
-  beauty: 'Beauty', 'beauty salon': 'Beauty', 'beauty therapist': 'Beauty', beautician: 'Beauty',
-  'nail salon': 'Nails & Lashes', 'nail studio': 'Nails & Lashes', nails: 'Nails & Lashes', lashes: 'Nails & Lashes',
-  'lashes pmu': 'Nails & Lashes', 'lashes beauty': 'Nails & Lashes', 'beauty nails': 'Nails & Lashes',
-  aesthetics: 'Medical aesthetics', 'medical aesthetics': 'Medical aesthetics', 'facialist laser': 'Medical aesthetics', clinic: 'Medical aesthetics',
-  spa: 'Spa', gym: 'Fitness / Training studio', fitness: 'Fitness / Training studio', 'personal trainer': 'Fitness / Training studio', yoga: 'Fitness / Training studio',
-  boutique: 'Fashion boutique', 'fashion boutique': 'Fashion boutique', florist: 'Florist', other: 'Other',
+// Synonyms mapped strictly into our 4 categories
+const CATEGORY_SYNONYMS: Record<string, LeadCategory> = {
+  // Hotel
+  hotel: 'Hotel',
+  hotels: 'Hotel',
+  'boutique hotel': 'Hotel',
+  'b b': 'Hotel',
+  bnb: 'Hotel',
+  'b&b': 'Hotel',
+  guesthouse: 'Hotel',
+  'guest house': 'Hotel',
+  inn: 'Hotel',
+  'pub with rooms': 'Hotel',
+  'barge b b': 'Hotel',
+  hostel: 'Hotel',
+  resort: 'Hotel',
+  motel: 'Hotel',
+  lodging: 'Hotel',
+  accommodation: 'Hotel',
+
+  // Restaurant or cafe
+  'restaurant or cafe': 'Restaurant or cafe',
+  'restaurants and cafes': 'Restaurant or cafe',
+  'restaurants & cafes': 'Restaurant or cafe',
+  restaurant: 'Restaurant or cafe',
+  restaurants: 'Restaurant or cafe',
+  cafe: 'Restaurant or cafe',
+  cafes: 'Restaurant or cafe',
+  'coffee shop': 'Restaurant or cafe',
+  coffee: 'Restaurant or cafe',
+  'park cafe': 'Restaurant or cafe',
+  'cafe bar': 'Restaurant or cafe',
+  'tea room': 'Restaurant or cafe',
+  bistro: 'Restaurant or cafe',
+  bakery: 'Restaurant or cafe',
+  takeaway: 'Restaurant or cafe',
+  diner: 'Restaurant or cafe',
+  eatery: 'Restaurant or cafe',
+  'food & drink': 'Restaurant or cafe',
+  food: 'Restaurant or cafe',
+
+  // Pub
+  pub: 'Pub',
+  pubs: 'Pub',
+  bar: 'Pub',
+  bars: 'Pub',
+  'pub bar': 'Pub',
+  'pub / bar': 'Pub',
+  'public house': 'Pub',
+  tavern: 'Pub',
+  gastropub: 'Pub',
+
+  // Property management
+  'property management': 'Property management',
+  'property manager': 'Property management',
+  property: 'Property management',
+  properties: 'Property management',
+  airbnb: 'Property management',
+  'airbnb host': 'Property management',
+  'short let': 'Property management',
+  'short-let': 'Property management',
+  'short-let / airbnb host': 'Property management',
+  'serviced apartments': 'Property management',
+  'serviced apartment': 'Property management',
+  'co living': 'Property management',
+  aparthotel: 'Property management',
+  'estate agent': 'Property management',
+  'letting agent': 'Property management',
+  'real estate': 'Property management',
 }
 
-export function guessType(value: string): string | null {
+export function guessType(value: string): LeadCategory | null {
   const v = (value || '').trim()
   if (!v) return null
-  const exact = BUSINESS_TYPES.find(t => t.toLowerCase() === v.toLowerCase())
-  if (exact) return exact
-  return TYPE_SYNONYMS[norm(v)] ?? null
+  const exact = (LEAD_CATEGORIES as readonly string[]).find(t => t.toLowerCase() === v.toLowerCase())
+  if (exact) return exact as LeadCategory
+  return CATEGORY_SYNONYMS[norm(v)] ?? null
 }
 
 export function guessTier(value: string): string | null {
@@ -143,6 +202,11 @@ export type ImportRow = {
 }
 
 // Turn a raw CSV row into clean fields for the database
+// Exactly 4 required checks decide whether a row is accepted:
+// 1. Business name
+// 2. Category: Hotel, Restaurant or cafe, Pub, or Property management
+// 3. Service to pitch: Website, Micro Automation, End-to-End Automation, Custom Dashboard, or Cold Outreach
+// 4. At least one contact: email, WhatsApp, Instagram, or Facebook (or phone)
 export function buildRow(
   raw: Record<string, string>,
   map: Partial<Record<FieldKey, string>>,
@@ -171,7 +235,7 @@ export function buildRow(
       rating = r.rating
       reviews = reviews || r.reviews
     } else {
-      notes.push(rating) // e.g. "Owner: Sylwia" in a notes-like column
+      notes.push(rating)
       rating = ''
     }
   }
@@ -180,9 +244,7 @@ export function buildRow(
   let cleanPhone = rawPhone
   if (rawPhone) {
     const pCheck = parseAndValidatePhone(rawPhone)
-    if (!pCheck.valid) {
-      errors.push(pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)')
-    } else if (pCheck.normalized) {
+    if (pCheck.valid && pCheck.normalized) {
       cleanPhone = pCheck.normalized
     }
   }
@@ -191,26 +253,53 @@ export function buildRow(
   let cleanWa = rawWa
   if (rawWa) {
     const waCheck = parseAndValidatePhone(rawWa)
-    if (!waCheck.valid) {
-      errors.push(waCheck.error ? `WhatsApp: ${waCheck.error}` : 'WhatsApp must include country code (e.g. +44, 44, or 0...)')
-    } else if (waCheck.normalized) {
+    if (waCheck.valid && waCheck.normalized) {
       cleanWa = waCheck.normalized
     }
   }
 
-  const svc = parseServices(get('services_to_pitch'), defaultServices)
+  const rawNoSite = get('has_no_website')
+  const hasNoWebsite = /^(yes|y|true|1|tick|checked|no site|no website|none)$/i.test(rawNoSite)
+  const rawWebsite = get('existing_website')
+  const existingWebsite = hasNoWebsite ? '' : rawWebsite
 
-  if (!name) errors.push('Business name is missing')
-  if (!rawType && !type) errors.push('Business type is missing')
-  else if (!type) errors.push(`Unknown business type "${rawType}"`)
-  if (!svc.services.length) errors.push('No service to pitch')
-  if (svc.unknown.length) errors.push(`Unknown service "${svc.unknown.join(', ')}"`)
-  if (email && !EMAIL_RE.test(email)) errors.push('Email looks wrong')
-  if (rawType && type && rawType.toLowerCase() !== type.toLowerCase() && !typeOverrides[rawType]) notes.push(`Sheet type: ${rawType}`)
+  const location = get('address') || area
 
   const ig = get('instagram')
   const fb = get('facebook')
-  if (!cleanPhone && !email && !ig && !fb && !area && !postcode && !get('address')) warnings.push('No way to contact yet')
+
+  const svc = parseServices(get('services_to_pitch'), defaultServices)
+
+  // --- 4 REQUIRED CHECKS ---
+  // 1. Business name
+  if (!name) {
+    errors.push('Business name is missing')
+  }
+
+  // 2. Category (Hotel, Restaurant or cafe, Pub, or Property management)
+  if (!rawType && !type) {
+    errors.push('Category is missing')
+  } else if (!type || !(LEAD_CATEGORIES as readonly string[]).includes(type)) {
+    errors.push(`Unknown category "${rawType}". Must be Hotel, Restaurant or cafe, Pub, or Property management`)
+  }
+
+  // 3. Service to pitch
+  if (!svc.services.length) {
+    errors.push('Pick at least one service to pitch')
+  }
+  if (svc.unknown.length) {
+    errors.push(`Unknown service "${svc.unknown.join(', ')}"`)
+  }
+
+  // 4. At least one contact (email, WhatsApp, Instagram, or Facebook / phone)
+  const hasContact = Boolean(email || cleanWa || cleanPhone || ig || fb)
+  if (!hasContact) {
+    errors.push('At least one contact is required (email, WhatsApp, Instagram, or Facebook)')
+  }
+
+  if (email && !EMAIL_RE.test(email)) {
+    errors.push('Email looks wrong')
+  }
 
   const extraNotes = get('notes')
   if (extraNotes) notes.unshift(extraNotes)
@@ -224,22 +313,26 @@ export function buildRow(
     data: {
       business_name: name,
       business_type: type,
-      tier,
-      room_count: get('room_count').replace(/\D/g, ''),
+      existing_website: existingWebsite,
+      has_no_website: hasNoWebsite ? 'true' : 'false',
+      address: location,
       area,
-      address: get('address'),
       postcode,
+      contact_name: get('contact_name'),
+      owner_contact: get('owner_contact'),
+      email,
+      whatsapp_number: cleanWa,
+      phone: cleanPhone,
+      instagram: /^(instagram|yes|y|check|instagram \(check\))$/i.test(ig) ? '' : ig,
+      facebook: /^(facebook|yes|y)$/i.test(fb) ? '' : fb,
+      existing_tech_partner: get('existing_tech_partner'),
+      gaps_found: get('gaps_found'),
       maps_link: get('maps_link'),
       google_rating: rating,
       google_reviews_count: reviews.replace(/\D/g, ''),
-      phone: cleanPhone,
-      whatsapp_number: cleanWa,
-      email,
-      instagram: /^(instagram|yes|y|check|instagram \(check\))$/i.test(ig) ? '' : ig,
-      facebook: /^(facebook|yes|y)$/i.test(fb) ? '' : fb,
-      existing_website: get('existing_website'),
       company_type: (CONFIG.COMPANY_TYPES as readonly string[]).find(c => c.toLowerCase() === get('company_type').toLowerCase()) || '',
-      contact_name: get('contact_name'),
+      tier,
+      room_count: get('room_count').replace(/\D/g, ''),
       demo_link: get('demo_link'),
       notes: notes.join('. '),
     },
@@ -247,7 +340,18 @@ export function buildRow(
 }
 
 export const TEMPLATE_HEADERS = [
-  'business_name', 'business_type', 'services_to_pitch', 'area', 'address', 'postcode', 'phone', 'whatsapp_number', 'email',
-  'instagram', 'facebook', 'existing_website', 'maps_link', 'rating', 'reviews_count', 'company_type', 'contact_name',
-  'tier', 'room_count', 'demo_link', 'notes',
+  'business_name',
+  'category',
+  'service_to_pitch',
+  'email',
+  'whatsapp_number',
+  'instagram',
+  'facebook',
+  'website',
+  'no_site',
+  'location',
+  'owner_name',
+  'owner_contact',
+  'existing_tech_partner',
+  'gaps_found',
 ]

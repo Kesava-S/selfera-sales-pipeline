@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, Download, Plus, Search, Upload, Inbox, CheckCircle2, AlertTriangle, Pencil, Archive, UserPlus, Layers } from 'lucide-react'
-import { CONFIG, BUSINESS_TYPES } from '@/lib/config'
+import { CONFIG, BUSINESS_TYPES, APPROVAL_QUEUE_TYPES } from '@/lib/config'
 import { dueLabel, formatDate } from '@/lib/format'
 import { approveLeads, bulkArchive, bulkAssign, bulkServices } from '@/app/dashboard/actions'
 import { ChipSelect, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction } from '@/components/ui'
@@ -43,9 +43,10 @@ export type PitchRow = {
 type Staff = { id: string; full_name: string; role: string }
 
 export function readiness(r: PitchRow): string | null {
-  if (!r.business_type) return 'Add the business type'
-  if (!r.services_pitched?.length) return 'Add a service to pitch'
-  if (!r.phone && !r.email && !r.instagram && !r.facebook && !r.address && !r.postcode) return 'Add a phone, email, social or address'
+  if (!r.business_name) return 'Add business name'
+  if (!r.business_type) return 'Add category'
+  if (!r.services_pitched?.length) return 'Add service to pitch'
+  if (!r.email && !r.phone && !r.instagram && !r.facebook) return 'Add at least one contact'
   return null
 }
 
@@ -141,7 +142,7 @@ export function LeadsManagement({
         </form>
         <select className="input !w-auto" value={params.type || ''} onChange={e => go({ type: e.target.value || undefined })}>
           <option value="">All types</option>
-          {BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}
+          {(tab === 'review' ? APPROVAL_QUEUE_TYPES : BUSINESS_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select className="input !w-auto" value={params.service || ''} onChange={e => go({ service: e.target.value || undefined })}>
           <option value="">All services</option>

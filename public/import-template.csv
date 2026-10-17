@@ -1,3 +1,5 @@
-business_name,business_type,services_to_pitch,area,address,postcode,phone,whatsapp_number,email,instagram,facebook,existing_website,maps_link,rating,reviews_count,company_type,contact_name,tier,room_count,demo_link,notes
-Example Cafe,Cafe,Website,Richmond,1 Example Street,TW9 1AA,+44 7700 900000,,hello@example.com,examplecafe,,,,4.8,120,Unknown,Sam,,,,Delete this example row
-Example Hotel,Hotel,End-to-End Automation;Custom Dashboard,Reading,,RG1 1AA,+44 118 000 0000,,info@examplehotel.co.uk,,examplehotelpage,examplehotel.co.uk,,4.3,800,Limited company,,3 star,40,,Delete this example row
+business_name,category,service_to_pitch,email,whatsapp_number,instagram,facebook,website,no_site,location,owner_name,owner_contact,existing_tech_partner,gaps_found
+The Grand Hotel,Hotel,End-to-End Automation,reservations@thegrandhotel.co.uk,+44 7700 900001,,https://facebook.com/thegrandhotel,https://thegrandhotel.co.uk,no,10 Promenade Way London,Sarah Jenkins,+44 7700 900002,Agency (WebFlow Pro),Slow booking engine and no automated follow-up
+Bella Trattoria,Restaurant or cafe,Website;Cold Outreach,ciao@bellatrattoria.com,,,@bellatrattoria,,yes,14 High Street Richmond,Marco Rossi,marco@bellatrattoria.com,None,No website only Instagram
+The Crown Pub,Pub,Custom Dashboard,,+44 7700 900003,@crownpub,,https://crownpub.co.uk,no,5 Market Square Bath,Dave Miller,LinkedIn: /in/davemiller,DIY (Wix),Manual staff shift logging
+Apex Living,Property management,Micro Automation,contact@apexliving.co.uk,+44 7700 900004,@apexliving,,,no,Suite 4 Canal Wharf Manchester,Amy Chen,+44 7700 900005,DIY (Squarespace),Guest inquiries take 24h to answer
