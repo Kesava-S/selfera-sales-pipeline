@@ -142,7 +142,7 @@ export function LeadsManagement({
         </form>
         <select className="input !w-auto" value={params.type || ''} onChange={e => go({ type: e.target.value || undefined })}>
           <option value="">All types</option>
-          {(tab === 'review' ? APPROVAL_QUEUE_TYPES : BUSINESS_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
+          {APPROVAL_QUEUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select className="input !w-auto" value={params.service || ''} onChange={e => go({ service: e.target.value || undefined })}>
           <option value="">All services</option>

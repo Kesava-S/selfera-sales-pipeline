@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseAndValidatePhone, isUkMobile } from '@/lib/contact'
+import { LEAD_CATEGORIES } from '@/lib/config'
 
 export async function POST(request: Request) {
   try {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business name is required.' }, { status: 400 })
     }
 
-    const cleanBusinessType = (business_type || 'Other').trim()
+    const cleanBusinessType = (business_type || 'Restaurant or cafe').trim()
     const cleanService = (service_pitched || 'Website').trim()
     const cleanEmail = email?.trim() || null
     let normalizedPhone: string | null = null

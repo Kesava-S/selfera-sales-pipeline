@@ -17,10 +17,8 @@ export const CONFIG = {
   PLATFORMS: ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'Phone', 'Walk-in'] as const,
 
   BUSINESS_CATEGORIES: {
-    'Food & Drink': ['Cafe', 'Restaurant', 'Bakery', 'Takeaway', 'Pub / Bar'],
-    Accommodation: ['Hotel', 'Boutique hotel', 'B&B / Guesthouse', 'Short-let / Airbnb host', 'Serviced apartments', 'Hostel'],
-    'Beauty & Wellness': ['Hair salon', 'Barber', 'Beauty', 'Nails & Lashes', 'Medical aesthetics', 'Spa', 'Fitness / Training studio'],
-    'Retail & Other': ['Fashion boutique', 'Florist', 'Other'],
+    'Food & Drink': ['Restaurant or cafe', 'Pub'],
+    Accommodation: ['Hotel', 'Property management'],
   } as Record<string, string[]>,
 
   STAGES: ['Needs review', 'Active', 'Interested', 'Consultation', 'Won', 'Went cold', 'No response', 'Declined', 'Do not contact'] as const,
@@ -29,7 +27,6 @@ export const CONFIG = {
   COMPANY_TYPES: ['Limited company', 'Sole trader', 'Partnership', 'Unknown'] as const,
 }
 
-export const BUSINESS_TYPES: string[] = Object.values(CONFIG.BUSINESS_CATEGORIES).flat()
 export const LEAD_CATEGORIES = [
   'Hotel',
   'Restaurant or cafe',
@@ -37,6 +34,8 @@ export const LEAD_CATEGORIES = [
   'Property management',
 ] as const
 export type LeadCategory = (typeof LEAD_CATEGORIES)[number]
+
+export const BUSINESS_TYPES: string[] = [...LEAD_CATEGORIES]
 
 export const APPROVAL_QUEUE_TYPES = [
   'Restaurants and cafes',
