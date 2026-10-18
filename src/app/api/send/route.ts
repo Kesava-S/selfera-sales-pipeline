@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getSendRule, needsPecrConfirm, parseApiPlatforms } from '@/lib/sending'
-import { isUkMobile, ukToInternational } from '@/lib/contact'
+import { ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   // Reading the thread also checks this user may see it (database rules)
   const { data: thread } = await supabase
     .from('threads')
-    .select('id, platform, status, external_thread_id, last_inbound_at, opportunities (id, stage, businesses (phone, whatsapp_number, email, instagram, facebook, company_type))')
+    .select('id, platform, status, external_thread_id, last_inbound_at, opportunities (id, stage, businesses (linkedin, whatsapp_number, email, instagram, facebook, company_type))')
     .eq('id', threadId)
     .maybeSingle()
   if (!thread) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
   const to =
     thread.platform === 'Email' ? b?.email
-      : thread.platform === 'WhatsApp' ? ukToInternational(b?.whatsapp_number || (isUkMobile(b?.phone) ? b?.phone : null))
+      : thread.platform === 'WhatsApp' ? ukToInternational(b?.whatsapp_number)
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
 

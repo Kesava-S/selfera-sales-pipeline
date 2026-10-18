@@ -4,12 +4,12 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Phone, Mail, Globe, MapPin, ExternalLink, StickyNote, Trophy, Handshake, ArrowRightLeft, Plus, UserCheck, Pencil,
+  Mail, Globe, MapPin, ExternalLink, StickyNote, Trophy, Handshake, ArrowRightLeft, Plus, UserCheck, Pencil,
   CheckCircle2, AlertTriangle, CalendarClock, Star, Lock,
 } from 'lucide-react'
 import { CONFIG, OPEN_STAGES } from '@/lib/config'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
-import { facebookLink, instagramLink, isUkMobile, mailtoLink, telLink, websiteLink, whatsappLink } from '@/lib/contact'
+import { facebookLink, instagramLink, mailtoLink, websiteLink, whatsappLink } from '@/lib/contact'
 import { addNote, approveLeads, assignConsultant, changeStage, handOver, newPitch, recordWin, startThread } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, useAction } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
@@ -19,7 +19,7 @@ import type { Profile } from '@/lib/auth'
 type Thread = { id: string; platform: string; status: string; step: number; next_due_on: string | null; paused_reason: string | null; last_inbound_at: string | null; drafts?: { id: string; step_label: string; status: string }[] }
 type Person = { id: string; full_name: string; role: string; is_active: boolean }
 
-const PLATFORM_ORDER = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'Phone', 'Walk-in']
+const PLATFORM_ORDER = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
 
 export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; otherPitches: any[]; people: Person[]; me: Profile }) {
   const router = useRouter()
@@ -44,12 +44,11 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
   // Platforms we have contact details for but haven't started
   const startable = useMemo(() => {
     const has: Record<string, boolean> = {
-      WhatsApp: !!b.whatsapp_number || isUkMobile(b.phone),
+      WhatsApp: !!b.whatsapp_number,
       Instagram: !!b.instagram,
       Facebook: !!b.facebook,
       Email: !!b.email,
-      Phone: !!b.phone,
-      'Walk-in': !!b.address,
+      LinkedIn: !!b.linkedin || (typeof b.owner_contact === 'string' && b.owner_contact.toLowerCase().includes('linkedin')),
     }
     return PLATFORM_ORDER.filter(p => has[p] && !threads.some(t => t.platform === p))
   }, [b, threads])
@@ -155,12 +154,20 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
             </div>
             {b.contact_name && <Row label="Contact">{b.contact_name}</Row>}
             <ul className="space-y-2 text-sm">
-              {b.phone && <Contact icon={<Phone size={15} />} href={telLink(b.phone)} text={b.phone} />}
-              {(b.whatsapp_number || isUkMobile(b.phone)) && <Contact icon={<PlatformIcon platform="WhatsApp" size={15} />} href={whatsappLink(b.whatsapp_number || b.phone)} text={`WhatsApp ${b.whatsapp_number || b.phone}`} external />}
+              {b.whatsapp_number && <Contact icon={<PlatformIcon platform="WhatsApp" size={15} />} href={whatsappLink(b.whatsapp_number)} text={`WhatsApp ${b.whatsapp_number}`} external />}
               {b.email && <Contact icon={<Mail size={15} />} href={mailtoLink(b.email)} text={b.email} />}
               {b.instagram && <Contact icon={<PlatformIcon platform="Instagram" size={15} />} href={instagramLink(b.instagram)} text={`@${b.instagram}`} external />}
               {b.facebook && <Contact icon={<PlatformIcon platform="Facebook" size={15} />} href={facebookLink(b.facebook)} text="Facebook page" external />}
+              {(b.linkedin || (typeof b.owner_contact === 'string' && b.owner_contact.toLowerCase().includes('linkedin'))) && (
+                <Contact
+                  icon={<PlatformIcon platform="LinkedIn" size={15} />}
+                  href={b.linkedin ? (b.linkedin.startsWith('http') ? b.linkedin : `https://${b.linkedin}`) : null}
+                  text={b.linkedin || 'LinkedIn profile'}
+                  external
+                />
+              )}
               {b.existing_website && <Contact icon={<Globe size={15} />} href={websiteLink(b.existing_website)} text={b.existing_website} external />}
+              {b.has_no_website && <li className="text-xs font-semibold text-slate-400">No website indicated</li>}
               {b.maps_link && <Contact icon={<MapPin size={15} />} href={b.maps_link} text="Google Maps" external />}
               {b.address && <li className="flex items-start gap-2 text-slate-600"><MapPin size={15} className="mt-0.5 shrink-0" />{[b.address, b.postcode].filter(Boolean).join(', ')}</li>}
             </ul>
@@ -168,6 +175,9 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
               {b.company_type || 'Unknown'}
               {(b.company_type === 'Sole trader' || b.company_type === 'Partnership') && <span className="block text-xs text-amber-700">Marketing emails need their consent first (PECR).</span>}
             </Row>
+            {b.owner_contact && <Row label="Owner contact">{b.owner_contact}</Row>}
+            {b.existing_tech_partner && <Row label="Tech partner">{b.existing_tech_partner}</Row>}
+            {b.gaps_found && <Row label="Gaps found"><p className="whitespace-pre-wrap text-sm text-slate-600">{b.gaps_found}</p></Row>}
             {b.notes && <Row label="Notes"><p className="whitespace-pre-wrap text-sm text-slate-600">{b.notes}</p></Row>}
           </div>
         </div>

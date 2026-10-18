@@ -14,8 +14,7 @@ export type InsightsData = {
 }
 
 const MIN_SENDS = 10
-// Call and visit outcomes are written as notes, so there is no reply to count
-const NOT_TRACKED = ['Phone', 'Walk-in']
+const NOT_TRACKED: string[] = []
 const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0)
 
 export function InsightsView({ data, loadError, params, isAdmin, staff }: {

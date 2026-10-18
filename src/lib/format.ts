@@ -37,3 +37,15 @@ export function stepLabel(step: number, status?: string): string {
 export function nextStepLabel(step: number): string {
   return ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check'][Math.min(step, 3)]
 }
+
+export function formatWaiting(iso?: string | Date | null): string {
+  if (!iso) return ''
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 0) return 'Just now'
+  const mins = Math.floor(ms / 60000)
+  if (mins < 60) return `${mins}m waiting`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h waiting`
+  const days = Math.floor(hours / 24)
+  return `${days}d waiting`
+}

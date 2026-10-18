@@ -38,12 +38,12 @@ export async function GET(request: Request) {
   }
   const out = ids.length ? rows.filter(r => ids.includes(r.opportunity_id)) : rows
 
-  const headers = ['business_name', 'business_type', 'area', 'postcode', 'phone', 'email', 'instagram', 'facebook', 'company_type',
+  const headers = ['business_name', 'business_type', 'area', 'postcode', 'whatsapp_number', 'email', 'instagram', 'facebook', 'linkedin', 'company_type',
     'contact_name', 'stage', 'services_pitched', 'services_won', 'assigned_to', 'consultant', 'platforms', 'next_due', 'archived', 'added_on']
   const lines = [headers.join(',')]
   for (const r of out) {
     lines.push([
-      r.business_name, r.business_type, r.area, r.postcode, r.phone, r.email, r.instagram, r.facebook, r.company_type,
+      r.business_name, r.business_type, r.area, r.postcode, r.whatsapp_number, r.email, r.instagram, r.facebook, r.linkedin, r.company_type,
       r.contact_name, r.stage, r.services_pitched, r.services_won, r.assigned_sales_name, r.assigned_consultant_name,
       (r.threads || []).map((t: any) => `${t.platform}: ${t.status}`), r.next_due_on, r.archived ? 'yes' : 'no',
       (r.created_at || '').slice(0, 10),

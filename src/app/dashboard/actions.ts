@@ -86,7 +86,7 @@ export async function startThread(opportunityId: string, platform: string) {
 }
 
 // ---------- Messages ----------
-// Used for "Mark as sent" (manual send) and "Mark as done" (phone / walk-in)
+// Used for "Mark as sent" (manual send)
 export async function markSent(threadId: string, body: string, subject?: string | null, templateId?: string | null) {
   if (!body.trim()) return { ok: false, error: 'Write the message (or call notes) first.' } as ActionResult
   return rpc('record_outbound', {
@@ -103,8 +103,9 @@ export async function markSent(threadId: string, body: string, subject?: string 
 // ---------- Business details ----------
 const EDITABLE = [
   'business_name', 'business_type', 'tier', 'room_count', 'area', 'address', 'postcode', 'maps_link',
-  'phone', 'whatsapp_number', 'email', 'instagram', 'facebook', 'existing_website', 'company_type', 'contact_name', 'notes',
+  'whatsapp_number', 'email', 'instagram', 'facebook', 'linkedin', 'existing_website', 'company_type', 'contact_name', 'notes',
   'owner_contact', 'existing_tech_partner', 'gaps_found', 'has_no_website',
+  'owner_email', 'owner_whatsapp', 'owner_social', 'tech_partner_type', 'tech_partner_name', 'branches', 'source',
 ] as const
 
 export async function updateBusiness(businessId: string, fields: Record<string, string | number | null>) {
@@ -121,11 +122,6 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
   if (typeof clean.email === 'string') clean.email = (clean.email as string).toLowerCase()
   if (typeof clean.room_count === 'string') clean.room_count = parseInt(clean.room_count as string) || null
 
-  if (typeof clean.phone === 'string' && clean.phone) {
-    const pCheck = parseAndValidatePhone(clean.phone as string)
-    if (!pCheck.valid) return { ok: false, error: pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)' } as ActionResult
-    clean.phone = pCheck.normalized
-  }
   if (typeof clean.whatsapp_number === 'string' && clean.whatsapp_number) {
     const waCheck = parseAndValidatePhone(clean.whatsapp_number as string)
     if (!waCheck.valid) return { ok: false, error: waCheck.error ? `WhatsApp: ${waCheck.error}` : 'WhatsApp must include country code (e.g. +44, 44, or 0...)' } as ActionResult
@@ -134,7 +130,7 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
 
   const { error, count } = await supabase.from('businesses').update(clean, { count: 'exact' }).eq('id', businessId)
   if (error) {
-    if (/duplicate key/i.test(error.message)) return { ok: false, error: 'Another business already uses this phone or email.' } as ActionResult
+    if (/duplicate key/i.test(error.message)) return { ok: false, error: 'Another business already uses this email or contact.' } as ActionResult
     return { ok: false, error: friendly(error.message) } as ActionResult
   }
   if (count === 0) return { ok: false, error: 'You cannot edit this business.' } as ActionResult
@@ -159,12 +155,65 @@ export async function linkBooking(bookingId: string, opportunityId: string) {
 }
 
 // ---------- Notifications ----------
-// ---------- Templates (admin only, checked in the database) ----------
-export async function saveTemplate(t: { id?: string | null; step: string; service: string; platform: string; subject: string; body: string }) {
-  return rpc<string>('save_template', { p_id: t.id || null, p_step: t.step, p_service: t.service, p_platform: t.platform, p_subject: t.subject, p_body: t.body })
+// ---------- Templates (admin only) ----------
+export async function saveTemplate(t: {
+  id?: string | null
+  step: string
+  businessType?: string
+  platform: string
+  subject: string
+  body: string
+}): Promise<ActionResult<string>> {
+  const supabase = createServiceClient()
+  const businessTypes = t.businessType && t.businessType !== 'General' ? [t.businessType] : []
+  const name = `${t.businessType || 'General'} · ${t.platform === 'All' ? 'All platforms' : t.platform} · ${t.step}`
+  const subject = (t.platform === 'Email' || t.platform === 'All') ? (t.subject.trim() || null) : null
+
+  if (t.id) {
+    const { error } = await supabase
+      .from('templates')
+      .update({
+        subject,
+        body: t.body,
+        name,
+        business_types: businessTypes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', t.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/templates')
+    return { ok: true, data: t.id }
+  }
+
+  const { data, error } = await supabase
+    .from('templates')
+    .insert({
+      name,
+      platform: t.platform,
+      step: t.step,
+      services: [],
+      business_types: businessTypes,
+      subject,
+      body: t.body,
+      is_active: true,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/templates')
+  return { ok: true, data: data?.id }
 }
-export async function setTemplateActive(id: string, active: boolean) {
-  return rpc('set_template_active', { p_id: id, p_active: active })
+
+export async function setTemplateActive(id: string, active: boolean): Promise<ActionResult> {
+  const supabase = createServiceClient()
+  const { error } = await supabase
+    .from('templates')
+    .update({ is_active: active, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/templates')
+  return { ok: true }
 }
 
 // ---------- Settings ----------
@@ -474,4 +523,113 @@ export async function signOut() {
   const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/login')
+}
+
+// ---------- CSV Import & Missing Data Queues ----------
+export async function createImportBatch(fileName: string): Promise<ActionResult<string>> {
+  return rpc<string>('create_import_batch', { p_file_name: fileName })
+}
+
+export async function listImportBatches(): Promise<ActionResult<{
+  id: string
+  file_name: string
+  uploaded_by: string
+  uploader_name: string
+  created_at: string
+  total_rows: number
+  ready_count: number
+  missing_count: number
+  failed_count: number
+}[]>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('list_import_batches')
+  if (error) return { ok: false, error: friendly(error.message) }
+  return { ok: true, data: data ?? [] }
+}
+
+export async function getMissingCounts(
+  type?: string | null,
+  problem?: string | null,
+  batchId?: string | null
+): Promise<ActionResult<{
+  types: { business_type: string; count: number }[]
+  problems: { problem: string; label: string; count: number }[]
+  total: number
+}>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('missing_counts', {
+    p_type: type || null,
+    p_problem: problem || null,
+    p_batch: batchId || null,
+  })
+  if (error) return { ok: false, error: friendly(error.message) }
+  return { ok: true, data }
+}
+
+export async function getMissingList(
+  type?: string | null,
+  problem?: string | null,
+  batchId?: string | null,
+  limit: number = 50,
+  offset: number = 0
+): Promise<ActionResult<{
+  rows: any[]
+  total: number
+}>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('missing_list', {
+    p_type: type || null,
+    p_problem: problem || null,
+    p_batch: batchId || null,
+    p_limit: limit,
+    p_offset: offset,
+  })
+  if (error) return { ok: false, error: friendly(error.message) }
+  const rows = data ?? []
+  const total = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0
+  return { ok: true, data: { rows, total } }
+}
+
+export async function updateLeadField(
+  businessId: string,
+  field: string,
+  value: string
+): Promise<ActionResult<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>> {
+  const res = await rpc<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>('update_lead_field', {
+    p_business_id: businessId,
+    p_field: field,
+    p_value: value,
+  })
+  if (res.ok) {
+    revalidatePath('/dashboard/leads')
+  }
+  return res
+}
+
+export async function bulkSetField(
+  businessIds: string[],
+  field: string,
+  value: string
+): Promise<ActionResult<number>> {
+  if (!businessIds.length) return { ok: false, error: 'Select at least one lead.' }
+  const res = await rpc<number>('bulk_set_field', {
+    p_business_ids: businessIds,
+    p_field: field,
+    p_value: value,
+  })
+  if (res.ok) {
+    revalidatePath('/dashboard/leads')
+  }
+  return res
+}
+
+export async function deleteLeads(businessIds: string[]): Promise<ActionResult<number>> {
+  if (!businessIds.length) return { ok: false, error: 'Select at least one lead.' }
+  const res = await rpc<number>('delete_leads', {
+    p_business_ids: businessIds,
+  })
+  if (res.ok) {
+    revalidatePath('/dashboard/leads')
+  }
+  return res
 }

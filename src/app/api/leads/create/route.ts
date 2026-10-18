@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { parseAndValidatePhone, isUkMobile } from '@/lib/contact'
+import { parseAndValidatePhone } from '@/lib/contact'
 import { LEAD_CATEGORIES } from '@/lib/config'
 
 export async function POST(request: Request) {
@@ -20,7 +20,8 @@ export async function POST(request: Request) {
       area,
       contact_name,
       email,
-      phone,
+      whatsapp_number,
+      linkedin,
       instagram,
       facebook
     } = body
@@ -32,14 +33,15 @@ export async function POST(request: Request) {
     const cleanBusinessType = (business_type || 'Restaurant or cafe').trim()
     const cleanService = (service_pitched || 'Website').trim()
     const cleanEmail = email?.trim() || null
-    let normalizedPhone: string | null = null
-    if (phone?.trim()) {
-      const pCheck = parseAndValidatePhone(phone.trim())
+    let normalizedWhatsapp: string | null = null
+    if (whatsapp_number?.trim()) {
+      const pCheck = parseAndValidatePhone(whatsapp_number.trim())
       if (!pCheck.valid) {
-        return NextResponse.json({ error: pCheck.error || 'Phone must include country code (e.g. +44, 44, or 0...)' }, { status: 400 })
+        return NextResponse.json({ error: pCheck.error || 'WhatsApp number must include country code (e.g. +44, 44, or 0...)' }, { status: 400 })
       }
-      normalizedPhone = pCheck.normalized
+      normalizedWhatsapp = pCheck.normalized
     }
+    const cleanLinkedin = linkedin?.trim() || null
     const cleanInstagram = instagram?.trim() ? instagram.trim().replace(/^@/, '') : null
     const cleanArea = area?.trim() || null
     const cleanContact = contact_name?.trim() || null
@@ -54,7 +56,8 @@ export async function POST(request: Request) {
         area: cleanArea,
         contact_name: cleanContact,
         email: cleanEmail,
-        phone: normalizedPhone,
+        whatsapp_number: normalizedWhatsapp,
+        linkedin: cleanLinkedin,
         instagram: cleanInstagram,
         facebook: cleanFacebook
       })
@@ -86,13 +89,12 @@ export async function POST(request: Request) {
     // 3. Create initial threads for provided contact channels
     const platforms: string[] = []
     if (cleanEmail) platforms.push('Email')
-    if (normalizedPhone) {
-      const isMobile = isUkMobile(normalizedPhone)
-      platforms.push(isMobile ? 'WhatsApp' : 'Phone')
-    }
+    if (normalizedWhatsapp) platforms.push('WhatsApp')
     if (cleanInstagram) platforms.push('Instagram')
     if (cleanFacebook) platforms.push('Facebook')
-    if (platforms.length === 0) platforms.push('Walk-in')
+    if (cleanLinkedin || (body.owner_contact && typeof body.owner_contact === 'string' && body.owner_contact.toLowerCase().includes('linkedin'))) {
+      platforms.push('LinkedIn')
+    }
 
     for (const p of platforms) {
       await supabase

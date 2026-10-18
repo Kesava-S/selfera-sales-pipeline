@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// POST { rows: [{ idx, business_name, phone, email, postcode }] } -> matches with existing businesses
+// POST { rows: [{ idx, business_name, whatsapp_number, email, linkedin, postcode }] } -> matches with existing businesses
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

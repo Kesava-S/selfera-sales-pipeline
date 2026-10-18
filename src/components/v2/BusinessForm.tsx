@@ -10,8 +10,8 @@ import { updateBusiness } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
 
 export type BusinessValues = Partial<Record<
-  | 'business_name' | 'business_type' | 'tier' | 'room_count' | 'area' | 'address' | 'postcode' | 'maps_link' | 'phone'
-  | 'whatsapp_number' | 'email' | 'instagram' | 'facebook' | 'existing_website' | 'has_no_website' | 'company_type' | 'contact_name'
+  | 'business_name' | 'business_type' | 'tier' | 'room_count' | 'area' | 'address' | 'postcode' | 'maps_link'
+  | 'whatsapp_number' | 'email' | 'instagram' | 'facebook' | 'linkedin' | 'existing_website' | 'has_no_website' | 'company_type' | 'contact_name'
   | 'owner_contact' | 'existing_tech_partner' | 'gaps_found' | 'notes',
   string | boolean | null
 >>
@@ -33,7 +33,7 @@ export function BusinessForm({
   const set = (k: keyof BusinessValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setV(prev => ({ ...prev, [k]: e.target.value }))
     if (errors[k]) setErrors(prev => { const next = { ...prev }; delete next[k]; return next })
-    if (errors.contact && (k === 'email' || k === 'whatsapp_number' || k === 'instagram' || k === 'facebook' || k === 'phone')) {
+    if (errors.contact && (k === 'email' || k === 'whatsapp_number' || k === 'instagram' || k === 'facebook' || k === 'linkedin' || k === 'owner_contact')) {
       setErrors(prev => { const next = { ...prev }; delete next.contact; return next })
     }
   }
@@ -42,7 +42,7 @@ export function BusinessForm({
   // 1. Business name
   // 2. Category: Hotel, Restaurant or cafe, Pub, or Property management
   // 3. Service to pitch: Website, Micro Automation, End-to-End Automation, Custom Dashboard, or Cold Outreach
-  // 4. At least one contact: any one of email, WhatsApp, Instagram or Facebook (or phone)
+  // 4. At least one contact: any one of email, WhatsApp, Instagram, Facebook or LinkedIn
   const validate = () => {
     const e: Record<string, string> = {}
     if (!v.business_name || !String(v.business_name).trim()) e.business_name = 'Business name is required'
@@ -54,18 +54,15 @@ export function BusinessForm({
       (typeof v.whatsapp_number === 'string' && v.whatsapp_number.trim()) ||
       (typeof v.instagram === 'string' && v.instagram.trim()) ||
       (typeof v.facebook === 'string' && v.facebook.trim()) ||
-      (typeof v.phone === 'string' && v.phone.trim())
+      (typeof v.linkedin === 'string' && v.linkedin.trim()) ||
+      (typeof v.owner_contact === 'string' && v.owner_contact.trim())
     )
     if (!hasContact) {
-      e.contact = 'At least one contact is required (Email, WhatsApp, Instagram, or Facebook)'
+      e.contact = 'At least one contact is required (Email, WhatsApp, Instagram, Facebook, or LinkedIn)'
     }
 
     if (v.email && typeof v.email === 'string' && v.email.trim() && !EMAIL_RE.test(v.email.trim())) {
       e.email = 'Email looks invalid'
-    }
-    if (v.phone && typeof v.phone === 'string' && v.phone.trim()) {
-      const p = parseAndValidatePhone(v.phone.trim())
-      if (!p.valid) e.phone = p.error || 'Must include country code (e.g. +44, 44, or 0...)'
     }
     if (v.whatsapp_number && typeof v.whatsapp_number === 'string' && v.whatsapp_number.trim()) {
       const w = parseAndValidatePhone(v.whatsapp_number.trim())
@@ -82,7 +79,7 @@ export function BusinessForm({
         return [k, Boolean(val)]
       }
       let trimmed = typeof val === 'string' ? val.trim() : val ?? ''
-      if ((k === 'phone' || k === 'whatsapp_number') && typeof trimmed === 'string' && trimmed) {
+      if (k === 'whatsapp_number' && typeof trimmed === 'string' && trimmed) {
         const p = parseAndValidatePhone(trimmed)
         if (p.valid && p.normalized) trimmed = p.normalized
       }
@@ -116,10 +113,6 @@ export function BusinessForm({
     try {
       if (mode === 'edit' && businessId) {
         const editData = { ...v }
-        if (typeof editData.phone === 'string' && editData.phone) {
-          const p = parseAndValidatePhone(editData.phone)
-          if (p.valid) editData.phone = p.normalized
-        }
         if (typeof editData.whatsapp_number === 'string' && editData.whatsapp_number) {
           const w = parseAndValidatePhone(editData.whatsapp_number)
           if (w.valid) editData.whatsapp_number = w.normalized
@@ -140,7 +133,7 @@ export function BusinessForm({
           rows: [{
             idx: 0,
             business_name: v.business_name,
-            phone: v.phone || v.whatsapp_number,
+            whatsapp_number: v.whatsapp_number,
             email: v.email,
             postcode: v.postcode,
           }],
@@ -262,7 +255,7 @@ export function BusinessForm({
               {field('whatsapp_number', 'Business WhatsApp', { inputMode: 'tel', placeholder: '+44 7…' })}
               {field('instagram', 'Business Instagram', { placeholder: 'handle without @' })}
               {field('facebook', 'Business Facebook', { placeholder: 'Page link or handle' })}
-              {field('phone', 'Business Phone (optional)', { inputMode: 'tel', placeholder: '+44 7…, 07…, or 020…' })}
+              {field('linkedin', 'Business LinkedIn', { placeholder: 'linkedin.com/company/… or profile' })}
             </div>
 
             <div className="border-t border-slate-200 pt-3">
@@ -314,17 +307,25 @@ export function BusinessForm({
               )}
             </div>
 
-            <div>
-              <label className="label">Location (one address, or for a group each branch listed)</label>
-              <textarea
-                className="input min-h-16"
-                placeholder="e.g. 10 High Street, London or Branch 1: Soho, Branch 2: Richmond"
-                value={(v.address as string) ?? ''}
-                onChange={e => {
-                  const val = e.target.value
-                  setV(prev => ({ ...prev, address: val }))
-                }}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="label">Address / Location</label>
+                <input
+                  className="input"
+                  placeholder="e.g. 10 High Street, London"
+                  value={(v.address as string) ?? ''}
+                  onChange={set('address')}
+                />
+              </div>
+              <div>
+                <label className="label">Postcode</label>
+                <input
+                  className="input"
+                  placeholder="e.g. SW1A 1AA"
+                  value={(v.postcode as string) ?? ''}
+                  onChange={e => setV(prev => ({ ...prev, postcode: e.target.value.toUpperCase() }))}
+                />
+              </div>
             </div>
           </div>
 

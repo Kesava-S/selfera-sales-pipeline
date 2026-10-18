@@ -5,18 +5,37 @@ import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
-import { MessageCircle, Camera, ThumbsUp, Mail, Phone, Footprints, X, Loader2, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
+import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
 import { STAGE_STYLE, STATUS_STYLE } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
 
+function LinkedinIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+      <rect x="2" y="9" width="4" height="12" />
+      <circle cx="4" cy="4" r="2" />
+    </svg>
+  )
+}
+
 // ---------- Platform icon ----------
-const PLATFORM_ICON: Record<string, { Icon: typeof Mail; color: string }> = {
+const PLATFORM_ICON: Record<string, { Icon: any; color: string }> = {
   WhatsApp: { Icon: MessageCircle, color: 'text-green-600' },
   Instagram: { Icon: Camera, color: 'text-pink-600' },
   Facebook: { Icon: ThumbsUp, color: 'text-blue-600' },
   Email: { Icon: Mail, color: 'text-sky-700' },
-  Phone: { Icon: Phone, color: 'text-amber-700' },
-  'Walk-in': { Icon: Footprints, color: 'text-teal-700' },
+  LinkedIn: { Icon: LinkedinIcon, color: 'text-[#0a66c2]' },
   All: { Icon: Layers, color: 'text-slate-500' },
 }
 

@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, Phone, RotateCw } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, RotateCw } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
 import { getSendRule, needsPecrConfirm } from '@/lib/sending'
-import { facebookLink, instagramLink, isUkMobile, mailtoLink, telLink, whatsappLink } from '@/lib/contact'
+import { facebookLink, instagramLink, mailtoLink, whatsappLink } from '@/lib/contact'
 import { markSent } from '@/app/dashboard/actions'
 import { createClient } from '@/lib/supabase/client'
 import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge } from '@/components/ui'
@@ -95,19 +95,24 @@ export function ChatInterface({
 
   // Where to send manually
   const contactLink = useMemo(() => {
-    if (platform === 'WhatsApp') return whatsappLink(b.whatsapp_number || (isUkMobile(b.phone) ? b.phone : null), body)
+    if (platform === 'WhatsApp') return whatsappLink(b.whatsapp_number, body)
     if (platform === 'Instagram') return instagramLink(b.instagram)
     if (platform === 'Facebook') return facebookLink(b.facebook)
     if (platform === 'Email') return mailtoLink(b.email, subject, body)
-    if (platform === 'Phone') return telLink(b.phone)
+    if (platform === 'LinkedIn') {
+      const li = b.linkedin || (typeof b.owner_contact === 'string' && b.owner_contact.toLowerCase().includes('linkedin') ? b.owner_contact : null)
+      if (!li) return null
+      return li.startsWith('http') ? li : `https://${li}`
+    }
     return null
   }, [platform, b, body, subject])
   const missingContact =
-    platform === 'WhatsApp' && !b.whatsapp_number && !isUkMobile(b.phone) ? 'No WhatsApp number saved for this business.'
+    platform === 'WhatsApp' && !b.whatsapp_number ? 'No WhatsApp number saved for this business.'
       : platform === 'Instagram' && !b.instagram ? 'No Instagram handle saved.'
         : platform === 'Facebook' && !b.facebook ? 'No Facebook page saved.'
           : platform === 'Email' && !b.email ? 'No email address saved.'
-            : platform === 'Phone' && !b.phone ? 'No phone number saved.' : null
+            : platform === 'LinkedIn' && !b.linkedin && !(typeof b.owner_contact === 'string' && b.owner_contact.toLowerCase().includes('linkedin')) ? 'No LinkedIn profile or link saved.'
+              : null
 
   const unfilled = missingPlaceholders(body + ' ' + subject)
   const pecr = needsPecrConfirm(platform, b.company_type)
@@ -207,7 +212,7 @@ export function ChatInterface({
     } catch {
       // Clipboard can be blocked; the link still opens (WhatsApp and email carry the text anyway)
     }
-    if (contactLink) window.open(contactLink, platform === 'Email' || platform === 'Phone' ? '_self' : '_blank', 'noopener')
+    if (contactLink) window.open(contactLink, platform === 'Email' ? '_self' : '_blank', 'noopener')
     setOpened(true)
   }
 
@@ -286,7 +291,7 @@ export function ChatInterface({
                 {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
                 <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
                 <div className={`mt-1 text-[11px] ${ours ? 'text-white/75' : 'text-slate-400'}`}>
-                  {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Phone' || platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+                  {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
                     .filter(Boolean).join(' · ')}
                 </div>
               </div>
@@ -332,7 +337,7 @@ export function ChatInterface({
             className="input min-h-24 resize-none"
             value={body}
             onChange={e => setBody(e.target.value)}
-            placeholder={rule.mode === 'log' ? (platform === 'Phone' ? 'What happened on the call? Who did you speak to? Next step?' : 'What happened on the visit?') : 'Write your message…'}
+            placeholder={rule.mode === 'log' ? 'What happened on the visit?' : 'Write your message…'}
           />
           {rule.mode !== 'log' && body && <p className="text-xs text-slate-500">Draft from template. Review before sending.</p>}
 
@@ -368,14 +373,9 @@ export function ChatInterface({
             )}
 
             {rule.mode === 'log' && (
-              <>
-                {platform === 'Phone' && contactLink && (
-                  <a href={contactLink} className="btn btn-secondary"><Phone size={16} /> Call {b.phone}</a>
-                )}
-                <button className="btn btn-primary" disabled={busy || blockers.length > 0} onClick={markAsSent}>
-                  {busy ? <Spinner /> : <Check size={16} />} Mark as done
-                </button>
-              </>
+              <button className="btn btn-primary" disabled={busy || blockers.length > 0} onClick={markAsSent}>
+                {busy ? <Spinner /> : <Check size={16} />} Mark as done
+              </button>
             )}
           </div>
         </div>

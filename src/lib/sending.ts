@@ -32,12 +32,17 @@ export function getSendRule(opts: {
   if (stage === 'Do not contact' || threadStatus === 'Opted out') {
     return { mode: 'blocked', windowOpen: false, reason: 'This business asked not to be contacted.' }
   }
-  if (platform === 'Phone' || platform === 'Walk-in') {
-    return { mode: 'log', windowOpen: true, reason: platform === 'Phone' ? 'Call them, then log what happened.' : 'Visit, then log what happened.' }
-  }
 
   const connected = apiPlatforms.includes(platform)
   const hours = hoursSince(lastInboundAt)
+
+  if (platform === 'LinkedIn') {
+    return {
+      mode: 'manual',
+      windowOpen: false,
+      reason: 'Copy and open LinkedIn, send the message, then mark as sent.',
+    }
+  }
 
   if (platform === 'Email') {
     return connected

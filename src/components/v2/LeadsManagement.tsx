@@ -3,13 +3,44 @@
 import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronRight, Download, Plus, Search, Upload, Inbox, CheckCircle2, AlertTriangle, Pencil, Archive, UserPlus, Layers } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight, Download, Plus, Search, Upload, Inbox, CheckCircle2, AlertTriangle,
+  Pencil, Archive, UserPlus, Layers, ArrowLeft, Hotel, Utensils, Beer, Building2,
+} from 'lucide-react'
 import { CONFIG, BUSINESS_TYPES, APPROVAL_QUEUE_TYPES } from '@/lib/config'
 import { dueLabel, formatDate } from '@/lib/format'
 import { approveLeads, bulkArchive, bulkAssign, bulkServices } from '@/app/dashboard/actions'
 import { ChipSelect, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { CsvImportModal } from '@/components/v2/CsvImportModal'
+import { MissingDataTab, type MissingRow, type BatchItem } from '@/components/v2/MissingDataTab'
+
+const LEAD_CATEGORY_CARDS = [
+  {
+    key: 'Restaurants and cafes',
+    label: 'Restaurants and cafes',
+    desc: 'Restaurants, cafes, bakeries & takeaways',
+    icon: Utensils,
+  },
+  {
+    key: 'Hotels',
+    label: 'Hotels',
+    desc: 'Hotels, boutique hotels, B&Bs & guesthouses',
+    icon: Hotel,
+  },
+  {
+    key: 'Pubs',
+    label: 'Pubs',
+    desc: 'Pubs, bars & public houses',
+    icon: Beer,
+  },
+  {
+    key: 'Property Management',
+    label: 'Property Management',
+    desc: 'Short-let hosts & serviced properties',
+    icon: Building2,
+  },
+] as const
 
 export type PitchRow = {
   opportunity_id: string
@@ -20,7 +51,7 @@ export type PitchRow = {
   postcode: string | null
   address: string | null
   google_rating: number | null
-  phone: string | null
+  linkedin: string | null
   email: string | null
   instagram: string | null
   facebook: string | null
@@ -46,15 +77,44 @@ export function readiness(r: PitchRow): string | null {
   if (!r.business_name) return 'Add business name'
   if (!r.business_type) return 'Add category'
   if (!r.services_pitched?.length) return 'Add service to pitch'
-  if (!r.email && !r.phone && !r.instagram && !r.facebook) return 'Add at least one contact'
+  if (!r.email && !r.instagram && !r.facebook && !r.linkedin) return 'Add at least one contact'
   return null
 }
 
 export function LeadsManagement({
-  tab, rows, loadError, total, reviewCount, page, pageSize, params, role, staff,
+  tab,
+  rows,
+  missingRows = [],
+  missingTypes = [],
+  missingProblems = [],
+  importBatches = [],
+  loadError,
+  total,
+  reviewCount,
+  missingCount = 0,
+  page,
+  pageSize,
+  params,
+  role,
+  staff,
+  typeCounts = {},
 }: {
-  tab: 'all' | 'review'; rows: PitchRow[]; loadError: string | null; total: number; reviewCount: number; page: number; pageSize: number
-  params: Record<string, string | undefined>; role: string; staff: Staff[]
+  tab: 'all' | 'review' | 'missing'
+  rows: PitchRow[]
+  missingRows?: MissingRow[]
+  missingTypes?: { business_type: string; count: number }[]
+  missingProblems?: { problem: string; label: string; count: number }[]
+  importBatches?: BatchItem[]
+  loadError: string | null
+  total: number
+  reviewCount: number
+  missingCount?: number
+  page: number
+  pageSize: number
+  params: Record<string, string | undefined>
+  role: string
+  staff: Staff[]
+  typeCounts?: Record<string, number>
 }) {
   const router = useRouter()
   const isAdmin = role === 'admin'
@@ -119,64 +179,45 @@ export function LeadsManagement({
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200">
-        {[['all', 'All leads'], ['review', 'Review queue']].map(([k, label]) => (
+        {[
+          { key: 'all', label: 'All', count: undefined },
+          { key: 'review', label: 'Approval queue', count: reviewCount },
+          { key: 'missing', label: 'Missing data', count: missingCount },
+        ].map(t => (
           <button
-            key={k}
-            onClick={() => go({ tab: k === 'all' ? undefined : k, stage: undefined, platform: undefined })}
-            className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-semibold ${tab === k ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            key={t.key}
+            onClick={() =>
+              go({
+                tab: t.key === 'all' ? undefined : t.key,
+                type: undefined,
+                problem: undefined,
+                batch: undefined,
+                q: undefined,
+                stage: undefined,
+                platform: undefined,
+                page: undefined,
+              })
+            }
+            className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-semibold transition-colors ${
+              tab === t.key
+                ? 'border-primary text-primary'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
           >
-            {label}
-            {k === 'review' && reviewCount > 0 && <span className="rounded-full bg-amber-100 px-2 text-xs font-bold text-amber-800">{reviewCount}</span>}
+            {t.label}
+            {typeof t.count === 'number' && t.count > 0 && (
+              <span
+                className={`rounded-full px-2 text-xs font-bold ${
+                  t.key === 'missing'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {t.count}
+              </span>
+            )}
           </button>
         ))}
-      </div>
-
-      {/* Filters */}
-      <div className="card flex flex-wrap items-center gap-2 !p-3">
-        <form
-          className="relative min-w-56 flex-1"
-          onSubmit={e => { e.preventDefault(); go({ q: (new FormData(e.currentTarget).get('q') as string) || undefined }) }}
-        >
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input name="q" defaultValue={params.q} placeholder="Search name, area, postcode, phone or email" className="input !pl-9" />
-        </form>
-        <select className="input !w-auto" value={params.type || ''} onChange={e => go({ type: e.target.value || undefined })}>
-          <option value="">All types</option>
-          {APPROVAL_QUEUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="input !w-auto" value={params.service || ''} onChange={e => go({ service: e.target.value || undefined })}>
-          <option value="">All services</option>
-          {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
-        </select>
-        {tab === 'all' && (
-          <>
-            <select className="input !w-auto" value={params.stage || ''} onChange={e => go({ stage: e.target.value || undefined })}>
-              <option value="">All stages</option>
-              <option value="needs-reply">Needs reply</option>
-              {CONFIG.STAGES.map(s => <option key={s}>{s}</option>)}
-            </select>
-            <select className="input !w-auto" value={params.platform || ''} onChange={e => go({ platform: e.target.value || undefined })}>
-              <option value="">All platforms</option>
-              {CONFIG.PLATFORMS.map(p => <option key={p}>{p}</option>)}
-            </select>
-          </>
-        )}
-        {role !== 'consultant' && (
-          <select className="input !w-auto" value={params.assigned || ''} onChange={e => go({ assigned: e.target.value || undefined })}>
-            <option value="">Anyone</option>
-            <option value="me">Assigned to me</option>
-            <option value="unassigned">Unassigned</option>
-            {isAdmin && staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-          </select>
-        )}
-        {isAdmin && (
-          <label className="flex items-center gap-1.5 px-1 text-sm text-slate-600">
-            <input type="checkbox" checked={params.archived === '1'} onChange={e => go({ archived: e.target.checked ? '1' : undefined })} /> Show archived
-          </label>
-        )}
-        {filtersActive && (
-          <button className="btn btn-ghost btn-sm" onClick={() => router.push(`/dashboard/leads${tab === 'review' ? '?tab=review' : ''}`)}>Clear</button>
-        )}
       </div>
 
       {notice && (
@@ -186,6 +227,157 @@ export function LeadsManagement({
         </div>
       )}
       <ErrorNote error={error || loadError} />
+
+      {tab === 'missing' ? (
+        <MissingDataTab
+          rows={missingRows}
+          total={total}
+          types={missingTypes}
+          problems={missingProblems}
+          batches={importBatches}
+          activeType={params.type || null}
+          activeProblem={params.problem || null}
+          activeBatch={params.batch || null}
+          page={page}
+          pageSize={pageSize}
+          onFilterChange={patch => go(patch)}
+        />
+      ) : tab === 'all' && !params.type && !params.q ? (
+        <div className="space-y-4">
+          <div className="card flex flex-wrap items-center gap-2 !p-3">
+            <form
+              className="relative min-w-56 flex-1"
+              onSubmit={e => {
+                e.preventDefault()
+                const qVal = (new FormData(e.currentTarget).get('q') as string) || undefined
+                go({ type: 'all', q: qVal })
+              }}
+            >
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                name="q"
+                placeholder="Search across all leads by name, area, LinkedIn or email…"
+                className="input !pl-9"
+              />
+            </form>
+            <button
+              type="button"
+              onClick={() => go({ type: 'all' })}
+              className="btn btn-secondary btn-sm"
+            >
+              View all leads ({total})
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {LEAD_CATEGORY_CARDS.map(cat => {
+              const Icon = cat.icon
+              const count = typeCounts[cat.key] ?? 0
+              return (
+                <button
+                  type="button"
+                  key={cat.key}
+                  onClick={() => go({ type: cat.key })}
+                  className="card card-link group relative flex flex-col justify-between !p-5 text-left transition-all hover:border-primary hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                      <Icon size={24} />
+                    </div>
+                    <ChevronRight size={18} className="text-slate-400 transition-colors group-hover:text-primary" />
+                  </div>
+                  <div className="mt-6">
+                    <div className="text-3xl font-extrabold tracking-tight text-slate-900">{count}</div>
+                    <div className="mt-1 text-sm font-bold text-slate-800 transition-colors group-hover:text-primary">
+                      {cat.label}
+                    </div>
+                    <div className="text-xs text-slate-400">{cat.desc}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-1 text-xs text-slate-500">
+            <span>Select a business type above to view its businesses.</span>
+            <button
+              type="button"
+              onClick={() => go({ type: 'all' })}
+              className="font-semibold text-primary hover:underline"
+            >
+              View all {total} leads unsegmented →
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {tab === 'all' && params.type && (
+            <div>
+              <button
+                type="button"
+                onClick={() => go({ type: undefined, q: undefined, page: undefined })}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 mb-1"
+              >
+                <ArrowLeft size={14} /> Back to all business types
+              </button>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="!mb-0 text-xl font-bold text-slate-900">
+                  {params.type === 'all' ? 'All business types' : params.type}
+                </h2>
+                <span className="text-xs font-semibold text-slate-500">
+                  {total.toLocaleString('en-GB')} lead{total === 1 ? '' : 's'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="card flex flex-wrap items-center gap-2 !p-3">
+            <form
+              className="relative min-w-56 flex-1"
+              onSubmit={e => { e.preventDefault(); go({ q: (new FormData(e.currentTarget).get('q') as string) || undefined }) }}
+            >
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input name="q" defaultValue={params.q} placeholder="Search name, area, postcode, LinkedIn or email" className="input !pl-9" />
+            </form>
+            <select className="input !w-auto" value={params.type || ''} onChange={e => go({ type: e.target.value || undefined })}>
+              <option value="">All types</option>
+              {APPROVAL_QUEUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select className="input !w-auto" value={params.service || ''} onChange={e => go({ service: e.target.value || undefined })}>
+              <option value="">All services</option>
+              {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
+            </select>
+            {tab === 'all' && (
+              <>
+                <select className="input !w-auto" value={params.stage || ''} onChange={e => go({ stage: e.target.value || undefined })}>
+                  <option value="">All stages</option>
+                  <option value="needs-reply">Needs reply</option>
+                  {CONFIG.STAGES.map(s => <option key={s}>{s}</option>)}
+                </select>
+                <select className="input !w-auto" value={params.platform || ''} onChange={e => go({ platform: e.target.value || undefined })}>
+                  <option value="">All platforms</option>
+                  {CONFIG.PLATFORMS.map(p => <option key={p}>{p}</option>)}
+                </select>
+              </>
+            )}
+            {role !== 'consultant' && (
+              <select className="input !w-auto" value={params.assigned || ''} onChange={e => go({ assigned: e.target.value || undefined })}>
+                <option value="">Anyone</option>
+                <option value="me">Assigned to me</option>
+                <option value="unassigned">Unassigned</option>
+                {isAdmin && staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              </select>
+            )}
+            {isAdmin && (
+              <label className="flex items-center gap-1.5 px-1 text-sm text-slate-600">
+                <input type="checkbox" checked={params.archived === '1'} onChange={e => go({ archived: e.target.checked ? '1' : undefined })} /> Show archived
+              </label>
+            )}
+            {filtersActive && (
+              <button className="btn btn-ghost btn-sm" onClick={() => router.push(`/dashboard/leads${tab === 'review' ? '?tab=review' : ''}`)}>Clear</button>
+            )}
+          </div>
 
       {/* Bulk bar */}
       {selected.length > 0 && (
@@ -294,7 +486,7 @@ export function LeadsManagement({
                           <>
                             <td className="text-xs">{r.services_pitched.join(', ')}</td>
                             <td className="text-xs text-slate-600">
-                              {[r.phone, r.email, r.instagram && `@${r.instagram}`, r.facebook && 'Facebook'].filter(Boolean).join(' · ') || <span className="text-slate-400">None yet</span>}
+                              {[r.email, r.instagram && `@${r.instagram}`, r.facebook && 'Facebook', r.linkedin && 'LinkedIn'].filter(Boolean).join(' · ') || <span className="text-slate-400">None yet</span>}
                             </td>
                             <td className="text-xs">
                               {ready ? <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle size={14} /> {ready}</span>
@@ -336,13 +528,13 @@ export function LeadsManagement({
                               {r.services_won?.length ? <Detail label="Services won">{r.services_won.join(', ')}</Detail> : null}
                               <Detail label="Assigned to">{r.assigned_sales_name || 'Unassigned'}{r.assigned_consultant_name ? ` (consultant: ${r.assigned_consultant_name})` : ''}</Detail>
                               <Detail label="Area">{[r.area, r.postcode].filter(Boolean).join(', ') || '-'}</Detail>
-                              <Detail label="Phone">{r.phone || '-'}</Detail>
+                              <Detail label="LinkedIn">{r.linkedin || '-'}</Detail>
                               <Detail label="Email">{r.email || '-'}</Detail>
                               <Detail label="Instagram">{r.instagram ? `@${r.instagram}` : '-'}</Detail>
                               <Detail label="Company type">{r.company_type || 'Unknown'}</Detail>
                               <Detail label="Added">{formatDate(r.created_at)}</Detail>
                             </div>
-                            <div className="mt-2 px-2"><Link href={`/dashboard/${r.opportunity_id}`} className="text-sm font-semibold text-primary hover:underline">Open business</Link></div>
+                            <div className="mt-2 px-2"><Link href={`/dashboard/${r.opportunity_id}`} className="text-sm font-semibold text-primary hover:underline">Open full business details →</Link></div>
                           </td>
                         </tr>
                       )}
@@ -355,6 +547,8 @@ export function LeadsManagement({
           <Pagination page={page} pageSize={pageSize} total={total} basePath="/dashboard/leads" params={params} />
         </>
       )}
+    </>
+  )}
 
       {/* Modals */}
       {showAdd && <BusinessForm open mode="add" onClose={() => setShowAdd(false)} />}
@@ -367,7 +561,7 @@ export function LeadsManagement({
           onClose={() => setEditRow(null)}
           initial={{
             business_name: editRow.business_name, business_type: editRow.business_type, area: editRow.area, postcode: editRow.postcode,
-            address: editRow.address, phone: editRow.phone, email: editRow.email, instagram: editRow.instagram, facebook: editRow.facebook,
+            address: editRow.address, linkedin: editRow.linkedin, email: editRow.email, instagram: editRow.instagram, facebook: editRow.facebook,
             company_type: editRow.company_type, contact_name: editRow.contact_name,
           }}
         />

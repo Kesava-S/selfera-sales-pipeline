@@ -14,7 +14,7 @@ export const CONFIG = {
 
   SERVICES: ['Website', 'Micro Automation', 'End-to-End Automation', 'Custom Dashboard', 'Cold Outreach'] as const,
 
-  PLATFORMS: ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'Phone', 'Walk-in'] as const,
+  PLATFORMS: ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn'] as const,
 
   BUSINESS_CATEGORIES: {
     'Food & Drink': ['Restaurant or cafe', 'Pub'],
@@ -83,3 +83,42 @@ export const STATUS_PAGES: Record<string, { label: string; filter: string; admin
   'needs-consultant': { label: 'Needs consultant', filter: 'needs-consultant', adminOnly: true, countKey: 'needs_consultant' },
   'unmatched-bookings': { label: 'Unmatched bookings', filter: 'unmatched', adminOnly: true, countKey: 'unmatched_bookings' },
 }
+
+export function toTypeSlug(type: string): string {
+  const clean = type.trim().toLowerCase()
+  if (clean.startsWith('hotel')) return 'hotel'
+  if (clean.startsWith('restaurant') || clean.startsWith('cafe')) return 'restaurant-or-cafe'
+  if (clean.startsWith('pub') || clean.startsWith('bar')) return 'pub'
+  if (clean.startsWith('property')) return 'property-management'
+  return clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+export function fromTypeSlug(slug: string): LeadCategory | null {
+  const clean = decodeURIComponent(slug).toLowerCase().trim()
+  if (clean === 'hotel' || clean === 'hotels') return 'Hotel'
+  if (clean === 'restaurant-or-cafe' || clean === 'restaurant or cafe' || clean === 'restaurants and cafes' || clean === 'restaurants-and-cafes') return 'Restaurant or cafe'
+  if (clean === 'pub' || clean === 'pubs') return 'Pub'
+  if (clean === 'property-management' || clean === 'property management') return 'Property management'
+  return null
+}
+
+export const DRILLDOWN_TYPES: { key: LeadCategory; slug: string; label: string; desc: string }[] = [
+  { key: 'Hotel', slug: 'hotel', label: 'Hotel', desc: 'Hotels, B&Bs & guesthouses' },
+  { key: 'Restaurant or cafe', slug: 'restaurant-or-cafe', label: 'Restaurant or cafe', desc: 'Restaurants, cafes & dining' },
+  { key: 'Pub', slug: 'pub', label: 'Pub', desc: 'Pubs, bars & public houses' },
+  { key: 'Property management', slug: 'property-management', label: 'Property management', desc: 'Short-lets & serviced properties' },
+]
+
+export const DRILLDOWN_PLATFORMS = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn'] as const
+export type DrilldownPlatform = (typeof DRILLDOWN_PLATFORMS)[number]
+
+export function toPlatformSlug(platform: string): string {
+  return platform.toLowerCase().trim()
+}
+
+export function fromPlatformSlug(slug: string): DrilldownPlatform | null {
+  const clean = decodeURIComponent(slug).toLowerCase().trim()
+  const found = DRILLDOWN_PLATFORMS.find(p => p.toLowerCase() === clean)
+  return found ?? null
+}
+

@@ -24,15 +24,14 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     supabase.from('profiles').select('id, full_name, role, is_active'),
   ])
 
-  const service = opp.services_pitched?.[0]
   const type = opp.businesses?.business_type
   return (
     <>
       <BreadcrumbSetter
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },
-          ...(service ? [{ label: service, href: `/dashboard/service/${encodeURIComponent(service)}` }] : []),
-          ...(service && type ? [{ label: type, href: `/dashboard/service/${encodeURIComponent(service)}/${encodeURIComponent(type)}` }] : []),
+          { label: 'Lead Management', href: '/dashboard/leads' },
+          ...(type ? [{ label: type, href: `/dashboard/leads?type=${encodeURIComponent(type)}` }] : []),
           { label: opp.businesses?.business_name || 'Business' },
         ]}
       />
