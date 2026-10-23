@@ -1,13 +1,16 @@
 'use client'
 
 // Small shared pieces used across the dashboard
-import { useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
-import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
+export { toast, ToastContainer } from '@/components/v2/Toast'
+import { toast } from '@/components/v2/Toast'
+import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers, Check } from 'lucide-react'
 import { STAGE_STYLE, STATUS_STYLE } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
+import { usePresence } from '@/components/usePresence'
 
 function LinkedinIcon({ size = 16, className = '' }: { size?: number; className?: string }) {
   return (
@@ -74,64 +77,139 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 // ---------- Modal ----------
-export function Modal({ title, open, onClose, children, wide }: { title: string; open: boolean; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+// `locked` keeps the modal open (Esc, backdrop and X give a small nudge instead) while a save is running.
+// Opening scales the panel in; closing plays the reverse before it is removed.
+const MODAL_EXIT_MS = 160
+
+export function Modal({ title, open, onClose, children, wide, locked }: { title: string; open: boolean; onClose: () => void; children: React.ReactNode; wide?: boolean; locked?: boolean }) {
+  // Closing from inside (X, Esc, backdrop) animates out first, then tells the parent
+  const [exiting, setExiting] = useState(false)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    setExiting(false)
+  }
+  const { mounted, closing } = usePresence(open && !exiting, MODAL_EXIT_MS)
+  const [nudging, setNudging] = useState(false)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose })
+
+  const requestClose = useCallback(() => {
+    if (locked) return setNudging(true)
+    setExiting(true)
+  }, [locked])
+
   useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    if (!exiting) return
+    const t = setTimeout(() => onCloseRef.current(), MODAL_EXIT_MS)
+    return () => clearTimeout(t)
+  }, [exiting])
+
+  useEffect(() => {
+    if (!mounted || closing) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && requestClose()
     document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mounted, closing, requestClose])
+
+  useEffect(() => {
+    if (!mounted) return
     document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = ''
-    }
-  }, [open, onClose])
-  if (!open) return null
+    return () => { document.body.style.overflow = '' }
+  }, [mounted])
+
+  if (!mounted) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs" onMouseDown={onClose}>
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs ${closing ? 'motion-backdrop-out' : 'motion-backdrop-in'}`}
+      onMouseDown={requestClose}
+    >
       <div
-        role="dialog"
-        aria-modal="true"
-        className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden`}
-        onMouseDown={e => e.stopPropagation()}
+        className={`flex w-full justify-center ${nudging ? 'motion-nudge' : ''}`}
+        onAnimationEnd={e => e.target === e.currentTarget && setNudging(false)}
       >
-        <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
-          <h2 className="text-base font-bold">{title}</h2>
-          <button onClick={onClose} className="btn btn-ghost btn-sm !p-1.5" aria-label="Close">
-            <X size={18} />
-          </button>
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden ${closing ? 'motion-panel-out' : 'motion-panel-in'}`}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
+            <h2 className="text-base font-bold">{title}</h2>
+            <button onClick={requestClose} disabled={locked} className="btn btn-ghost btn-sm !p-1.5" aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
         </div>
-        <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
       </div>
     </div>
   )
 }
 
 // ---------- Run a server action with loading + error ----------
+// `success` shows a toast once the server confirms the save.
+// `key` marks which button started the save, so only that one shows a spinner (see isPending),
+// and isSaved(key) stays true for a moment afterwards so the button can show a "Saved" tick.
+export type RunOptions<T> = { success?: string | ((data?: T) => string); key?: string }
+
 export function useAction() {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  const run = <T,>(fn: () => Promise<ActionResult<T>>, onDone?: (data?: T) => void) => {
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [savedKey, setSavedKey] = useState<string | null>(null)
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const busy = useRef(false)
+  const run = <T,>(fn: () => Promise<ActionResult<T>>, onDone?: (data?: T) => void, opts?: RunOptions<T>) => {
+    // Ignore double clicks while a save is still running
+    if (busy.current) return
+    busy.current = true
     setError(null)
+    setSavedKey(null)
+    setPendingKey(opts?.key ?? null)
     start(async () => {
       try {
         const res = await fn()
-        if (!res.ok) setError(res.error)
-        else {
+        if (!res.ok) {
+          setError(res.error)
+          toast.error(res.error)
+        } else {
+          const msg = typeof opts?.success === 'function' ? opts.success(res.data) : opts?.success
+          if (msg) toast.success(msg)
+          if (opts?.key) {
+            setSavedKey(opts.key)
+            clearTimeout(savedTimer.current)
+            savedTimer.current = setTimeout(() => setSavedKey(null), 1800)
+          }
           onDone?.(res.data)
           router.refresh()
         }
       } catch {
-        setError('Could not reach the server. Check your connection and try again.')
+        const msg = 'Could not reach the server. Check your connection and try again.'
+        setError(msg)
+        toast.error(msg)
+      } finally {
+        busy.current = false
       }
     })
   }
-  return { run, pending, error, setError }
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
+  const isPending = (key: string) => pending && pendingKey === key
+  const isSaved = (key: string) => !pending && savedKey === key
+  return { run, pending, isPending, isSaved, error, setError }
+}
+
+// Button content that shows a spinner while saving and a popping tick just after
+export function SaveLabel({ pending, saved, label, savedLabel = 'Saved', size = 14 }: { pending: boolean; saved: boolean; label: React.ReactNode; savedLabel?: string; size?: number }) {
+  if (saved) return <><Check size={size} strokeWidth={2.5} className="motion-check-pop" /> {savedLabel}</>
+  return <>{pending && <Spinner size={size} />} {label}</>
 }
 
 export function ErrorNote({ error }: { error?: string | null }) {
   if (!error) return null
-  return <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 break-words whitespace-normal leading-snug">{error}</div>
+  // Keyed by message, so a new error slides in again
+  return <div key={error} role="alert" className="motion-error-in rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 break-words whitespace-normal leading-snug">{error}</div>
 }
 
 export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {

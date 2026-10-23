@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   Mail,
   Plus,
@@ -19,8 +19,10 @@ import {
   Layers,
   FileSpreadsheet,
   X,
+  BarChart3,
 } from 'lucide-react'
 import { CONFIG } from '@/lib/config'
+import { formatDate } from '@/lib/format'
 import {
   saveEmailCampaign,
   deleteEmailCampaign,
@@ -31,7 +33,8 @@ import {
   type EmailCampaignInput,
   type EmailDatabaseInput,
 } from '@/app/dashboard/actions'
-import { Modal, useAction, ErrorNote, Spinner } from '@/components/ui'
+import { Modal, useAction, ErrorNote, Spinner, toast } from '@/components/ui'
+import { CampaignProgress } from '@/components/v2/CampaignProgress'
 
 export type DatabaseContact = {
   id?: string
@@ -60,7 +63,7 @@ export type CampaignRow = {
   service: string
   database_id: string | null
   database_name: string | null
-  status: 'draft' | 'scheduled' | 'sent' | 'archived'
+  status: 'draft' | 'scheduled' | 'sending' | 'sent' | 'archived'
   recipient_count: number
   recipients: DatabaseContact[]
   scheduled_at: string | null
@@ -137,9 +140,11 @@ export function EmailCampaignsView({
 
   // Launch modal
   const [launchModalOpen, setLaunchModalOpen] = useState(false)
-  const [launchSuccessInfo, setLaunchSuccessInfo] = useState<{ count: number; simulated?: boolean } | null>(null)
+  const [launchSuccessInfo, setLaunchSuccessInfo] = useState<{ id: string; queued: number; skipped: number; removed: number } | null>(null)
+  // Campaign whose delivery report is open
+  const [reportCampaignId, setReportCampaignId] = useState<string | null>(null)
 
-  const { run, pending, error } = useAction()
+  const { run, pending, isPending, error } = useAction()
   const { run: runDb, pending: dbPending, error: dbError } = useAction()
   const { run: runTest, pending: testPending, error: testError } = useAction()
   const { run: runLaunch, pending: launchPending, error: launchError } = useAction()
@@ -301,6 +306,7 @@ export function EmailCampaignsView({
 
           setSelectedDatabaseId(newDbRow.id)
           setDbModalOpen(false)
+          toast.success('Database saved.')
         }
       }
     )
@@ -316,6 +322,7 @@ export function EmailCampaignsView({
           setSelectedDatabaseId(databases.find(d => d.id !== id)?.id || '')
         }
         setDeleteDbId(null)
+        toast.success('Database deleted.')
       }
     )
   }
@@ -361,7 +368,8 @@ export function EmailCampaignsView({
   }, [body, sampleLead, service])
 
   // Save campaign handler
-  const handleSaveCampaign = (status: 'draft' | 'scheduled' = 'draft') => {
+  // onSaved runs only after the server confirms (used by Review & Launch)
+  const handleSaveCampaign = (status: 'draft' | 'scheduled' = 'draft', onSaved?: (row: CampaignRow) => void) => {
     const db = activeSelectedDb
     const recipients = db?.contacts || []
 
@@ -411,8 +419,11 @@ export function EmailCampaignsView({
             return [updatedCampaign, ...prev]
           })
           setIsCreatingCampaign(false)
+          toast.success(status === 'draft' ? 'Campaign draft saved.' : 'Campaign saved.')
+          onSaved?.(updatedCampaign)
         }
-      }
+      },
+      { key: onSaved ? 'save-launch' : 'save-draft' }
     )
   }
 
@@ -422,21 +433,27 @@ export function EmailCampaignsView({
       () => launchEmailCampaign(cId),
       data => {
         if (data) {
-          setLaunchSuccessInfo({
-            count: data.sentCount,
-            simulated: data.simulated,
-          })
+          setLaunchSuccessInfo({ id: cId, ...data })
           setCampaigns(prev =>
-            prev.map(c =>
-              c.id === cId
-                ? { ...c, status: 'sent', sent_at: new Date().toISOString(), recipient_count: data.sentCount }
-                : c
-            )
+            prev.map(c => (c.id === cId ? { ...c, status: 'sending', sent_at: null, recipient_count: data.queued } : c))
           )
+          toast.success(`Campaign launched. Sending to ${data.queued} recipient${data.queued === 1 ? '' : 's'}.`)
         }
       }
     )
   }
+
+  // Keep the list in step with the live progress (sending -> sent)
+  const updateCampaignStatus = useCallback((id: string, status: string) => {
+    setCampaigns(prev =>
+      prev.map(c =>
+        c.id === id && c.status !== status
+          ? { ...c, status: status as CampaignRow['status'], sent_at: status === 'sent' ? c.sent_at || new Date().toISOString() : c.sent_at }
+          : c
+      )
+    )
+  }, [])
+
 
   // Delete campaign
   const handleDeleteCampaign = (id: string) => {
@@ -445,6 +462,7 @@ export function EmailCampaignsView({
       () => {
         setCampaigns(prev => prev.filter(c => c.id !== id))
         setDeleteCampaignId(null)
+        toast.success('Campaign deleted.')
       }
     )
   }
@@ -552,7 +570,9 @@ export function EmailCampaignsView({
 
               <div className="space-y-3">
                 <div>
-                  <label className="label">Campaign Name</label>
+                  <label className="label">
+                    Campaign Name <span className="text-red-500 font-bold ml-0.5">*</span>
+                  </label>
                   <input
                     type="text"
                     className="input"
@@ -587,12 +607,14 @@ export function EmailCampaignsView({
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                     2
                   </span>
-                  <h2 className="font-semibold text-base text-slate-900">Select Target Database</h2>
+                  <h2 className="font-semibold text-base text-slate-900">
+                    Select Target Database <span className="text-red-500 font-bold ml-0.5">*</span>
+                  </h2>
                 </div>
                 <button
                   type="button"
                   onClick={openCreateDatabase}
-                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                  className="text-xs font-semibold text-primary hover:opacity-75 transition-opacity flex items-center gap-1"
                 >
                   <Plus size={13} /> Create New Database
                 </button>
@@ -668,7 +690,7 @@ export function EmailCampaignsView({
                     <button
                       type="button"
                       onClick={() => openEditDatabase(activeSelectedDb)}
-                      className="text-primary hover:underline font-semibold"
+                      className="text-primary hover:opacity-75 transition-opacity font-semibold"
                     >
                       View / Edit contacts
                     </button>
@@ -709,7 +731,9 @@ export function EmailCampaignsView({
 
               <div className="space-y-3.5">
                 <div>
-                  <label className="label">Subject Line</label>
+                  <label className="label">
+                    Subject Line <span className="text-red-500 font-bold ml-0.5">*</span>
+                  </label>
                   <input
                     type="text"
                     className="input font-medium"
@@ -735,7 +759,9 @@ export function EmailCampaignsView({
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="label !mb-0">Message Body</label>
+                    <label className="label !mb-0">
+                      Message Body <span className="text-red-500 font-bold ml-0.5">*</span>
+                    </label>
                     <div className="flex items-center gap-1">
                       <span className="text-[11px] text-slate-400 mr-1">Insert:</span>
                       <button
@@ -801,13 +827,15 @@ export function EmailCampaignsView({
                   disabled={pending || !campaignName.trim() || !subject.trim() || !body.trim()}
                   className="btn btn-secondary btn-sm"
                 >
-                  {pending && <Spinner size={14} />} Save draft
+                  {isPending('save-draft') && <Spinner size={14} />} Save draft
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    handleSaveCampaign('draft')
-                    setLaunchModalOpen(true)
+                    handleSaveCampaign('draft', row => {
+                      setEditingCampaign(row)
+                      setLaunchModalOpen(true)
+                    })
                   }}
                   disabled={
                     pending ||
@@ -819,7 +847,7 @@ export function EmailCampaignsView({
                   }
                   className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
                 >
-                  <Sparkles size={14} /> Review & Launch
+                  {isPending('save-launch') ? <Spinner size={14} /> : <Sparkles size={14} />} Review & Launch
                 </button>
               </div>
             </div>
@@ -944,6 +972,8 @@ export function EmailCampaignsView({
               <div className="divide-y divide-slate-100">
                 {campaigns.map(c => {
                   const isSent = c.status === 'sent'
+                  const isSending = c.status === 'sending'
+                  const launched = isSent || isSending
                   return (
                     <div
                       key={c.id}
@@ -956,10 +986,12 @@ export function EmailCampaignsView({
                             className={`badge border ${
                               isSent
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : isSending
+                                ? 'bg-sky-50 text-sky-700 border-sky-200'
                                 : 'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
-                            {isSent ? 'Sent' : 'Draft'}
+                            {isSent ? 'Sent' : isSending ? 'Sending' : 'Draft'}
                           </span>
                           <span className="text-xs text-slate-400 font-medium">
                             &middot; {c.service}
@@ -982,15 +1014,28 @@ export function EmailCampaignsView({
                           {c.sent_at && (
                             <>
                               <span>&middot;</span>
-                              <span>Sent {new Date(c.sent_at).toLocaleDateString()}</span>
+                              <span>Sent {formatDate(c.sent_at)}</span>
                             </>
                           )}
                         </div>
+                        {isSending && (
+                          <div className="pt-1.5">
+                            <CampaignProgress compact channel="email" campaignId={c.id} onStatusChange={status => updateCampaignStatus(c.id, status)} />
+                          </div>
+                        )}
                       </div>
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 shrink-0">
-                        {!isSent && (
+                        {launched && (
+                          <button
+                            onClick={() => setReportCampaignId(c.id)}
+                            className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                          >
+                            <BarChart3 size={13} /> Report
+                          </button>
+                        )}
+                        {!launched && (
                           <button
                             onClick={() => {
                               setEditingCampaign(c)
@@ -1005,7 +1050,7 @@ export function EmailCampaignsView({
                           onClick={() => startEditCampaign(c)}
                           className="btn btn-secondary btn-sm flex items-center gap-1.5"
                         >
-                          <Edit3 size={13} /> {isSent ? 'View' : 'Edit'}
+                          <Edit3 size={13} /> {launched ? 'View' : 'Edit'}
                         </button>
                         <button
                           onClick={() => setDeleteCampaignId(c.id)}
@@ -1079,7 +1124,7 @@ export function EmailCampaignsView({
                         <p className="text-xs text-slate-500">{db.description}</p>
                       )}
                       <div className="text-xs text-slate-400 pt-1 flex items-center gap-2">
-                        <span>Created {new Date(db.created_at).toLocaleDateString()}</span>
+                        <span>Created {formatDate(db.created_at)}</span>
                       </div>
                     </div>
 
@@ -1128,7 +1173,9 @@ export function EmailCampaignsView({
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="label">Database Name</label>
+                <label className="label">
+                  Database Name <span className="text-red-500 font-bold ml-0.5">*</span>
+                </label>
                 <input
                   type="text"
                   className="input"
@@ -1345,7 +1392,9 @@ export function EmailCampaignsView({
             </p>
 
             <div>
-              <label className="label">Send Test To</label>
+              <label className="label">
+                Send Test To <span className="text-red-500 font-bold ml-0.5">*</span>
+              </label>
               <input
                 type="email"
                 className="input"
@@ -1391,7 +1440,10 @@ export function EmailCampaignsView({
                         subject: previewSubject,
                         body: previewBody,
                       }),
-                    () => setTestSentSuccess(true)
+                    () => {
+                      setTestSentSuccess(true)
+                      toast.success(`Test email sent to ${testRecipient}.`)
+                    }
                   )
                 }}
               >
@@ -1416,24 +1468,22 @@ export function EmailCampaignsView({
         >
           <div className="space-y-4">
             {launchSuccessInfo ? (
-              <div className="space-y-3 py-2 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <CheckCircle2 size={24} />
-                </div>
-                <h3 className="font-bold text-slate-900 text-base">Campaign Successfully Launched!</h3>
-                <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                  Dispatched outreach to <strong>{launchSuccessInfo.count}</strong> lead
-                  {launchSuccessInfo.count === 1 ? '' : 's'}.
-                  {launchSuccessInfo.simulated && (
-                    <span className="block text-slate-400 mt-1 italic">
-                      (SMTP not active in local env; recorded as simulated dispatch)
-                    </span>
-                  )}
-                </p>
-                <div className="pt-2">
+              <div className="space-y-4">
+                <CampaignProgress
+                  channel="email"
+                  campaignId={launchSuccessInfo.id}
+                  onStatusChange={status => updateCampaignStatus(launchSuccessInfo.id, status)}
+                />
+                {(launchSuccessInfo.skipped > 0 || launchSuccessInfo.removed > 0) && (
+                  <p className="text-xs text-slate-500">
+                    {launchSuccessInfo.skipped > 0 && `${launchSuccessInfo.skipped} opted out and skipped. `}
+                    {launchSuccessInfo.removed > 0 && `${launchSuccessInfo.removed} removed (invalid or duplicate addresses).`}
+                  </p>
+                )}
+                <div className="flex justify-end border-t border-slate-100 pt-3">
                   <button
                     type="button"
-                    className="btn btn-primary btn-sm mx-auto"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       setLaunchModalOpen(false)
                       setLaunchSuccessInfo(null)
@@ -1493,9 +1543,9 @@ export function EmailCampaignsView({
                   <button
                     type="button"
                     className="btn btn-primary btn-sm flex items-center gap-1.5"
-                    disabled={launchPending}
+                    disabled={launchPending || !editingCampaign?.id}
                     onClick={() => {
-                      const idToLaunch = editingCampaign?.id || campaigns[0]?.id
+                      const idToLaunch = editingCampaign?.id
                       if (idToLaunch) {
                         executeLaunch(idToLaunch)
                       }
@@ -1513,6 +1563,16 @@ export function EmailCampaignsView({
       {/* ------------------------------------------------------------- */}
       {/* MODAL: DELETE CAMPAIGN CONFIRMATION                           */}
       {/* ------------------------------------------------------------- */}
+      {reportCampaignId && (
+        <Modal title="Delivery report" open onClose={() => setReportCampaignId(null)}>
+          <CampaignProgress
+            channel="email"
+            campaignId={reportCampaignId}
+            onStatusChange={status => updateCampaignStatus(reportCampaignId, status)}
+          />
+        </Modal>
+      )}
+
       {deleteCampaignId && (
         <Modal
           title="Delete Campaign"
@@ -1529,6 +1589,7 @@ export function EmailCampaignsView({
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => setDeleteCampaignId(null)}
+                disabled={pending}
               >
                 Cancel
               </button>
@@ -1564,6 +1625,7 @@ export function EmailCampaignsView({
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => setDeleteDbId(null)}
+                disabled={pending}
               >
                 Cancel
               </button>

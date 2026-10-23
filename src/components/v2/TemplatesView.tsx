@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ChevronRight, Plus, Pencil, ArrowLeft, Globe, Hotel, Utensils, Beer, Building2,
+  ChevronRight, Plus, Pencil, Globe, Hotel, Utensils, Beer, Building2,
 } from 'lucide-react'
 import {
   STEPS, PLATFORMS, TEMPLATE_BUSINESS_TYPES, MESSAGING, platformLabel,
@@ -199,12 +199,6 @@ export function TemplateSlots({
   return (
     <div className="max-w-3xl space-y-5">
       <div>
-        <Link
-          href={`/dashboard/templates?type=${slug(businessType)}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 mb-2"
-        >
-          <ArrowLeft size={14} /> Back to mediums in {businessType}
-        </Link>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <PlatformIcon platform={platform} size={22} />
@@ -265,7 +259,7 @@ export function TemplateSlots({
                       <Switch
                         on={own.is_active}
                         disabled={toggle.pending}
-                        onChange={v => toggle.run(() => setTemplateActive(own.id, v))}
+                        onChange={v => toggle.run(() => setTemplateActive(own.id, v), undefined, { success: v ? 'Template turned on.' : 'Template turned off.' })}
                       />
                       <button
                         className="btn btn-ghost btn-sm"
@@ -369,6 +363,7 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
       title={`${v.id ? 'Edit template' : 'Add custom template'} · ${v.step}`}
       open
       onClose={onClose}
+      locked={pending}
     >
       <form
         className="space-y-4"
@@ -384,7 +379,8 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
                 subject: v.subject,
                 body: v.body,
               }),
-            onClose
+            onClose,
+            { success: 'Template saved.' }
           )
         }}
       >
@@ -437,7 +433,7 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
         </div>
 
         <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={pending}>
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={pending || !v.body.trim()}>

@@ -92,7 +92,7 @@ export async function login(formData: FormData): Promise<void> {
 }
 
 export async function loginAjax(emailInput: string, passwordInput: string, nextInput?: string): Promise<LoginActionResult> {
-  const email = String(emailInput || '').trim()
+  const email = String(emailInput || '').trim().toLowerCase()
   const password = String(passwordInput || '')
 
   if (!email || !password) {
@@ -106,7 +106,8 @@ export async function loginAjax(emailInput: string, passwordInput: string, nextI
   })
 
   if (authError || !authData?.user) {
-    return { success: false, error: 'Invalid email or password.' }
+    console.warn('[Login] signInWithPassword error for ' + email + ':', authError?.message)
+    return { success: false, error: authError?.message || 'Invalid email or password.' }
   }
 
   const headerList = await headers()

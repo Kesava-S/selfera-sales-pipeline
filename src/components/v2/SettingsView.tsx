@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import type { Profile } from '@/lib/auth'
 import { setMyName, setCadence, updateMember, inviteMember } from '@/app/dashboard/actions'
-import { Modal, useAction, ErrorNote, Spinner } from '@/components/ui'
+import { Modal, useAction, ErrorNote, Spinner, SaveLabel } from '@/components/ui'
 
 export type Member = {
   id: string; fullName: string; role: string; capacity: number | null
@@ -41,8 +41,7 @@ export function SettingsView({ me, isAdmin, team, teamNote, cadence }: {
 // ---------- My account ----------
 function MyAccount({ me }: { me: Profile }) {
   const [name, setName] = useState(me.full_name || '')
-  const [saved, setSaved] = useState(false)
-  const { run, pending, error } = useAction()
+  const { run, pending, isSaved, error } = useAction()
   return (
     <section className="card space-y-3">
       <div>
@@ -51,12 +50,13 @@ function MyAccount({ me }: { me: Profile }) {
       </div>
       <form
         className="flex flex-wrap gap-2"
-        onSubmit={e => { e.preventDefault(); setSaved(false); run(() => setMyName(name), () => setSaved(true)) }}
+        onSubmit={e => { e.preventDefault(); run(() => setMyName(name), undefined, { success: 'Your name was saved.', key: 'name' }) }}
       >
-        <input className="input !w-auto min-w-64 flex-1" value={name} onChange={e => { setName(e.target.value); setSaved(false) }} aria-label="Your name" />
-        <button className="btn btn-primary btn-sm" disabled={pending || name.trim() === (me.full_name || '')}>{pending && <Spinner size={14} />} Save</button>
+        <input className="input !w-auto min-w-64 flex-1" value={name} onChange={e => setName(e.target.value)} aria-label="Your name" />
+        <button className={`btn btn-primary btn-sm ${isSaved('name') ? '!bg-emerald-600 !opacity-100' : ''}`} disabled={pending || name.trim() === (me.full_name || '')}>
+          <SaveLabel pending={pending} saved={isSaved('name')} label="Save" />
+        </button>
       </form>
-      {saved && <p className="text-sm text-emerald-700">Saved.</p>}
       <ErrorNote error={error} />
     </section>
   )
@@ -148,8 +148,8 @@ function InviteModal({ onClose, defaultRole }: { onClose: () => void; defaultRol
   const [v, setV] = useState({ email: '', fullName: '', role: defaultRole || 'sales' })
   const { run, pending, error } = useAction()
   return (
-    <Modal title="Add person" open onClose={onClose}>
-      <form className="space-y-3" onSubmit={e => { e.preventDefault(); run(() => inviteMember(v), onClose) }}>
+    <Modal title="Add person" open onClose={onClose} locked={pending}>
+      <form className="space-y-3" onSubmit={e => { e.preventDefault(); run(() => inviteMember(v), onClose, { success: `Invite sent to ${v.email}.` }) }}>
         <input className="input" type="email" placeholder="Email" value={v.email} onChange={e => setV({ ...v, email: e.target.value })} autoFocus />
         <input className="input" placeholder="Full name" value={v.fullName} onChange={e => setV({ ...v, fullName: e.target.value })} />
         <select className="input" value={v.role} onChange={e => setV({ ...v, role: e.target.value })} aria-label="Role">
@@ -158,7 +158,7 @@ function InviteModal({ onClose, defaultRole }: { onClose: () => void; defaultRol
         <p className="text-xs text-muted">They get an email with a link to set their password.</p>
         <ErrorNote error={error} />
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending}>Cancel</button>
           <button className="btn btn-primary btn-sm" disabled={pending}>{pending && <Spinner size={14} />} Send invite</button>
         </div>
       </form>
@@ -172,12 +172,13 @@ function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; 
   const [v, setV] = useState({ fullName: member.fullName, role: member.role, capacity: member.capacity ?? 150, active: member.active })
   const { run, pending, error } = useAction()
   const { run: runDelete, pending: deleting, error: deleteError } = useAction()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   
   return (
-    <Modal title={member.fullName || member.email} open onClose={onClose}>
+    <Modal title={member.fullName || member.email} open onClose={onClose} locked={pending || deleting}>
       <form
         className="space-y-3"
-        onSubmit={e => { e.preventDefault(); run(() => updateMember({ id: member.id, ...v, capacity: v.role === 'sales' ? v.capacity : null }), onClose) }}
+        onSubmit={e => { e.preventDefault(); run(() => updateMember({ id: member.id, ...v, capacity: v.role === 'sales' ? v.capacity : null }), onClose, { success: 'Changes saved.' }) }}
       >
         {member.email && <p className="text-sm text-muted">{member.email}</p>}
         <label className="block space-y-1">
@@ -207,26 +208,41 @@ function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; 
         )}
         
         <ErrorNote error={error || deleteError} />
+
+        {confirmDelete && (
+          <div className="space-y-3 rounded-lg border border-red-200 bg-red-50 p-3">
+            <p className="text-sm text-red-800">
+              Delete <b>{member.fullName || 'this user'}</b> completely? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)} disabled={deleting}>Keep user</button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm !bg-red-600 hover:!bg-red-700"
+                disabled={deleting}
+                onClick={() => runDelete(() => deleteMember(member.id), onClose, { success: `${member.fullName || 'User'} was deleted.` })}
+              >
+                {deleting && <Spinner size={14} />} Delete permanently
+              </button>
+            </div>
+          </div>
+        )}
         
         <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-100">
           {!isMe ? (
             <button 
               type="button" 
               className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-              disabled={deleting || pending}
-              onClick={() => {
-                if (confirm(`Are you sure you want to completely delete ${member.fullName || 'this user'}? This action cannot be undone.`)) {
-                  runDelete(() => deleteMember(member.id), onClose)
-                }
-              }}
+              disabled={deleting || pending || confirmDelete}
+              onClick={() => setConfirmDelete(true)}
             >
-              {deleting ? 'Deleting...' : 'Delete User'}
+              Delete User
             </button>
           ) : <div></div>}
           
           <div className="flex gap-2">
             <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending || deleting}>Cancel</button>
-            <button className="btn btn-primary btn-sm" disabled={pending || deleting}>{(pending && !deleting) && <Spinner size={14} />} Save</button>
+            <button className="btn btn-primary btn-sm" disabled={pending || deleting}>{pending && <Spinner size={14} />} Save</button>
           </div>
         </div>
       </form>
@@ -238,19 +254,17 @@ function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; 
 function Timing({ cadence }: { cadence: { step_name: string; days_delay: number }[] }) {
   const initial = Object.fromEntries(STEPS.map(s => [s.key, cadence.find(c => c.step_name === s.key)?.days_delay ?? 0]))
   const [days, setDays] = useState<Record<string, number>>(initial)
-  const [saved, setSaved] = useState(false)
-  const { run, pending, error } = useAction()
+  const { run, pending, isSaved, error } = useAction()
   const changed = STEPS.filter(s => days[s.key] !== initial[s.key])
 
   const save = () => {
-    setSaved(false)
     run(async () => {
       for (const s of changed) {
         const res = await setCadence(s.key, days[s.key])
         if (!res.ok) return res
       }
       return { ok: true }
-    }, () => setSaved(true))
+    }, undefined, { success: 'Follow-up timing saved.', key: 'timing' })
   }
 
   return (
@@ -265,7 +279,7 @@ function Timing({ cadence }: { cadence: { step_name: string; days_delay: number 
           <span className="flex items-center gap-2">
             <input
               className="input !w-20 text-right" type="number" min={1} max={60} value={days[s.key]}
-              onChange={e => { setDays({ ...days, [s.key]: Number(e.target.value) }); setSaved(false) }}
+              onChange={e => setDays({ ...days, [s.key]: Number(e.target.value) })}
               aria-label={s.label}
             />
             <span className="w-8 text-muted">days</span>
@@ -273,8 +287,9 @@ function Timing({ cadence }: { cadence: { step_name: string; days_delay: number 
         </div>
       ))}
       <div className="flex items-center justify-end gap-3">
-        {saved && <span className="text-sm text-emerald-700">Saved.</span>}
-        <button className="btn btn-primary btn-sm" onClick={save} disabled={pending || changed.length === 0}>{pending && <Spinner size={14} />} Save</button>
+        <button className={`btn btn-primary btn-sm ${isSaved('timing') ? '!bg-emerald-600 !opacity-100' : ''}`} onClick={save} disabled={pending || changed.length === 0}>
+          <SaveLabel pending={pending} saved={isSaved('timing')} label="Save" />
+        </button>
       </div>
       <ErrorNote error={error} />
     </section>

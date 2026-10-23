@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 // POST { rows: [{ idx, business_name, whatsapp_number, email, linkedin, postcode }] } -> matches with existing businesses
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
+  if (!user) {
+    return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
+  }
 
   const { rows } = await request.json().catch(() => ({ rows: null }))
   if (!Array.isArray(rows)) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })

@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeft,
   ChevronRight,
   Hotel,
   Utensils,
@@ -46,13 +45,7 @@ export function StatusTypeBoxes({
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <ArrowLeft size={14} /> Back to Dashboard
-        </Link>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <h1 className="!mb-1">{statusLabel}</h1>
             <p className="text-sm text-slate-500">
@@ -114,13 +107,7 @@ export function ReplyPlatformBoxes({
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href="/dashboard/status/needs-reply"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <ArrowLeft size={14} /> Back to business types in Needs reply
-        </Link>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <h1 className="!mb-1">{typeLabel}</h1>
             <p className="text-sm text-slate-500">
@@ -215,14 +202,6 @@ export function StatusLeadList({
   const isWentCold = statusKey === 'went-cold'
   const isNoResponse = statusKey === 'no-response'
 
-  const backHref = isNeedsReply
-    ? `/dashboard/status/needs-reply/${typeSlug}`
-    : `/dashboard/status/${statusKey}`
-
-  const backText = isNeedsReply
-    ? `Back to platforms for ${typeLabel}`
-    : `Back to business types in ${statusLabel}`
-
   const basePath = isNeedsReply && platform
     ? `/dashboard/status/needs-reply/${typeSlug}/${toPlatformSlug(platform)}`
     : `/dashboard/status/${statusKey}/${typeSlug}`
@@ -230,13 +209,7 @@ export function StatusLeadList({
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href={backHref}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
-        >
-          <ArrowLeft size={14} /> {backText}
-        </Link>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <h1 className="!mb-1">
               {typeLabel} {platform ? `on ${platform}` : ''}
@@ -500,7 +473,7 @@ function AssignConsultantControl({
         type="button"
         className="btn btn-primary btn-sm !h-9"
         disabled={!selected || pending}
-        onClick={() => run(() => assignConsultant(opportunityId, selected))}
+        onClick={() => run(() => assignConsultant(opportunityId, selected), undefined, { success: 'Consultant assigned.' })}
       >
         {pending && <Spinner size={12} />} Assign
       </button>

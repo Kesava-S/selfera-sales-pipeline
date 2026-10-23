@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -14,12 +14,13 @@ import {
   Beer,
   Building2,
   X,
+  Check,
 } from 'lucide-react'
 import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
 import { formatDate } from '@/lib/format'
 import { PROBLEM_LABELS } from '@/lib/importFields'
-import { updateLeadField, bulkSetField, deleteLeads } from '@/app/dashboard/actions'
-import { EmptyState, Modal, Pagination, Spinner } from '@/components/ui'
+import { updateLeadField, updateLeadAddressAndPostcode, bulkSetField, deleteLeads } from '@/app/dashboard/actions'
+import { EmptyState, Modal, Pagination, Spinner, ButtonSpinner, toast } from '@/components/ui'
 
 export type MissingRow = {
   opportunity_id: string
@@ -34,8 +35,6 @@ export type MissingRow = {
   services: string[]
   contact_name: string | null
   owner_email: string | null
-  owner_whatsapp: string | null
-  owner_social: string | null
   owner_contact: string | null
   email: string | null
   whatsapp_number: string | null
@@ -44,7 +43,6 @@ export type MissingRow = {
   linkedin: string | null
   tech_partner_type: string | null
   tech_partner_name: string | null
-  existing_tech_partner: string | null
   gaps_found: string | null
   source: string | null
   import_batch_id: string | null
@@ -72,6 +70,96 @@ const TYPE_CARDS = [
   { key: 'Pub', label: 'Pubs', icon: Beer },
   { key: 'Property management', label: 'Property management', icon: Building2 },
 ] as const
+
+const FIELD_LABELS: Record<string, string> = {
+  business_name: 'Business name',
+  category: 'Category',
+  services: 'Services',
+  website: 'Website',
+  address: 'Address & Postcode',
+  postcode: 'Address & Postcode',
+  owner_name: 'Owner name',
+  owner_contact: 'Owner contact',
+  business_contact: 'Business contact',
+  tech_partner: 'Tech partner',
+  gaps: 'Gaps found',
+}
+
+function CellEditorFooter({
+  onCancel,
+}: {
+  onCancel: () => void
+  onSave?: () => void
+  isSaving?: boolean
+}) {
+  return (
+    <div className="flex justify-end gap-1 mt-1">
+      <button
+        type="button"
+        className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        className="btn btn-primary !py-0.5 !px-2 text-[10px] inline-flex items-center gap-1"
+      >
+        <span>Save</span>
+      </button>
+    </div>
+  )
+}
+
+function ActiveCellEditor({
+  children,
+  onCancel,
+  onSave,
+  className = '',
+  shake = false,
+}: {
+  children: React.ReactNode
+  onCancel: () => void
+  onSave: () => void
+  className?: string
+  shake?: boolean
+}) {
+  const containerRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    function handlePointerDown(e: MouseEvent | TouchEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onCancel()
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        onCancel()
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onCancel])
+
+  return (
+    <form
+      ref={containerRef}
+      onSubmit={e => {
+        e.preventDefault()
+        onSave()
+      }}
+      className={`flex flex-col gap-1.5 p-2 bg-white border rounded-lg shadow-lg z-20 ${shake ? 'motion-shake border-rose-400 ring-2 ring-rose-100' : 'motion-dropdown-in border-slate-200'} ${className}`}
+    >
+      {children}
+    </form>
+  )
+}
 
 export function MissingDataTab({
   rows: initialRows,
@@ -107,6 +195,8 @@ export function MissingDataTab({
   const [editSecondary, setEditSecondary] = useState<string>('')
   const [editCheck, setEditCheck] = useState<boolean>(false)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [savingField, setSavingField] = useState<string | null>(null)
+  const [justSaved, setJustSaved] = useState<{ id: string; field: string } | null>(null)
   const [cellError, setCellError] = useState<string | null>(null)
 
   // Bulk actions modal states
@@ -116,12 +206,25 @@ export function MissingDataTab({
   const [bulkServices, setBulkServices] = useState<string[]>([])
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [bulkActionBusy, setBulkActionBusy] = useState(false)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
 
-  // Sync state if initialRows changes
-  if (initialRows !== rows && !editingCell) {
-    setRows(initialRows)
-  }
+  // Maintain local overrides so background initialRows updates don't wipe optimistic/saved state
+  const [localOverrides, setLocalOverrides] = useState<Record<string, Partial<MissingRow>>>({})
+
+  // Sync state if initialRows changes, merging local overrides
+  useEffect(() => {
+    if (!editingCell) {
+      setRows(
+        initialRows.map(r => {
+          const overrides = localOverrides[r.business_id]
+          if (!overrides) return r
+          return {
+            ...r,
+            ...overrides,
+          }
+        })
+      )
+    }
+  }, [initialRows, editingCell, localOverrides])
 
   const toggleSelect = (id: string) => {
     setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
@@ -149,21 +252,26 @@ export function MissingDataTab({
     } else if (field === 'website') {
       setEditValue(row.existing_website || '')
       setEditCheck(Boolean(row.has_no_website))
-    } else if (field === 'address') {
+    } else if (field === 'address' || field === 'postcode') {
       setEditValue(row.address || '')
-    } else if (field === 'postcode') {
-      setEditValue(row.postcode || '')
+      setEditSecondary(row.postcode || '')
     } else if (field === 'owner_name') {
       setEditValue(row.contact_name || '')
     } else if (field === 'owner_contact') {
-      setEditValue(row.owner_email || row.owner_contact || '')
-      setEditSecondary(row.owner_whatsapp || '')
+      setEditValue(row.owner_contact || row.owner_email || '')
+      setEditSecondary('')
     } else if (field === 'business_contact') {
       setEditValue(row.email || '')
       setEditSecondary(row.whatsapp_number || '')
     } else if (field === 'tech_partner') {
-      setEditValue(row.tech_partner_type || 'None')
-      setEditSecondary(row.tech_partner_name || '')
+      const existing = (
+        row.tech_partner_type === 'None'
+          ? 'None'
+          : row.tech_partner_type && row.tech_partner_name
+          ? `${row.tech_partner_type} (${row.tech_partner_name})`
+          : row.tech_partner_type || ''
+      )
+      setEditValue(existing)
     } else if (field === 'gaps') {
       setEditValue(row.gaps_found || '')
     }
@@ -177,96 +285,187 @@ export function MissingDataTab({
   const saveCell = async (row: MissingRow) => {
     if (!editingCell) return
     const field = editingCell.field
-    setSavingId(row.business_id)
+    let editVal = editValue
+    const editSec = editSecondary
+    const editChk = editCheck
+    const servicesVal = [...bulkServices]
+
+    // Validation
+    if (field === 'business_name' && !editVal.trim()) {
+      setCellError('Business name is required.')
+      toast.error('Business name is required.')
+      return
+    }
+
+    // Capture previous row state in case of rollback
+    const previousRow = { ...row }
+
+    // 1. Immediately close the editing popup card
+    setEditingCell(null)
     setCellError(null)
 
-    try {
-      let res: any
+    // 2. Compute optimistic row data immediately
+    const cleanTp = editVal.trim()
+    const tpType = cleanTp.toLowerCase() === 'none' || !cleanTp ? 'None' : cleanTp.toLowerCase().startsWith('diy') ? 'DIY' : 'Agency'
 
-      if (field === 'business_name') {
-        res = await updateLeadField(row.business_id, 'business_name', editValue)
-      } else if (field === 'category') {
-        res = await updateLeadField(row.business_id, 'category', editValue)
-      } else if (field === 'services') {
-        res = await updateLeadField(row.business_id, 'services', bulkServices.join(';'))
+    // If saving gaps and user left empty or typed 'none', actual value is 'None'
+    const finalGaps = field === 'gaps' ? (editVal.trim() || 'None') : (row.gaps_found ?? null)
+    if (field === 'gaps') {
+      editVal = editVal.trim() || 'None'
+    }
+
+    const optimisticRowData: Partial<MissingRow> = {
+      business_name: field === 'business_name' ? editVal : row.business_name,
+      business_type: field === 'category' ? editVal : row.business_type,
+      services: field === 'services' ? servicesVal : row.services,
+      existing_website: field === 'website' ? (editChk ? null : editVal) : row.existing_website,
+      has_no_website: field === 'website' ? editChk : row.has_no_website,
+      address: (field === 'address' || field === 'postcode') ? editVal : row.address,
+      postcode: (field === 'address' || field === 'postcode') ? editSec.toUpperCase() : row.postcode,
+      contact_name: field === 'owner_name' ? editVal : row.contact_name,
+      owner_contact: field === 'owner_contact' ? editVal : row.owner_contact,
+      owner_email: field === 'owner_contact' && editVal.includes('@') ? editVal : row.owner_email,
+      email: field === 'business_contact' && editVal.includes('@') ? editVal : row.email,
+      whatsapp_number: field === 'business_contact' && editSec ? editSec : row.whatsapp_number,
+      tech_partner_type: field === 'tech_partner' ? tpType : row.tech_partner_type,
+      tech_partner_name: field === 'tech_partner' ? (cleanTp.toLowerCase() === 'none' || !cleanTp ? null : cleanTp) : row.tech_partner_name,
+      gaps_found: field === 'gaps' ? finalGaps : row.gaps_found,
+    }
+
+    // Persist to localOverrides so background revalidations never wipe optimistic state
+    setLocalOverrides(prev => ({
+      ...prev,
+      [row.business_id]: {
+        ...(prev[row.business_id] || {}),
+        ...optimisticRowData,
+      },
+    }))
+
+    // Update rows state INSTANTLY (0ms latency!)
+    setRows(prev =>
+      prev.map(r => {
+        if (r.business_id !== row.business_id) return r
+        return {
+          ...r,
+          ...optimisticRowData,
+        }
+      })
+    )
+
+    // 3. Show "Saving..." on the row until the server confirms
+    setSavingId(row.business_id)
+    setSavingField(field)
+    const fieldLabel = FIELD_LABELS[field] || 'Field'
+
+    // 4. Send save request to the fast API route (bypasses Next.js page overhead)
+    try {
+      const postField = (body: Record<string, unknown>) =>
+        fetch('/api/leads/update-field', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }).then(r => r.json())
+      // Second request when one edit writes two fields (email + WhatsApp)
+      let extraSave: Promise<{ ok?: boolean; error?: string }> | null = null
+
+      let payload: any = {
+        businessId: row.business_id,
+        field: field === 'address' || field === 'postcode' ? 'address_and_postcode' : field,
+        value: editVal,
+      }
+
+      if (field === 'services') {
+        payload.value = servicesVal.join(';')
       } else if (field === 'website') {
-        if (editCheck) {
-          res = await updateLeadField(row.business_id, 'no_site', 'true')
+        if (editChk) {
+          payload.field = 'has_no_website'
+          payload.value = 'true'
         } else {
-          res = await updateLeadField(row.business_id, 'website', editValue)
+          payload.field = 'existing_website'
+          payload.value = editVal
         }
-      } else if (field === 'address') {
-        res = await updateLeadField(row.business_id, 'address', editValue)
-      } else if (field === 'postcode') {
-        res = await updateLeadField(row.business_id, 'postcode', editValue)
+      } else if (field === 'address' || field === 'postcode') {
+        payload.value = editVal
+        payload.secondaryValue = editSec
       } else if (field === 'owner_name') {
-        res = await updateLeadField(row.business_id, 'owner_name', editValue)
-      } else if (field === 'owner_contact') {
-        if (editValue.includes('@')) {
-          res = await updateLeadField(row.business_id, 'owner_email', editValue)
-        } else if (editSecondary) {
-          res = await updateLeadField(row.business_id, 'owner_whatsapp', editSecondary)
-        } else {
-          res = await updateLeadField(row.business_id, 'owner_social', editValue)
-        }
+        payload.field = 'owner_name'
       } else if (field === 'business_contact') {
-        if (editValue.includes('@')) {
-          res = await updateLeadField(row.business_id, 'email', editValue)
-        } else if (editSecondary) {
-          res = await updateLeadField(row.business_id, 'whatsapp_number', editSecondary)
+        if (editVal.includes('@') && editSec) {
+          payload.field = 'email'
+          extraSave = postField({ businessId: row.business_id, field: 'whatsapp_number', value: editSec })
+        } else if (editSec) {
+          payload.field = 'whatsapp_number'
+          payload.value = editSec
         } else {
-          res = await updateLeadField(row.business_id, 'email', editValue)
-        }
-      } else if (field === 'tech_partner') {
-        res = await updateLeadField(row.business_id, 'tech_partner_type', editValue)
-        if (res.ok && (editValue === 'Agency' || editValue === 'DIY') && editSecondary) {
-          res = await updateLeadField(row.business_id, 'tech_partner_name', editSecondary)
+          payload.field = 'email'
+          payload.value = editVal
         }
       } else if (field === 'gaps') {
-        res = await updateLeadField(row.business_id, 'gaps_found', editValue)
+        payload.field = 'gaps_found'
+        payload.value = finalGaps
+      }
+
+      const [res, extraRes] = await Promise.all([postField(payload), extraSave])
+      if (res?.ok && extraRes && !extraRes.ok) {
+        res.ok = false
+        res.error = extraRes.error || 'Saved the email, but the WhatsApp number could not be saved.'
       }
 
       if (!res?.ok) {
-        setCellError(res?.error || 'Failed to save change.')
-        setSavingId(null)
+        // Rollback on server error
+        const errMsg = res?.error || 'Failed to save change.'
+        setLocalOverrides(prev => {
+          const next = { ...prev }
+          delete next[row.business_id]
+          return next
+        })
+        setRows(prev => prev.map(r => (r.business_id === row.business_id ? previousRow : r)))
+        setJustSaved(null)
+        setCellError(errMsg)
+        toast.error(errMsg)
+        setEditingCell({ id: row.business_id, field })
         return
       }
 
-      // Update local row state
+      // Reconcile server problems
       const updatedProblems = res.data?.problems ?? []
+      setLocalOverrides(prev => ({
+        ...prev,
+        [row.business_id]: {
+          ...(prev[row.business_id] || {}),
+          ...optimisticRowData,
+          problems: updatedProblems,
+        },
+      }))
       setRows(prev =>
-        prev.map(r => {
-          if (r.business_id !== row.business_id) return r
-          return {
-            ...r,
-            problems: updatedProblems,
-            business_name: field === 'business_name' ? editValue : r.business_name,
-            business_type: field === 'category' ? editValue : r.business_type,
-            services: field === 'services' ? bulkServices : r.services,
-            existing_website: field === 'website' ? (editCheck ? null : editValue) : r.existing_website,
-            has_no_website: field === 'website' ? editCheck : r.has_no_website,
-            address: field === 'address' ? editValue : r.address,
-            postcode: field === 'postcode' ? editValue.toUpperCase() : r.postcode,
-            contact_name: field === 'owner_name' ? editValue : r.contact_name,
-            owner_email: field === 'owner_contact' && editValue.includes('@') ? editValue : r.owner_email,
-            owner_whatsapp: field === 'owner_contact' && editSecondary ? editSecondary : r.owner_whatsapp,
-            email: field === 'business_contact' && editValue.includes('@') ? editValue : r.email,
-            whatsapp_number: field === 'business_contact' && editSecondary ? editSecondary : r.whatsapp_number,
-            tech_partner_type: field === 'tech_partner' ? editValue : r.tech_partner_type,
-            tech_partner_name: field === 'tech_partner' ? editSecondary : r.tech_partner_name,
-            gaps_found: field === 'gaps' ? editValue : r.gaps_found,
-          }
-        })
+        prev.map(r => (r.business_id === row.business_id ? { ...r, ...optimisticRowData, problems: updatedProblems } : r))
       )
 
-      setEditingCell(null)
-      setSavingId(null)
-      startTransition(() => {
-        router.refresh()
-      })
+      // 5. Confirmed by the server: green checkmark + toast
+      setJustSaved({ id: row.business_id, field })
+      setTimeout(() => {
+        setJustSaved(prev => (prev?.id === row.business_id && prev.field === field ? null : prev))
+      }, 2000)
+      if (updatedProblems.length === 0) {
+        toast.success(`"${row.business_name || editVal}" is complete! Moved to Ready.`)
+      } else {
+        toast.success(`Saved ${fieldLabel}.`)
+      }
     } catch (e: any) {
-      setCellError(e?.message || 'Error updating field')
-      setSavingId(null)
+      const errMsg = e?.message || 'Error updating field'
+      setLocalOverrides(prev => {
+        const next = { ...prev }
+        delete next[row.business_id]
+        return next
+      })
+      setRows(prev => prev.map(r => (r.business_id === row.business_id ? previousRow : r)))
+      setJustSaved(null)
+      setCellError(errMsg)
+      toast.error(errMsg)
+      setEditingCell({ id: row.business_id, field })
+    } finally {
+      setSavingId(prev => (prev === row.business_id ? null : prev))
+      setSavingField(prev => (prev === field ? null : prev))
     }
   }
 
@@ -275,34 +474,46 @@ export function MissingDataTab({
     if (!selected.length) return
     setBulkActionBusy(true)
     const val = bulkField === 'service' ? bulkServices.join(';') : bulkVal
-    const res = await bulkSetField(selected, bulkField, val)
-    setBulkActionBusy(false)
+    let res: Awaited<ReturnType<typeof bulkSetField>>
+    try {
+      res = await bulkSetField(selected, bulkField, val)
+    } catch {
+      res = { ok: false, error: 'Could not reach the server. Check your connection and try again.' }
+    } finally {
+      setBulkActionBusy(false)
+    }
     if (res.ok) {
-      setActionMessage(`Updated ${res.data} lead(s).`)
+      toast.success(`Updated ${res.data} lead(s).`)
       setShowBulkSet(false)
       setSelected([])
       startTransition(() => {
         router.refresh()
       })
     } else {
-      setActionMessage(`Error: ${res.error}`)
+      toast.error(res.error)
     }
   }
 
   const handleDelete = async () => {
     if (!selected.length) return
     setBulkActionBusy(true)
-    const res = await deleteLeads(selected)
-    setBulkActionBusy(false)
+    let res: Awaited<ReturnType<typeof deleteLeads>>
+    try {
+      res = await deleteLeads(selected)
+    } catch {
+      res = { ok: false, error: 'Could not reach the server. Check your connection and try again.' }
+    } finally {
+      setBulkActionBusy(false)
+    }
     if (res.ok) {
-      setActionMessage(`Deleted ${res.data} lead(s).`)
+      toast.success(`Deleted ${res.data} lead(s).`)
       setShowDeleteConfirm(false)
       setSelected([])
       startTransition(() => {
         router.refresh()
       })
     } else {
-      setActionMessage(`Error: ${res.error}`)
+      toast.error(res.error)
     }
   }
 
@@ -417,15 +628,6 @@ export function MissingDataTab({
         </div>
       </div>
 
-      {/* Action Notification */}
-      {actionMessage && (
-        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-medium text-slate-800">
-          <span>{actionMessage}</span>
-          <button className="font-bold hover:underline" onClick={() => setActionMessage(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* 3. Bulk Actions Toolbar (when rows selected) */}
       {selected.length > 0 && (
@@ -475,475 +677,639 @@ export function MissingDataTab({
           }
         />
       ) : (
-        <div className="space-y-3">
-          <div className="table-wrap max-h-[640px] overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
-            <table className="table text-xs whitespace-nowrap">
-              <thead className="sticky top-0 z-10 bg-slate-50">
-                <tr>
-                  <th className="w-8 !px-3">
-                    <input
-                      type="checkbox"
-                      className="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAll}
-                      title="Select all on this page"
-                    />
-                  </th>
-                  <th>Business name</th>
-                  <th>Category</th>
-                  <th>Services</th>
-                  <th>Website / No site</th>
-                  <th>Address & Postcode</th>
-                  <th>Owner name</th>
-                  <th>Owner contact</th>
-                  <th>Business contact</th>
-                  <th>Tech partner</th>
-                  <th>Gaps found</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map(row => {
-                  const isReady = row.problems.length === 0
-                  const isChecked = selected.includes(row.business_id)
+        <div className="space-y-2">
+          {/* Active Refresh / Preloader Bar */}
+          <div className="flex items-center justify-between min-h-[26px] px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">
+                Showing {rows.length} lead{rows.length === 1 ? '' : 's'} on this page
+              </span>
+              {isPending && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 border border-sky-200 px-2.5 py-0.5 text-xs font-semibold text-sky-700 animate-pulse">
+                  <ButtonSpinner size={12} className="text-sky-600" />
+                  <span>Syncing updates & counts…</span>
+                </span>
+              )}
+            </div>
+            {isPending && (
+              <span className="text-[11px] font-medium text-slate-400">
+                Fetching latest data…
+              </span>
+            )}
+          </div>
 
-                  const hasProb = (code: string) => row.problems.includes(code)
-                  const cellClass = (hasError: boolean) =>
-                    `cursor-pointer px-2.5 py-1.5 transition-colors ${
-                      hasError
-                        ? 'border-2 border-rose-500 bg-rose-50/50 rounded font-medium text-rose-950'
-                        : 'border border-transparent hover:border-slate-300 rounded text-slate-700'
-                    }`
+          <div className="relative rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+            {/* Top indeterminate loading bar */}
+            {isPending && (
+              <div className="absolute top-0 left-0 right-0 z-30 h-1 overflow-hidden bg-primary/20">
+                <div className="h-full bg-primary animate-pulse w-full" />
+              </div>
+            )}
 
-                  return (
-                    <tr key={row.business_id} className={isChecked ? 'bg-primary/5' : isReady ? 'bg-emerald-50/30' : ''}>
-                      <td className="!px-3">
-                        <input
-                          type="checkbox"
-                          className="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSelect(row.business_id)}
-                        />
-                      </td>
+            <div className={`table-wrap max-h-[640px] overflow-x-auto overflow-y-auto transition-opacity duration-200 ${isPending ? 'opacity-75' : 'opacity-100'}`}>
+              <table className="table text-xs whitespace-nowrap">
+                <thead className="sticky top-0 z-10 bg-slate-50">
+                  <tr>
+                    <th className="w-8 !px-3">
+                      <input
+                        type="checkbox"
+                        className="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        title="Select all on this page"
+                      />
+                    </th>
+                    <th>Business name</th>
+                    <th>Category</th>
+                    <th>Services</th>
+                    <th>Website / No site</th>
+                    <th>Address & Postcode</th>
+                    <th>Owner name</th>
+                    <th>Owner contact</th>
+                    <th>Business contact</th>
+                    <th>Tech partner</th>
+                    <th>Gaps found</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map(row => {
+                    const isReady = row.problems.length === 0
+                    const isChecked = selected.includes(row.business_id)
+                    const isRowSaving = savingId === row.business_id
 
-                      {/* 1. Business name */}
-                      <td className="max-w-[180px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'business_name' ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              className="input !py-1 text-xs"
-                              autoFocus
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                              onBlur={() => saveCell(row)}
-                              onKeyDown={e => e.key === 'Enter' && saveCell(row)}
-                            />
-                            {savingId === row.business_id && <Spinner />}
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'business_name')}
-                            className={cellClass(hasProb('name'))}
-                            title="Click to edit"
-                          >
-                            {row.business_name || <i className="text-slate-400">Empty</i>}
-                          </div>
-                        )}
-                      </td>
+                    const hasProb = (code: string) => row.problems.includes(code)
+                    // Amber pulse while saving, green flash once the server confirms
+                    const cellClass = (hasError: boolean, fields: string[]) => {
+                      const isSaved = justSaved?.id === row.business_id && fields.includes(justSaved.field)
+                      const isSaving = isRowSaving && !!savingField && fields.includes(savingField)
+                      return `cursor-pointer px-2.5 py-1.5 transition-all ${
+                        isSaving
+                          ? 'motion-saving rounded font-medium text-slate-900 border border-amber-200'
+                          : isSaved
+                          ? 'motion-saved rounded font-medium text-slate-900 border border-transparent'
+                          : hasError
+                          ? 'border-2 border-rose-500 bg-rose-50/50 rounded font-medium text-rose-950'
+                          : 'border border-transparent hover:border-slate-300 rounded text-slate-700'
+                      }`
+                    }
 
-                      {/* 2. Category */}
-                      <td>
-                        {editingCell?.id === row.business_id && editingCell.field === 'category' ? (
-                          <select
-                            className="input !py-1 text-xs"
-                            autoFocus
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={() => saveCell(row)}
-                          >
-                            {LEAD_CATEGORIES.map(c => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'category')}
-                            className={cellClass(hasProb('category'))}
-                            title="Click to change category"
-                          >
-                            {row.business_type || <i className="text-slate-400">Pick</i>}
-                          </div>
-                        )}
-                      </td>
+                    return (
+                      <tr
+                        key={row.business_id}
+                        className={`transition-colors ${
+                          isChecked
+                            ? 'bg-primary/5'
+                            : isRowSaving
+                            ? 'bg-amber-50/30'
+                            : isReady
+                            ? 'bg-emerald-50/30'
+                            : ''
+                        }`}
+                      >
+                        <td className="!px-3">
+                          <input
+                            type="checkbox"
+                            className="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelect(row.business_id)}
+                          />
+                        </td>
 
-                      {/* 3. Services */}
-                      <td className="max-w-[200px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'services' ? (
-                          <div className="space-y-1.5 p-1 bg-white border rounded shadow-md z-20">
-                            <div className="flex flex-wrap gap-1">
-                              {CONFIG.SERVICES.map(s => {
-                                const on = bulkServices.includes(s)
-                                return (
-                                  <button
-                                    key={s}
-                                    type="button"
-                                    onClick={() =>
-                                      setBulkServices(prev =>
-                                        prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
-                                      )
-                                    }
-                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                      on ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700'
-                                    }`}
-                                  >
-                                    {s}
-                                  </button>
+                        {/* 1. Business name */}
+                        <td className="max-w-[200px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'business_name' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[200px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Business Name</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  autoFocus
+                                  placeholder="Business name"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'business_name')}
+                              className={cellClass(hasProb('name'), ['business_name'])}
+                              title="Click to edit"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'business_name' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.business_name || <i className="text-slate-400">Empty</i>}
+                                </span>
+                              ) : (
+                                row.business_name || <i className="text-slate-400">Empty</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 2. Category */}
+                        <td className="max-w-[180px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'category' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[180px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Category</span>
+                                <select
+                                  className="input !py-1 text-xs w-full"
+                                  autoFocus
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                >
+                                  {LEAD_CATEGORIES.map(c => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'category')}
+                              className={cellClass(hasProb('category'), ['category'])}
+                              title="Click to change category"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'category' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.business_type}
+                                </span>
+                              ) : (
+                                row.business_type || <i className="text-slate-400">Pick</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 3. Services */}
+                        <td className="max-w-[220px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'services' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[210px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Services Pitched</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {CONFIG.SERVICES.map(s => {
+                                    const on = bulkServices.includes(s)
+                                    return (
+                                      <button
+                                        key={s}
+                                        type="button"
+                                        onClick={() =>
+                                          setBulkServices(prev =>
+                                            prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+                                          )
+                                        }
+                                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                          on ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                      >
+                                        {s}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'services')}
+                              className={cellClass(hasProb('service'), ['services'])}
+                              title="Click to edit services"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'services' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.services?.join(', ')}
+                                </span>
+                              ) : row.services?.length ? (
+                                row.services.join(', ')
+                              ) : (
+                                <i className="text-slate-400">Empty</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 4. Website / No site */}
+                        <td className="max-w-[200px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'website' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[200px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Website</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="https://example.com"
+                                  disabled={editCheck}
+                                  autoFocus
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  className="checkbox"
+                                  checked={editCheck}
+                                  onChange={e => setEditCheck(e.target.checked)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                  }}
+                                />
+                                No site
+                              </label>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'website')}
+                              className={cellClass(hasProb('website'), ['website'])}
+                              title="Click to edit website"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'website' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.has_no_website ? 'No site' : row.existing_website}
+                                </span>
+                              ) : row.has_no_website ? (
+                                <span className="text-slate-400 italic">No site</span>
+                              ) : row.existing_website ? (
+                                row.existing_website
+                              ) : (
+                                <i className="text-slate-400">Missing</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 5. Address & Postcode */}
+                        <td className="max-w-[240px]">
+                          {editingCell?.id === row.business_id &&
+                          (editingCell.field === 'address' || editingCell.field === 'postcode') ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[200px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Address</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="Street, City, Area"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  autoFocus={editingCell.field === 'address'}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Postcode</span>
+                                <input
+                                  className="input !py-1 text-xs w-full uppercase"
+                                  placeholder="e.g. SW1A 1AA or 685612"
+                                  value={editSecondary}
+                                  onChange={e => setEditSecondary(e.target.value)}
+                                  autoFocus={editingCell.field === 'postcode'}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <span
+                                onClick={() => startEdit(row, 'address')}
+                                className={cellClass(hasProb('location'), ['address', 'postcode'])}
+                                title="Click to edit address"
+                              >
+                                {justSaved?.id === row.business_id && justSaved.field === 'address' ? (
+                                  <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                    <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                    {row.address}
+                                  </span>
+                                ) : (
+                                  row.address || (row.branches?.length ? `${row.branches.length} branches` : <i className="text-slate-400">No address</i>)
+                                )}
+                              </span>
+                              <span
+                                onClick={() => startEdit(row, 'postcode')}
+                                className={cellClass(hasProb('postcode'), ['postcode'])}
+                                title="Click to edit postcode"
+                              >
+                                {justSaved?.id === row.business_id && justSaved.field === 'postcode' ? (
+                                  <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                    <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                    {row.postcode}
+                                  </span>
+                                ) : (
+                                  row.postcode || <i className="text-slate-400">Postcode</i>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 6. Owner name */}
+                        <td className="max-w-[180px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'owner_name' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[180px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Owner Name</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  autoFocus
+                                  placeholder="Owner / Manager name"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'owner_name')}
+                              className={cellClass(hasProb('owner_name'), ['owner_name'])}
+                              title="Click to edit owner name"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'owner_name' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.contact_name}
+                                </span>
+                              ) : (
+                                row.contact_name || <i className="text-slate-400">Missing</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 7. Owner contact */}
+                        <td className="max-w-[200px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'owner_contact' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[220px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Owner Contact</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="Email, WhatsApp, LinkedIn or socials"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  autoFocus
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'owner_contact')}
+                              className={cellClass(hasProb('owner_contact'), ['owner_contact'])}
+                              title="Click to edit owner contact"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'owner_contact' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.owner_contact || row.owner_email}
+                                </span>
+                              ) : (
+                                row.owner_contact || row.owner_email || (
+                                  <i className="text-slate-400">Missing</i>
                                 )
-                              })}
+                              )}
                             </div>
-                            <div className="flex justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'services')}
-                            className={cellClass(hasProb('service'))}
-                            title="Click to edit services"
-                          >
-                            {row.services?.length ? row.services.join(', ') : <i className="text-slate-400">Empty</i>}
-                          </div>
-                        )}
-                      </td>
+                          )}
+                        </td>
 
-                      {/* 4. Website / No site */}
-                      <td className="max-w-[180px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'website' ? (
-                          <div className="flex flex-col gap-1 p-1 bg-white border rounded shadow-md">
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="https://example.com"
-                              disabled={editCheck}
-                              autoFocus
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                            />
-                            <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="checkbox"
-                                checked={editCheck}
-                                onChange={e => setEditCheck(e.target.checked)}
-                              />
-                              No site
-                            </label>
-                            <div className="flex justify-end gap-1 mt-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'website')}
-                            className={cellClass(hasProb('website'))}
-                            title="Click to edit website"
-                          >
-                            {row.has_no_website ? (
-                              <span className="text-slate-500 font-semibold">No site</span>
-                            ) : row.existing_website ? (
-                              row.existing_website
-                            ) : (
-                              <i className="text-slate-400">Missing</i>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 5. Address & Postcode */}
-                      <td className="max-w-[200px] truncate">
-                        {editingCell?.id === row.business_id &&
-                        (editingCell.field === 'address' || editingCell.field === 'postcode') ? (
-                          <div className="flex flex-col gap-1 p-1 bg-white border rounded shadow-md">
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="Address"
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                            />
-                            <div className="flex justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span
-                              onClick={() => startEdit(row, 'address')}
-                              className={cellClass(hasProb('location'))}
-                              title="Click to edit address"
+                        {/* 8. Business contact */}
+                        <td className="max-w-[200px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'business_contact' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[200px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Business Email</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="info@company.com"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  autoFocus
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Business WhatsApp</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="07... or +44..."
+                                  value={editSecondary}
+                                  onChange={e => setEditSecondary(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'business_contact')}
+                              className={cellClass(hasProb('business_contact'), ['business_contact'])}
+                              title="Click to edit business contact"
                             >
-                              {row.address || (row.branches?.length ? `${row.branches.length} branches` : <i className="text-slate-400">No address</i>)}
+                              {justSaved?.id === row.business_id && justSaved.field === 'business_contact' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.email || row.whatsapp_number}
+                                </span>
+                              ) : (
+                                row.email || row.whatsapp_number || row.instagram || row.facebook || (
+                                  <i className="text-slate-400">Missing</i>
+                                )
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 9. Tech partner */}
+                        <td className="max-w-[260px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'tech_partner' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[240px]">
+                              <div>
+                                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Existing Tech Partner</span>
+                                <input
+                                  className="input !py-1 text-xs w-full"
+                                  placeholder="Agency (name it), DIY (tool e.g. Wix), or None"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  autoFocus
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveCell(row)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                                <span className="text-slate-400">Quick pick:</span>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-primary hover:opacity-75 transition-opacity"
+                                  onClick={() => setEditValue('None')}
+                                >
+                                  None
+                                </button>
+                                <span>·</span>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-primary hover:opacity-75 transition-opacity"
+                                  onClick={() => setEditValue('DIY (Wix)')}
+                                >
+                                  DIY (Wix)
+                                </button>
+                                <span>·</span>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-primary hover:opacity-75 transition-opacity"
+                                  onClick={() => setEditValue('Agency')}
+                                >
+                                  Agency
+                                </button>
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'tech_partner')}
+                              className={cellClass(hasProb('tech_partner'), ['tech_partner'])}
+                              title="Click to edit tech partner"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'tech_partner' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.tech_partner_type === 'None'
+                                    ? 'None'
+                                    : row.tech_partner_type
+                                    ? `${row.tech_partner_type} (${row.tech_partner_name || '?'})`
+                                    : 'Saved'}
+                                </span>
+                              ) : (
+                                row.tech_partner_type === 'None'
+                                  ? 'None'
+                                  : row.tech_partner_type
+                                  ? `${row.tech_partner_type} (${row.tech_partner_name || '?'})`
+                                  : <i className="text-slate-400">Missing</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 10. Gaps found */}
+                        <td className="max-w-[220px]">
+                          {editingCell?.id === row.business_id && editingCell.field === 'gaps' ? (
+                            <ActiveCellEditor shake={!!cellError} onCancel={cancelEdit} onSave={() => saveCell(row)} className="min-w-[220px]">
+                              <div>
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Gaps Found</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditValue('None')}
+                                    className="text-[10px] font-medium text-primary hover:opacity-75 transition-opacity underline"
+                                  >
+                                    Set "None"
+                                  </button>
+                                </div>
+                                <textarea
+                                  className="input !py-1 text-xs w-full min-h-[50px] resize-none"
+                                  autoFocus
+                                  placeholder="e.g. No direct booking, or leave empty for None"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault()
+                                      saveCell(row)
+                                    }
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                />
+                              </div>
+                              <CellEditorFooter onCancel={cancelEdit} onSave={() => saveCell(row)} />
+                            </ActiveCellEditor>
+                          ) : (
+                            <div
+                              onClick={() => startEdit(row, 'gaps')}
+                              className={cellClass(hasProb('gaps'), ['gaps'])}
+                              title="Click to edit gaps found"
+                            >
+                              {justSaved?.id === row.business_id && justSaved.field === 'gaps' ? (
+                                <span className="inline-flex items-center gap-1.5 text-slate-900 font-medium">
+                                  <CheckCircle2 size={13} strokeWidth={2.5} className="text-emerald-600 shrink-0 motion-check-pop" />
+                                  {row.gaps_found || <i className="text-slate-400">Missing</i>}
+                                </span>
+                              ) : (
+                                row.gaps_found || <i className="text-slate-400">Missing</i>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Status */}
+                        <td>
+                          {isRowSaving ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                              <ButtonSpinner size={11} className="text-amber-600" /> Saving...
                             </span>
-                            <span
-                              onClick={() => startEdit(row, 'postcode')}
-                              className={cellClass(hasProb('postcode'))}
-                              title="Click to edit postcode"
-                            >
-                              {row.postcode || <i className="text-slate-400">Postcode</i>}
+                          ) : isReady ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 shadow-2xs">
+                              <CheckCircle2 size={12} /> Ready
                             </span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 6. Owner name */}
-                      <td className="max-w-[140px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'owner_name' ? (
-                          <input
-                            className="input !py-1 text-xs"
-                            autoFocus
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={() => saveCell(row)}
-                            onKeyDown={e => e.key === 'Enter' && saveCell(row)}
-                          />
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'owner_name')}
-                            className={cellClass(hasProb('owner_name'))}
-                            title="Click to edit owner name"
-                          >
-                            {row.contact_name || <i className="text-slate-400">Missing</i>}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 7. Owner contact */}
-                      <td className="max-w-[180px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'owner_contact' ? (
-                          <div className="flex flex-col gap-1 p-1 bg-white border rounded shadow-md">
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="Email or LinkedIn"
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                            />
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="Mobile (07...)"
-                              value={editSecondary}
-                              onChange={e => setEditSecondary(e.target.value)}
-                            />
-                            <div className="flex justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'owner_contact')}
-                            className={cellClass(hasProb('owner_contact'))}
-                            title="Click to edit owner contact"
-                          >
-                            {row.owner_email || row.owner_whatsapp || row.owner_social || row.owner_contact || (
-                              <i className="text-slate-400">Missing</i>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 8. Business contact */}
-                      <td className="max-w-[180px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'business_contact' ? (
-                          <div className="flex flex-col gap-1 p-1 bg-white border rounded shadow-md">
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="Business Email"
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                            />
-                            <input
-                              className="input !py-1 text-xs"
-                              placeholder="Business WhatsApp"
-                              value={editSecondary}
-                              onChange={e => setEditSecondary(e.target.value)}
-                            />
-                            <div className="flex justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'business_contact')}
-                            className={cellClass(hasProb('business_contact'))}
-                            title="Click to edit business contact"
-                          >
-                            {row.email || row.whatsapp_number || row.instagram || row.facebook || (
-                              <i className="text-slate-400">Missing</i>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 9. Tech partner */}
-                      <td className="max-w-[160px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'tech_partner' ? (
-                          <div className="flex flex-col gap-1 p-1 bg-white border rounded shadow-md">
-                            <select
-                              className="input !py-1 text-xs"
-                              value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                            >
-                              <option value="None">None</option>
-                              <option value="Agency">Agency</option>
-                              <option value="DIY">DIY</option>
-                            </select>
-                            {editValue !== 'None' && (
-                              <input
-                                className="input !py-1 text-xs"
-                                placeholder="Partner / Tool name"
-                                value={editSecondary}
-                                onChange={e => setEditSecondary(e.target.value)}
-                              />
-                            )}
-                            <div className="flex justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-secondary !py-0.5 !px-2 text-[10px]"
-                                onClick={cancelEdit}
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-primary !py-0.5 !px-2 text-[10px]"
-                                onClick={() => saveCell(row)}
-                              >
-                                Save
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'tech_partner')}
-                            className={cellClass(hasProb('tech_partner'))}
-                            title="Click to edit tech partner"
-                          >
-                            {row.tech_partner_type === 'None'
-                              ? 'None'
-                              : row.tech_partner_type
-                              ? `${row.tech_partner_type} (${row.tech_partner_name || '?'})`
-                              : row.existing_tech_partner || <i className="text-slate-400">Missing</i>}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 10. Gaps found */}
-                      <td className="max-w-[180px] truncate">
-                        {editingCell?.id === row.business_id && editingCell.field === 'gaps' ? (
-                          <input
-                            className="input !py-1 text-xs"
-                            autoFocus
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={() => saveCell(row)}
-                            onKeyDown={e => e.key === 'Enter' && saveCell(row)}
-                          />
-                        ) : (
-                          <div
-                            onClick={() => startEdit(row, 'gaps')}
-                            className={cellClass(hasProb('gaps'))}
-                            title="Click to edit gaps found"
-                          >
-                            {row.gaps_found || <i className="text-slate-400">Missing</i>}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td>
-                        {isReady ? (
-                          <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                            <CheckCircle2 size={12} /> Ready
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">
-                            <AlertCircle size={12} /> {row.problems.length} missing
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">
+                              <AlertCircle size={12} /> {row.problems.length} missing
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {cellError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div key={cellError} role="alert" className="motion-error-in rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {cellError}
             </div>
           )}
@@ -970,7 +1336,7 @@ export function MissingDataTab({
       )}
 
       {/* Bulk Set Modal */}
-      <Modal open={showBulkSet} onClose={() => setShowBulkSet(false)} title={`Set value for ${selected.length} leads`}>
+      <Modal open={showBulkSet} onClose={() => setShowBulkSet(false)} locked={bulkActionBusy} title={`Set value for ${selected.length} leads`}>
         <div className="space-y-4">
           <div>
             <label className="label">Field to set</label>
@@ -1042,11 +1408,11 @@ export function MissingDataTab({
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button className="btn btn-secondary" onClick={() => setShowBulkSet(false)}>
+            <button className="btn btn-secondary" onClick={() => setShowBulkSet(false)} disabled={bulkActionBusy}>
               Cancel
             </button>
             <button className="btn btn-primary" disabled={bulkActionBusy} onClick={handleBulkSet}>
-              {bulkActionBusy ? <Spinner /> : `Apply to ${selected.length} leads`}
+              {bulkActionBusy && <Spinner />} {bulkActionBusy ? 'Applying…' : `Apply to ${selected.length} leads`}
             </button>
           </div>
         </div>
@@ -1056,6 +1422,7 @@ export function MissingDataTab({
       <Modal
         open={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
+        locked={bulkActionBusy}
         title={`Delete ${selected.length} leads?`}
       >
         <div className="space-y-4">
@@ -1063,11 +1430,11 @@ export function MissingDataTab({
             Are you sure you want to delete {selected.length} leads? They will be removed permanently.
           </p>
           <div className="flex justify-end gap-2 pt-2">
-            <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)}>
+            <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)} disabled={bulkActionBusy}>
               Cancel
             </button>
             <button className="btn btn-primary !bg-rose-600 hover:!bg-rose-700" disabled={bulkActionBusy} onClick={handleDelete}>
-              {bulkActionBusy ? <Spinner /> : `Delete permanently`}
+              {bulkActionBusy && <Spinner />} {bulkActionBusy ? 'Deleting…' : 'Delete permanently'}
             </button>
           </div>
         </div>

@@ -7,14 +7,19 @@ import { ArrowLeft, ChevronRight, ChevronDown, LogOut, Menu } from 'lucide-react
 import { useBreadcrumbs } from '@/components/BreadcrumbContext'
 import { NotificationBell } from '@/components/NotificationBell'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
+import { usePresence } from '@/components/usePresence'
+import { useSkeletonShowing } from '@/components/NavigationProgress'
 
 export function Topbar({ userProfile, email }: { userProfile: { id: string; full_name: string; role: string; display_role?: string }; email: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const { breadcrumbs } = useBreadcrumbs()
+  // While the next page's skeleton shows, its breadcrumb isn't known yet; don't show the old page's
+  const loadingPage = useSkeletonShowing()
   const [open, setOpen] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menu = usePresence(open, 120)
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false)
@@ -39,7 +44,9 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
           </button>
         )}
         <nav className="flex min-w-0 items-center gap-1 overflow-x-auto text-sm" aria-label="Breadcrumb">
-          {(breadcrumbs.length ? breadcrumbs : [{ label: 'Dashboard' }]).map((c, i, arr) => (
+          {loadingPage ? (
+            <span aria-hidden="true" className="skeleton h-7 w-40" />
+          ) : (breadcrumbs.length ? breadcrumbs : [{ label: 'Dashboard' }]).map((c, i, arr) => (
             <React.Fragment key={i}>
               {i > 0 && <ChevronRight size={14} className="shrink-0 text-slate-400" />}
               {c.href && i < arr.length - 1 ? (
@@ -57,7 +64,7 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
       <div className="flex shrink-0 items-center gap-2">
         <NotificationBell userId={userProfile.id} />
         <div ref={ref} className="relative">
-          <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 hover:bg-slate-50">
+          <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-50 active:scale-[0.98]">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold uppercase text-white">
               {userProfile.full_name.charAt(0)}
             </span>
@@ -65,10 +72,10 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
               <span className="block text-sm font-bold">{userProfile.full_name}</span>
               <span className="block text-xs font-medium text-slate-500">{userProfile.display_role || userProfile.role}</span>
             </span>
-            <ChevronDown size={14} className="text-slate-400" />
+            <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
           </button>
-          {open && (
-            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-60 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+          {menu.mounted && (
+            <div className={`absolute right-0 top-[calc(100%+8px)] z-50 w-60 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl ${menu.closing ? 'motion-dropdown-out' : 'motion-dropdown-in'}`}>
               <div className="px-1 pb-2.5">
                 <div className="text-sm font-bold text-slate-900">{userProfile.full_name}</div>
                 <div className="truncate text-xs text-slate-500">{email}</div>

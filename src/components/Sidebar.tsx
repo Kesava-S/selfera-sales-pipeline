@@ -3,23 +3,35 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
   { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail },
+  { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
   { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/settings', label: 'Settings', icon: Sliders },
 ]
 
-const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
+// A lead's page (/dashboard/<id>) and its conversations belong to Lead Management
+const LEAD_PAGE = /^\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/|$)/i
+const sectionOf = (path: string) => (LEAD_PAGE.test(path) ? '/dashboard/leads' : path)
+
+const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
 
 export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
-  const pathname = usePathname()
+  const pathname = sectionOf(usePathname())
   const [confirmLogout, setConfirmLogout] = useState(false)
+  // Highlight the clicked item straight away, before the new page has loaded
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  const [lastPath, setLastPath] = useState(pathname)
+  if (pathname !== lastPath) {
+    setLastPath(pathname)
+    setPendingHref(null)
+  }
   const close = () => document.querySelector('.sidebar')?.classList.remove('open')
 
   return (
@@ -40,18 +52,27 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
 
       <nav className="sidebar-nav">
         {NAV.map(item => {
-          const active =
-            item.href === '/dashboard'
+          const active = pendingHref
+            ? pendingHref === item.href
+            : item.href === '/dashboard'
               ? pathname.startsWith('/dashboard') && !SECTION_PREFIXES.some(p => pathname.startsWith(p))
               : pathname.startsWith(item.href)
           const Icon = item.icon
           const badge = item.href === '/dashboard/leads' && reviewCount > 0 ? reviewCount : null
           return (
-            <Link key={item.href} href={item.href} onClick={close} className={`nav-item ${active ? 'active' : ''}`}>
-              <Icon size={18} />
-              <span className="flex-1 whitespace-nowrap">{item.label}</span>
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => {
+                close()
+                if (pathname !== item.href) setPendingHref(item.href)
+              }}
+              className={`nav-item ${active ? 'active' : ''}`}
+            >
+              <Icon size={18} className="shrink-0" />
+              <span className="flex-1 min-w-0 truncate">{item.label}</span>
               {badge !== null && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" title="Leads waiting for review">
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" title="Leads waiting for review">
                   {badge}
                 </span>
               )}

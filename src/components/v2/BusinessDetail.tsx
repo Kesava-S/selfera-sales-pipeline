@@ -27,7 +27,7 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
   const threads: Thread[] = [...(opp.threads || [])].sort((x: Thread, y: Thread) => PLATFORM_ORDER.indexOf(x.platform) - PLATFORM_ORDER.indexOf(y.platform))
   const name = (id?: string | null) => people.find(p => p.id === id)?.full_name
   const [modal, setModal] = useState<null | 'stage' | 'handover' | 'win' | 'note' | 'pitch' | 'consultant' | 'edit'>(null)
-  const { run, pending, error, setError } = useAction()
+  const { run, pending, isPending, error, setError } = useAction()
 
   // What this person may do (the database checks again)
   const isAdmin = me.role === 'admin'
@@ -87,8 +87,8 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
         {canAct && (
           <div className="flex flex-wrap gap-2">
             {needsReview && (
-              <button className="btn btn-primary" disabled={!!ready || pending} title={ready ?? ''} onClick={() => run(() => approveLeads([b.id]))}>
-                {pending ? <Spinner /> : <CheckCircle2 size={16} />} Approve and start outreach
+              <button className="btn btn-primary" disabled={!!ready || pending} title={ready ?? ''} onClick={() => run(() => approveLeads([b.id]), undefined, { success: 'Lead approved. Drafts are ready in Due today.', key: 'approve' })}>
+                {isPending('approve') ? <Spinner /> : <CheckCircle2 size={16} />} Approve and start outreach
               </button>
             )}
             {!needsReview && !closed && <button className="btn btn-secondary" onClick={() => setModal('stage')}><ArrowRightLeft size={16} /> Change stage</button>}
@@ -135,12 +135,12 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
             {(opp.assigned_consultant_id || opp.stage === 'Consultation') && <Row label="Consultant">{name(opp.assigned_consultant_id) || <span className="font-semibold text-amber-700">Needs a consultant</span>}</Row>}
             {opp.consultation_at && <Row label="Consultation"><span className="flex items-center gap-1"><CalendarClock size={14} /> {formatDateTime(opp.consultation_at)}</span></Row>}
             {opp.upsell_reminder_on && <Row label="Upsell reminder">{formatDate(opp.upsell_reminder_on)}</Row>}
-            {opp.demo_link && <Row label="Demo"><a href={opp.demo_link} target="_blank" rel="noreferrer" className="text-primary hover:underline">Open demo</a></Row>}
+            {opp.demo_link && <Row label="Demo"><a href={opp.demo_link} target="_blank" rel="noreferrer" className="text-primary hover:text-primary-hover">Open demo</a></Row>}
             {otherPitches.length > 0 && (
               <Row label="Other pitches">
                 <ul className="space-y-1">
                   {otherPitches.map(p => (
-                    <li key={p.id}><Link href={`/dashboard/${p.id}`} className="text-sm text-primary hover:underline">{p.services_pitched.join(', ')}</Link> <span className="text-xs text-slate-500">({p.stage})</span></li>
+                    <li key={p.id}><Link href={`/dashboard/${p.id}`} className="text-sm text-primary hover:text-primary-hover">{p.services_pitched.join(', ')}</Link> <span className="text-xs text-slate-500">({p.stage})</span></li>
                   ))}
                 </ul>
               </Row>
@@ -176,7 +176,13 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
               {(b.company_type === 'Sole trader' || b.company_type === 'Partnership') && <span className="block text-xs text-amber-700">Marketing emails need their consent first (PECR).</span>}
             </Row>
             {b.owner_contact && <Row label="Owner contact">{b.owner_contact}</Row>}
-            {b.existing_tech_partner && <Row label="Tech partner">{b.existing_tech_partner}</Row>}
+            {(b.tech_partner_type || b.tech_partner_name) && (
+              <Row label="Tech partner">
+                {b.tech_partner_type === 'None'
+                  ? 'None'
+                  : `${b.tech_partner_type || 'Agency'}${b.tech_partner_name ? ` (${b.tech_partner_name})` : ''}`}
+              </Row>
+            )}
             {b.gaps_found && <Row label="Gaps found"><p className="whitespace-pre-wrap text-sm text-slate-600">{b.gaps_found}</p></Row>}
             {b.notes && <Row label="Notes"><p className="whitespace-pre-wrap text-sm text-slate-600">{b.notes}</p></Row>}
           </div>
@@ -210,10 +216,10 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
                   <button
                     key={p}
                     disabled={pending}
-                    onClick={() => run(() => startThread(opp.id, p), id => id && router.push(`/dashboard/${opp.id}/thread/${id}`))}
-                    className="flex flex-col items-start gap-1 rounded-[14px] border border-dashed border-slate-300 bg-white p-4 text-left text-sm text-slate-500 hover:border-primary hover:text-primary"
+                    onClick={() => run(() => startThread(opp.id, p), id => id && router.push(`/dashboard/${opp.id}/thread/${id}`), { success: `${p} thread started.`, key: `start-${p}` })}
+                    className="flex flex-col items-start gap-1 rounded-[14px] border border-dashed border-slate-300 bg-white p-4 text-left text-sm text-slate-500 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <span className="flex items-center gap-2 font-semibold"><PlatformIcon platform={p} size={18} /> Start {p}</span>
+                    <span className="flex items-center gap-2 font-semibold">{isPending(`start-${p}`) ? <Spinner size={18} /> : <PlatformIcon platform={p} size={18} />} Start {p}</span>
                     <span className="text-xs">Drafts a first message</span>
                   </button>
                 ))}
@@ -269,7 +275,7 @@ function Contact({ icon, href, text, external }: { icon: React.ReactNode; href: 
     <li className="flex items-center gap-2">
       <span className="shrink-0 text-slate-500">{icon}</span>
       {href ? (
-        <a href={href} target={external ? '_blank' : undefined} rel="noreferrer" className="truncate text-primary hover:underline">
+        <a href={href} target={external ? '_blank' : undefined} rel="noreferrer" className="truncate text-primary hover:text-primary-hover">
           {text} {external && <ExternalLink size={11} className="inline" />}
         </a>
       ) : (
@@ -284,7 +290,7 @@ function Footer({ onClose, pending, disabled, label, onConfirm, error }: { onClo
     <div className="mt-5 space-y-3">
       <ErrorNote error={error} />
       <div className="flex justify-end gap-2">
-        <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn btn-secondary" onClick={onClose} disabled={pending}>Cancel</button>
         <button className="btn btn-primary" disabled={pending || disabled} onClick={onConfirm}>{pending && <Spinner />} {label}</button>
       </div>
     </div>
@@ -298,7 +304,7 @@ function StageModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   // Won goes through "Record win", Consultation through "Hand over", Needs review is only for imports
   const options = CONFIG.STAGES.filter(s => !['Needs review', 'Won', 'Consultation', opp.stage].includes(s))
   return (
-    <Modal open onClose={onClose} title="Change stage">
+    <Modal open onClose={onClose} locked={pending} title="Change stage">
       <label className="label">New stage</label>
       <select className="input" value={stage} onChange={e => setStage(e.target.value)}>
         <option value="">Choose…</option>
@@ -307,7 +313,7 @@ function StageModal({ opp, onClose }: { opp: any; onClose: () => void }) {
       {stage === 'Do not contact' && <p className="mt-2 text-xs text-red-700">All platforms are closed and nothing more can be sent to this business.</p>}
       <label className="label mt-4">Reason (optional)</label>
       <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Asked us to follow up in spring" />
-      <Footer onClose={onClose} pending={pending} disabled={!stage} label="Save" error={error} onConfirm={() => run(() => changeStage(opp.id, stage, reason), onClose)} />
+      <Footer onClose={onClose} pending={pending} disabled={!stage} label="Save" error={error} onConfirm={() => run(() => changeStage(opp.id, stage, reason), onClose, { success: `Stage changed to ${stage}.` })} />
     </Modal>
   )
 }
@@ -316,11 +322,11 @@ function HandOverModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   const { run, pending, error } = useAction()
   const [when, setWhen] = useState('')
   return (
-    <Modal open onClose={onClose} title="Hand over to a consultant">
+    <Modal open onClose={onClose} locked={pending} title="Hand over to a consultant">
       <p className="mb-3 text-sm text-slate-600">Moves this pitch to Consultation and asks an admin to assign a consultant. Follow-ups stop.</p>
       <label className="label">Consultation date and time</label>
       <input type="datetime-local" className="input" value={when} onChange={e => setWhen(e.target.value)} />
-      <Footer onClose={onClose} pending={pending} disabled={!when} label="Hand over" error={error} onConfirm={() => run(() => handOver(opp.id, new Date(when).toISOString()), onClose)} />
+      <Footer onClose={onClose} pending={pending} disabled={!when} label="Hand over" error={error} onConfirm={() => run(() => handOver(opp.id, new Date(when).toISOString()), onClose, { success: 'Handed over. An admin will assign a consultant.' })} />
     </Modal>
   )
 }
@@ -335,7 +341,7 @@ function WinModal({ opp, onClose }: { opp: any; onClose: () => void }) {
       : pitched.every(s => won.includes(s)) ? 'Expanded'
         : won.every(s => pitched.includes(s)) ? 'Narrowed' : 'Switched'
   return (
-    <Modal open onClose={onClose} title="Record win">
+    <Modal open onClose={onClose} locked={pending} title="Record win">
       <label className="label">Services won</label>
       <ChipSelect options={CONFIG.SERVICES} value={won} onChange={setWon} />
       {type && <p className="mt-2 text-xs text-slate-500">Pitched {pitched.join(', ')}. This is recorded as <b>{type}</b>.</p>}
@@ -344,7 +350,7 @@ function WinModal({ opp, onClose }: { opp: any; onClose: () => void }) {
         <option value="">Choose…</option>
         {CONFIG.CONVERTED_THROUGH.map(c => <option key={c}>{c}</option>)}
       </select>
-      <Footer onClose={onClose} pending={pending} disabled={!won.length || !via} label="Record win" error={error} onConfirm={() => run(() => recordWin(opp.id, won, via), onClose)} />
+      <Footer onClose={onClose} pending={pending} disabled={!won.length || !via} label="Record win" error={error} onConfirm={() => run(() => recordWin(opp.id, won, via), onClose, { success: 'Win recorded.' })} />
     </Modal>
   )
 }
@@ -353,9 +359,9 @@ function NoteModal({ oppId, onClose }: { oppId: string; onClose: () => void }) {
   const { run, pending, error } = useAction()
   const [text, setText] = useState('')
   return (
-    <Modal open onClose={onClose} title="Add note">
+    <Modal open onClose={onClose} locked={pending} title="Add note">
       <textarea className="input min-h-28" value={text} onChange={e => setText(e.target.value)} autoFocus placeholder="What happened, what they said, next step…" />
-      <Footer onClose={onClose} pending={pending} disabled={!text.trim()} label="Save note" error={error} onConfirm={() => run(() => addNote(oppId, text), onClose)} />
+      <Footer onClose={onClose} pending={pending} disabled={!text.trim()} label="Save note" error={error} onConfirm={() => run(() => addNote(oppId, text), onClose, { success: 'Note saved.' })} />
     </Modal>
   )
 }
@@ -365,12 +371,12 @@ function PitchModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   const { run, pending, error } = useAction()
   const [services, setServices] = useState<string[]>([])
   return (
-    <Modal open onClose={onClose} title="New pitch to this business">
+    <Modal open onClose={onClose} locked={pending} title="New pitch to this business">
       <p className="mb-3 text-sm text-slate-600">Starts a separate pitch (for example an upsell). It goes to the review queue first.</p>
       <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
       <Footer
         onClose={onClose} pending={pending} disabled={!services.length} label="Create pitch" error={error}
-        onConfirm={() => run(() => newPitch(opp.business_id, services, opp.id), id => { onClose(); if (id) router.push(`/dashboard/${id}`) })}
+        onConfirm={() => run(() => newPitch(opp.business_id, services, opp.id), id => { onClose(); if (id) router.push(`/dashboard/${id}`) }, { success: 'New pitch created. It is in the review queue.' })}
       />
     </Modal>
   )
@@ -381,7 +387,7 @@ function ConsultantModal({ opp, people, onClose }: { opp: any; people: Person[];
   const [who, setWho] = useState(opp.assigned_consultant_id || '')
   const consultants = people.filter(p => p.role === 'consultant' && p.is_active)
   return (
-    <Modal open onClose={onClose} title="Assign consultant">
+    <Modal open onClose={onClose} locked={pending} title="Assign consultant">
       {consultants.length === 0 ? (
         <p className="text-sm text-slate-600">There are no consultants yet. Set someone&apos;s role to consultant first (see docs/admin-setup.md).</p>
       ) : (
@@ -390,7 +396,7 @@ function ConsultantModal({ opp, people, onClose }: { opp: any; people: Person[];
           {consultants.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
         </select>
       )}
-      <Footer onClose={onClose} pending={pending} disabled={!who} label="Assign" error={error} onConfirm={() => run(() => assignConsultant(opp.id, who), onClose)} />
+      <Footer onClose={onClose} pending={pending} disabled={!who} label="Assign" error={error} onConfirm={() => run(() => assignConsultant(opp.id, who), onClose, { success: 'Consultant assigned.' })} />
     </Modal>
   )
 }

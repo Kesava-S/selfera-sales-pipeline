@@ -7,7 +7,8 @@ import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
 import { EMAIL_RE } from '@/lib/importFields'
 import { parseAndValidatePhone } from '@/lib/contact'
 import { updateBusiness } from '@/app/dashboard/actions'
-import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
+import { ChipSelect, ErrorNote, Modal, Spinner, toast } from '@/components/ui'
+import { PhoneInput } from '@/components/v2/PhoneInput'
 
 export type BusinessValues = Partial<Record<
   | 'business_name' | 'business_type' | 'tier' | 'room_count' | 'area' | 'address' | 'postcode' | 'maps_link'
@@ -70,7 +71,11 @@ export function BusinessForm({
     }
 
     setErrors(e)
-    return Object.keys(e).length === 0
+    const errList = Object.values(e)
+    if (errList.length > 0) {
+      toast.error(errList[0], { title: 'Please check form' })
+    }
+    return errList.length === 0
   }
 
   const payload = (action: string, existingId?: string) => {
@@ -82,6 +87,9 @@ export function BusinessForm({
       if (k === 'whatsapp_number' && typeof trimmed === 'string' && trimmed) {
         const p = parseAndValidatePhone(trimmed)
         if (p.valid && p.normalized) trimmed = p.normalized
+      }
+      if (k === 'existing_website' && typeof trimmed === 'string' && trimmed) {
+        if (!/^https?:\/\//i.test(trimmed)) trimmed = 'https://' + trimmed
       }
       return [k, trimmed]
     })
@@ -119,9 +127,13 @@ export function BusinessForm({
         }
         if (editData.has_no_website) {
           editData.existing_website = null
+        } else if (typeof editData.existing_website === 'string' && editData.existing_website.trim()) {
+          const site = editData.existing_website.trim()
+          if (!/^https?:\/\//i.test(site)) editData.existing_website = 'https://' + site
         }
         const res = await updateBusiness(businessId, editData as Record<string, string | number | null>)
         if (!res.ok) throw new Error(res.error)
+        toast.success('Business details updated successfully.')
         router.refresh()
         onClose()
         return
@@ -145,10 +157,14 @@ export function BusinessForm({
         return
       }
       await importRow('new')
-      setDone('Saved. It is now in the review queue.')
+      const successMsg = 'Business added! It is now in the review queue.'
+      setDone(successMsg)
+      toast.success(successMsg)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save')
+      const msg = err instanceof Error ? err.message : 'Could not save'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setBusy(false)
     }
@@ -160,26 +176,41 @@ export function BusinessForm({
     setError(null)
     try {
       await importRow(action, dup.business_id)
-      setDone(action === 'new_pitch' ? 'New pitch added to the existing business. It is in the review queue.' : 'Existing business updated.')
+      const successMsg = action === 'new_pitch' ? 'New pitch added to the existing business. It is in the review queue.' : 'Existing business updated.'
+      setDone(successMsg)
+      toast.success(successMsg)
       setDup(null)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save')
+      const msg = err instanceof Error ? err.message : 'Could not save'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setBusy(false)
     }
   }
 
+  const renderLabel = (label: string) => {
+    if (label.endsWith(' *')) {
+      return (
+        <>
+          {label.slice(0, -2)} <span className="text-red-500 font-bold ml-0.5">*</span>
+        </>
+      )
+    }
+    return label
+  }
+
   const field = (k: keyof BusinessValues, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div>
-      <label className="label">{label}</label>
+      <label className="label">{renderLabel(label)}</label>
       <input className={`input ${errors[k] ? '!border-red-400' : ''}`} value={(v[k] as string) ?? ''} onChange={set(k)} {...props} />
       {errors[k] && <p className="mt-1 text-xs text-red-600">{errors[k]}</p>}
     </div>
   )
 
   return (
-    <Modal open={open} onClose={onClose} title={mode === 'add' ? 'Add business' : 'Edit details'} wide>
+    <Modal open={open} onClose={onClose} locked={busy} title={mode === 'add' ? 'Add business' : 'Edit details'} wide>
       {done ? (
         <div className="space-y-4">
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{done}</div>
@@ -207,10 +238,10 @@ export function BusinessForm({
         <form onSubmit={submit} className="space-y-6">
           {/* Required Fields Section */}
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
               {field('business_name', 'Business name *', { autoFocus: true, placeholder: 'e.g. The Grand Hotel' })}
               <div>
-                <label className="label">Category *</label>
+                <label className="label">Category <span className="text-red-500 font-bold ml-0.5">*</span></label>
                 <select
                   className={`input ${errors.business_type ? '!border-red-400' : ''}`}
                   value={(v.business_type as string) ?? ''}
@@ -226,11 +257,23 @@ export function BusinessForm({
                 </select>
                 {errors.business_type && <p className="mt-1 text-xs text-red-600">{errors.business_type}</p>}
               </div>
+              <div>
+                <label className="label">Company type</label>
+                <select
+                  className="input"
+                  value={(v.company_type as string) ?? 'Unknown'}
+                  onChange={set('company_type')}
+                >
+                  {CONFIG.COMPANY_TYPES.map(ct => (
+                    <option key={ct} value={ct}>{ct}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {mode === 'add' && (
               <div>
-                <label className="label">Service to pitch *</label>
+                <label className="label">Service to pitch <span className="text-red-500 font-bold ml-0.5">*</span></label>
                 <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
                 {errors.services && <p className="mt-1 text-xs text-red-600">{errors.services}</p>}
               </div>
@@ -240,7 +283,7 @@ export function BusinessForm({
           {/* Contact Details Section (At least 1 required) */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contact Details *</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contact Details <span className="text-red-500 font-bold ml-0.5">*</span></p>
               <span className="text-xs text-slate-500">Provide at least one: Email, WhatsApp, Instagram, or Facebook</span>
             </div>
 
@@ -252,7 +295,23 @@ export function BusinessForm({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
               {field('email', 'Business Email', { type: 'email', placeholder: 'hello@business.com' })}
-              {field('whatsapp_number', 'Business WhatsApp', { inputMode: 'tel', placeholder: '+44 7…' })}
+              <div>
+                <label className="label">Business WhatsApp</label>
+                <PhoneInput
+                  value={(v.whatsapp_number as string) ?? ''}
+                  onChange={val => {
+                    setV(prev => ({ ...prev, whatsapp_number: val }))
+                    if (errors.whatsapp_number) {
+                      setErrors(prev => { const next = { ...prev }; delete next.whatsapp_number; return next })
+                    }
+                    if (errors.contact) {
+                      setErrors(prev => { const next = { ...prev }; delete next.contact; return next })
+                    }
+                  }}
+                  error={errors.whatsapp_number}
+                />
+                {errors.whatsapp_number && <p className="mt-1 text-xs text-red-600">{errors.whatsapp_number}</p>}
+              </div>
               {field('instagram', 'Business Instagram', { placeholder: 'handle without @' })}
               {field('facebook', 'Business Facebook', { placeholder: 'Page link or handle' })}
               {field('linkedin', 'Business LinkedIn', { placeholder: 'linkedin.com/company/… or profile' })}
@@ -343,11 +402,11 @@ export function BusinessForm({
                 />
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                   <span>Quick pick:</span>
-                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'None' }))}>None</button>
+                  <button type="button" className="font-semibold text-primary hover:opacity-75 transition-opacity" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'None' }))}>None</button>
                   <span>·</span>
-                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'DIY (Wix)' }))}>DIY (Wix)</button>
+                  <button type="button" className="font-semibold text-primary hover:opacity-75 transition-opacity" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'DIY (Wix)' }))}>DIY (Wix)</button>
                   <span>·</span>
-                  <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'Agency' }))}>Agency</button>
+                  <button type="button" className="font-semibold text-primary hover:opacity-75 transition-opacity" onClick={() => setV(p => ({ ...p, existing_tech_partner: 'Agency' }))}>Agency</button>
                 </div>
               </div>
               <div>
@@ -374,7 +433,7 @@ export function BusinessForm({
 
           <ErrorNote error={error} />
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-secondary w-full sm:w-auto" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-secondary w-full sm:w-auto" onClick={onClose} disabled={busy}>Cancel</button>
             <button className="btn btn-primary w-full sm:w-auto" disabled={busy}>
               {busy && <Spinner />} {mode === 'add' ? 'Save to review queue' : 'Save changes'}
             </button>

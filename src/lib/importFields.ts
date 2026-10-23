@@ -1,5 +1,5 @@
 import { CONFIG, LEAD_CATEGORIES, LeadCategory } from '@/lib/config'
-import { parseAndValidatePhone, isUkMobile } from '@/lib/contact'
+import { parseAndValidatePhone, isUkMobile, getPhoneType, type PhoneTypeInfo } from '@/lib/contact'
 
 export type FieldKey =
   | 'business_name'
@@ -64,7 +64,7 @@ export const FIELDS: { key: FieldKey; label: string; required?: boolean; synonym
   { key: 'owner_whatsapp', label: 'Owner WhatsApp', synonyms: ['owner_whatsapp', 'owner whatsapp', 'owner mobile', 'owner phone'] },
   { key: 'owner_social', label: 'Owner social / LinkedIn', synonyms: ['owner_social', 'owner social', 'owner linkedin', 'owner socials', 'owner social link'] },
   { key: 'business_email', label: 'Business email', synonyms: ['business_email', 'email', 'business email', 'e-mail', 'mail', 'email address'] },
-  { key: 'business_whatsapp', label: 'Business WhatsApp', synonyms: ['business_whatsapp', 'whatsapp_number', 'whatsapp', 'wa', 'business whatsapp', 'wa number', 'mobile'] },
+  { key: 'business_whatsapp', label: 'Business WhatsApp', synonyms: ['business_whatsapp', 'whatsapp_number', 'whatsapp', 'wa', 'business whatsapp', 'wa number', 'mobile', 'phone', 'telephone', 'tel', 'phone_number', 'phone number', 'mobile_number', 'mobile number', 'contact_number', 'contact number', 'cell', 'cell_number'] },
   { key: 'instagram', label: 'Instagram', synonyms: ['instagram', 'business_instagram', 'ig', 'insta', 'instagram handle'] },
   { key: 'facebook', label: 'Facebook', synonyms: ['facebook', 'business_facebook', 'fb', 'facebook page'] },
   { key: 'tech_partner_type', label: 'Tech partner type (Agency/DIY/None)', synonyms: ['tech_partner_type', 'tech partner type', 'partner type'] },
@@ -197,10 +197,12 @@ export function clean(v: unknown): string {
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 export const UK_POSTCODE_RE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s?[0-9][A-Z]{2}$/i
+export const IND_POSTCODE_RE = /^[1-9][0-9]{2}\s?[0-9]{3}$/
 
 export function isValidUkPostcode(pc?: string | null): boolean {
   if (!pc) return false
-  return UK_POSTCODE_RE.test(pc.trim())
+  const trimmed = pc.trim()
+  return UK_POSTCODE_RE.test(trimmed) || IND_POSTCODE_RE.test(trimmed)
 }
 
 export function isValidUkMobileDigits(raw?: string | null): boolean {
@@ -261,6 +263,7 @@ export type ImportRow = {
   isMissingData: boolean
   errors: string[]
   warnings: string[]
+  phoneInfo: PhoneTypeInfo
 }
 
 export function buildRow(
@@ -325,6 +328,11 @@ export function buildRow(
     }
   }
 
+  const phoneInfo = getPhoneType(cleanBizWa || rawBizWa || cleanOwnerWa || rawOwnerWa)
+  if (phoneInfo.isWhatsApp && !cleanBizWa && phoneInfo.normalized) {
+    cleanBizWa = phoneInfo.normalized
+  }
+
   // Tech partner
   let techType = get('tech_partner_type')
   let techName = get('tech_partner_name')
@@ -347,99 +355,44 @@ export function buildRow(
   const gapsFound = get('gaps_found')
   const source = get('source')
 
-  // --- Check 1: Business name ---
+  // --- Check 1: Business name (required) ---
   if (!name) {
     problems.push('name')
     errors.push('Business name is missing')
   }
 
-  // --- Check 2: Website ---
-  if (!hasNoWebsite) {
-    if (!website || !/^https?:\/\/[^\s.]+\.[^\s]{2,}/i.test(website)) {
-      problems.push('website')
-      errors.push('Valid website URL (http/https) or "No site" tick is required')
-    }
-  }
-
-  // --- Check 3: Location & Postcode ---
-  if (branches.length > 0) {
-    const allBranchesHaveNameAndAddress = branches.every(b => b.name && b.address)
-    const allBranchesHaveValidPostcode = branches.every(b => isValidUkPostcode(b.postcode))
-    if (!allBranchesHaveNameAndAddress) {
-      problems.push('location')
-      errors.push('Every branch must have a name and address')
-    }
-    if (!allBranchesHaveValidPostcode) {
-      problems.push('postcode')
-      errors.push('Every branch must have a valid UK postcode')
-    }
-  } else {
-    if (!address) {
-      problems.push('location')
-      errors.push('Address is missing')
-    }
-    if (!isValidUkPostcode(postcode)) {
-      problems.push('postcode')
-      errors.push('Valid UK postcode is required')
-    }
-  }
-
-  // --- Check 4: Category ---
+  // --- Check 2: Category (required) ---
   if (!type || !(LEAD_CATEGORIES as readonly string[]).includes(type)) {
     problems.push('category')
     errors.push('Category must be Hotel, Restaurant or cafe, Pub, or Property management')
   }
 
-  // --- Check 5: Service ---
+  // --- Check 3: Service (required) ---
   if (!svc.services.length) {
     problems.push('service')
     errors.push('At least one service to pitch is required')
   }
 
-  // --- Check 6: Owner name ---
-  if (!ownerName) {
-    problems.push('owner_name')
-    errors.push('Owner name is required')
-  }
-
-  // --- Check 7: Owner contact ---
-  const hasValidOwnerEmail = !!ownerEmail && EMAIL_RE.test(ownerEmail)
-  const hasValidOwnerMobile = isValidUkMobileDigits(cleanOwnerWa) || isUkMobile(cleanOwnerWa)
-  const hasValidOwnerSocial = !!ownerSocial && ownerSocial.trim().length > 1
-  const hasValidLegacyOwnerContact = !!legacyOwnerContact && (
-    EMAIL_RE.test(legacyOwnerContact) ||
-    isValidUkMobileDigits(legacyOwnerContact) ||
-    /(linkedin|http|instagram|facebook|twitter|x\.com)/i.test(legacyOwnerContact)
+  // --- Check 4: Contact (at least one contact method required) ---
+  const hasContact = Boolean(
+    (businessEmail && EMAIL_RE.test(businessEmail)) ||
+    (cleanBizWa && cleanBizWa.length >= 8) ||
+    (instagram && !/^(instagram|yes|y|check)$/i.test(instagram)) ||
+    (facebook && !/^(facebook|yes|y)$/i.test(facebook)) ||
+    (linkedin && linkedin.trim().length > 1) ||
+    (ownerEmail && EMAIL_RE.test(ownerEmail)) ||
+    (cleanOwnerWa && cleanOwnerWa.length >= 8) ||
+    (ownerSocial && ownerSocial.trim().length > 1) ||
+    (legacyOwnerContact && legacyOwnerContact.trim().length > 1)
   )
-  if (!hasValidOwnerEmail && !hasValidOwnerMobile && !hasValidOwnerSocial && !hasValidLegacyOwnerContact) {
-    problems.push('owner_contact')
-    errors.push('Owner contact (email, UK mobile 07/+447, or LinkedIn/social) is required')
-  }
-
-  // --- Check 8: Business contact ---
-  const hasValidBizEmail = !!businessEmail && EMAIL_RE.test(businessEmail)
-  const hasValidBizWa = isValidUkMobileDigits(cleanBizWa) || isUkMobile(cleanBizWa)
-  const hasValidIg = !!instagram && !/^(instagram|yes|y|check)$/i.test(instagram)
-  const hasValidFb = !!facebook && !/^(facebook|yes|y)$/i.test(facebook)
-  if (!hasValidBizEmail && !hasValidBizWa && !hasValidIg && !hasValidFb) {
+  if (!hasContact) {
     problems.push('business_contact')
-    errors.push('Business contact (email, UK mobile, Instagram, or Facebook) is required')
+    errors.push('At least one contact method (Email, WhatsApp/Phone, Instagram, Facebook, or LinkedIn) is required')
   }
 
-  // --- Check 9: Tech partner ---
-  const hasValidTechPartner =
-    techType === 'None' ||
-    ((techType === 'Agency' || techType === 'DIY') && !!techName) ||
-    (legacyTech && (legacyTech.toLowerCase() === 'none' || (/^(Agency|DIY)/i.test(legacyTech) && legacyTech.length > 4)))
-  if (!hasValidTechPartner) {
-    problems.push('tech_partner')
-    errors.push('Tech partner (None, or Agency/DIY with name) is required')
-  }
-
-  // --- Check 10: Gaps found ---
-  if (!gapsFound || !gapsFound.trim()) {
-    problems.push('gaps')
-    errors.push('Gaps found is required')
+  // Optional fields: validate format if provided (warnings only, do not block readiness)
+  if (website && !hasNoWebsite && !/^https?:\/\/[^\s.]+\.[^\s]{2,}/i.test(website)) {
+    warnings.push('Website URL may be invalid (missing http/https or domain)')
   }
 
   const isCannotImport = !name
@@ -457,6 +410,7 @@ export function buildRow(
     isMissingData,
     errors,
     warnings,
+    phoneInfo,
     data: {
       business_name: name,
       business_type: type,
@@ -469,7 +423,7 @@ export function buildRow(
       owner_email: ownerEmail,
       owner_whatsapp: cleanOwnerWa,
       owner_social: ownerSocial,
-      owner_contact: legacyOwnerContact,
+      owner_contact: legacyOwnerContact || cleanOwnerWa || ownerSocial || '',
       email: businessEmail,
       whatsapp_number: cleanBizWa,
       instagram: /^(instagram|yes|y|check)$/i.test(instagram) ? '' : instagram,
@@ -477,7 +431,6 @@ export function buildRow(
       linkedin,
       tech_partner_type: techType,
       tech_partner_name: techName,
-      existing_tech_partner: legacyTech,
       gaps_found: gapsFound,
       source,
       area: get('area'),

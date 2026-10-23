@@ -1,9 +1,10 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useEffect, useTransition } from 'react'
 import { LogOut, X } from 'lucide-react'
 import { signOut } from '@/app/dashboard/actions'
 import { Preloader } from '@/components/Preloader'
+import { usePresence } from '@/components/usePresence'
 
 export function LogoutConfirmModal({
   open,
@@ -13,6 +14,14 @@ export function LogoutConfirmModal({
   onClose: () => void
 }) {
   const [isPending, startTransition] = useTransition()
+  const { mounted, closing } = usePresence(open)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
 
   const handleConfirmLogout = () => {
     startTransition(async () => {
@@ -20,7 +29,7 @@ export function LogoutConfirmModal({
     })
   }
 
-  if (!open) return null
+  if (!mounted) return null
 
   if (isPending) {
     return <Preloader fullScreen />
@@ -28,14 +37,14 @@ export function LogoutConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs transition-opacity animate-fadeIn"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs ${closing ? 'motion-backdrop-out' : 'motion-backdrop-in'}`}
       onMouseDown={onClose}
     >
 
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-sm rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-2xl"
+        className={`relative w-full max-w-sm rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-2xl ${closing ? 'motion-panel-out' : 'motion-panel-in'}`}
         onMouseDown={e => e.stopPropagation()}
       >
         <button

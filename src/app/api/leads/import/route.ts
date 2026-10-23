@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
+  if (!user) {
+    return NextResponse.json({ error: 'Please log in again' }, { status: 401 })
+  }
 
   const body = await request.json().catch(() => ({}))
   const { rows, batch_id } = body

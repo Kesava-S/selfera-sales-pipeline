@@ -11,7 +11,7 @@ import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { facebookLink, instagramLink, mailtoLink, whatsappLink } from '@/lib/contact'
 import { markSent } from '@/app/dashboard/actions'
 import { createClient } from '@/lib/supabase/client'
-import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge } from '@/components/ui'
+import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge, toast } from '@/components/ui'
 import type { Profile } from '@/lib/auth'
 
 type Msg = { id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string }
@@ -155,10 +155,6 @@ export function ChatInterface({
   }, [platform])
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }) }, [messages.length])
-  useEffect(() => {
-    const el = area.current
-    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 320) + 'px' }
-  }, [body])
 
   const pickTemplate = (id: string) => {
     setTemplateId(id)
@@ -196,6 +192,7 @@ export function ChatInterface({
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Could not send. Your message is still here.')
+      toast.success(platform === 'WhatsApp' ? 'WhatsApp message sent.' : 'Message sent.')
       afterSend()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send. Your message is still here.')
@@ -219,17 +216,25 @@ export function ChatInterface({
   const markAsSent = async () => {
     setBusy(true)
     setError(null)
-    const res = await markSent(thread.id, body, subject || null, templateId || null)
-    setBusy(false)
-    if (!res.ok) setError(res.error)
-    else afterSend()
+    try {
+      const res = await markSent(thread.id, body, subject || null, templateId || null)
+      if (!res.ok) setError(res.error)
+      else {
+        toast.success(rule.mode === 'log' ? 'Saved to the thread.' : 'Marked as sent.')
+        afterSend()
+      }
+    } catch {
+      setError('Could not reach the server. Your message is still here.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   // Templates grouped by step for the picker
   const grouped = STEP_ORDER.map(s => [s, templates.filter(t => t.step === s)] as const).filter(([, ts]) => ts.length)
 
   return (
-    <div className="flex h-[calc(100dvh-58px-3rem)] min-h-[560px] flex-col gap-3">
+    <div className="flex min-h-[calc(100dvh-58px-3rem)] flex-col gap-3 pb-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -276,28 +281,33 @@ export function ChatInterface({
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-        {messages.length === 0 && <p className="py-10 text-center text-sm text-slate-500">No messages yet. The first message is below.</p>}
-        {messages.map(m => {
-          if (m.direction === 'system') {
-            return <div key={m.id} className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
-          }
-          const ours = m.direction === 'outbound'
-          const who = ours ? people.find(p => p.id === m.sent_by)?.full_name : b.contact_name || b.business_name
-          return (
-            <div key={m.id} className={`flex ${ours ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
-                {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
-                <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
-                <div className={`mt-1 text-[11px] ${ours ? 'text-white/75' : 'text-slate-400'}`}>
-                  {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
-                    .filter(Boolean).join(' · ')}
+      {/* Messages (Chat Area) */}
+      <div className="h-[280px] min-h-[220px] space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-4 shadow-2xs">
+        {messages.length === 0 ? (
+          <div className="flex h-full min-h-[160px] items-center justify-center">
+            <p className="text-center text-sm text-slate-400">No messages yet. The first message is below.</p>
+          </div>
+        ) : (
+          messages.map(m => {
+            if (m.direction === 'system') {
+              return <div key={m.id} className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
+            }
+            const ours = m.direction === 'outbound'
+            const who = ours ? people.find(p => p.id === m.sent_by)?.full_name : b.contact_name || b.business_name
+            return (
+              <div key={m.id} className={`flex ${ours ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
+                  {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
+                  <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
+                  <div className={`mt-1 text-[11px] ${ours ? 'text-white/75' : 'text-slate-400'}`}>
+                    {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+                      .filter(Boolean).join(' · ')}
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        )}
         <div ref={bottom} />
       </div>
 
@@ -334,7 +344,7 @@ export function ChatInterface({
           )}
           <textarea
             ref={area}
-            className="input min-h-24 resize-none"
+            className="input h-[180px] min-h-[140px] resize-y overflow-y-auto font-sans text-sm leading-relaxed"
             value={body}
             onChange={e => setBody(e.target.value)}
             placeholder={rule.mode === 'log' ? 'What happened on the visit?' : 'Write your message…'}
@@ -342,7 +352,7 @@ export function ChatInterface({
           {rule.mode !== 'log' && body && <p className="text-xs text-slate-500">Draft from template. Review before sending.</p>}
 
           {unfilled.length > 0 && <Banner tone="amber" icon={<AlertTriangle size={16} />}>Missing details: {unfilled.join(', ')}. Replace them in the text, or add the details to the business.</Banner>}
-          {missingContact && rule.mode !== 'log' && <Banner tone="amber" icon={<AlertTriangle size={16} />}>{missingContact} <Link href={`/dashboard/${opp.id}`} className="font-semibold underline">Add it</Link></Banner>}
+          {missingContact && rule.mode !== 'log' && <Banner tone="amber" icon={<AlertTriangle size={16} />}>{missingContact} <Link href={`/dashboard/${opp.id}`} className="font-semibold hover:text-primary">Add it</Link></Banner>}
           {pecr && rule.mode !== 'log' && (
             <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <input type="checkbox" className="mt-1" checked={pecrOk} onChange={e => setPecrOk(e.target.checked)} />

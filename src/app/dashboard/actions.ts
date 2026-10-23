@@ -104,8 +104,8 @@ export async function markSent(threadId: string, body: string, subject?: string 
 const EDITABLE = [
   'business_name', 'business_type', 'tier', 'room_count', 'area', 'address', 'postcode', 'maps_link',
   'whatsapp_number', 'email', 'instagram', 'facebook', 'linkedin', 'existing_website', 'company_type', 'contact_name', 'notes',
-  'owner_contact', 'existing_tech_partner', 'gaps_found', 'has_no_website',
-  'owner_email', 'owner_whatsapp', 'owner_social', 'tech_partner_type', 'tech_partner_name', 'branches', 'source',
+  'owner_contact', 'gaps_found', 'has_no_website',
+  'owner_email', 'tech_partner_type', 'tech_partner_name', 'branches', 'source',
 ] as const
 
 export async function updateBusiness(businessId: string, fields: Record<string, string | number | null>) {
@@ -115,6 +115,33 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
     if (k in fields) {
       const v = fields[k]
       clean[k] = typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v
+    }
+  }
+
+  // Handle tech partner input if passed as existing_tech_partner or tech_partner
+  const rawTp = (fields.existing_tech_partner || fields.tech_partner) as string | undefined
+  if (typeof rawTp === 'string' && rawTp.trim()) {
+    const raw = rawTp.trim()
+    if (raw.toLowerCase() === 'none') {
+      clean.tech_partner_type = 'None'
+      clean.tech_partner_name = null
+    } else if (/^diy/i.test(raw)) {
+      clean.tech_partner_type = 'DIY'
+      clean.tech_partner_name = raw.replace(/^diy\s*\(?|\)?$/i, '').trim() || null
+    } else if (/^agency/i.test(raw)) {
+      clean.tech_partner_type = 'Agency'
+      clean.tech_partner_name = raw.replace(/^agency\s*\(?|\)?$/i, '').trim() || null
+    } else {
+      clean.tech_partner_type = 'Agency'
+      clean.tech_partner_name = raw
+    }
+  }
+
+  // Handle legacy owner contacts if passed
+  if (!clean.owner_contact) {
+    const legacyOwner = fields.owner_whatsapp || fields.owner_social
+    if (typeof legacyOwner === 'string' && legacyOwner.trim()) {
+      clean.owner_contact = legacyOwner.trim()
     }
   }
   if ('business_name' in clean && !clean.business_name) return { ok: false, error: 'Business name is required.' } as ActionResult
@@ -295,6 +322,29 @@ export async function markNotificationsRead(ids: string[] | 'all') {
   return { ok: true } as ActionResult
 }
 
+// ---------- Campaign send queue ----------
+// Launching only queues the recipients; /api/campaigns/process sends them in
+// batches with retries (see src/lib/campaignQueue.ts). These call the database
+// directly instead of rpc(), so production-to-staging replication never queues
+// (and sends) the same campaign a second time.
+export type LaunchResult = { queued: number; skipped: number; removed: number }
+
+async function enqueueCampaign(channel: 'email' | 'whatsapp', id: string, path: string): Promise<ActionResult<LaunchResult>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('enqueue_campaign', { p_channel: channel, p_campaign_id: id })
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath(path)
+  return { ok: true, data: data as LaunchResult }
+}
+
+export async function retryFailedCampaignSends(channel: 'email' | 'whatsapp', id: string): Promise<ActionResult<number>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('retry_failed_campaign_sends', { p_channel: channel, p_campaign_id: id })
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath(channel === 'email' ? '/dashboard/campaigns' : '/dashboard/whatsapp-campaigns')
+  return { ok: true, data: data as number }
+}
+
 // ---------- Email Databases & Campaigns ----------
 export type EmailDatabaseInput = {
   id?: string | null
@@ -357,7 +407,7 @@ export type EmailCampaignInput = {
   service?: string
   databaseId?: string | null
   databaseName?: string | null
-  status?: 'draft' | 'scheduled' | 'sent' | 'archived'
+  status?: 'draft' | 'scheduled' | 'sending' | 'sent' | 'archived'
   recipientCount?: number
   recipients?: Array<{ id: string; business_name: string; email: string; contact_name?: string | null }>
   scheduledAt?: string | null
@@ -435,63 +485,157 @@ export async function sendTestEmailCampaign({
   }
 }
 
-export async function launchEmailCampaign(id: string): Promise<ActionResult<{ sentCount: number; simulated?: boolean }>> {
+export async function launchEmailCampaign(id: string): Promise<ActionResult<LaunchResult>> {
+  return enqueueCampaign('email', id, '/dashboard/campaigns')
+}
+
+// ---------- WhatsApp Campaigns & Databases ----------
+export type WhatsAppDatabaseInput = {
+  id?: string | null
+  name: string
+  description?: string | null
+  contacts: Array<{
+    id?: string
+    business_name: string
+    whatsapp_number: string
+    contact_name?: string | null
+    category?: string | null
+    business_type?: string | null
+  }>
+}
+
+export async function saveWhatsAppDatabase(input: WhatsAppDatabaseInput): Promise<ActionResult<{ id: string }>> {
+  if (!input.name.trim()) return { ok: false, error: 'Database name is required.' }
+  const cleanContacts = (input.contacts || []).filter(c => c.whatsapp_number && c.whatsapp_number.trim().length >= 7)
+  if (cleanContacts.length === 0) return { ok: false, error: 'Please add at least one contact with a phone number.' }
+
   const supabase = await createClient()
-  const { data: campaign, error } = await supabase.from('email_campaigns').select('*').eq('id', id).single()
-  if (error || !campaign) return { ok: false, error: 'Campaign not found.' }
+  const userId = await currentUserId()
 
-  const recipients = Array.isArray(campaign.recipients)
-    ? campaign.recipients
-    : typeof campaign.recipients === 'string'
-      ? JSON.parse(campaign.recipients)
-      : []
-
-  if (recipients.length === 0) {
-    return { ok: false, error: 'No recipients selected for this campaign.' }
-  }
-
-  const { isSmtpConfigured, sendEmail } = await import('@/lib/mailer')
-  const smtpReady = isSmtpConfigured()
-
-  let sentCount = 0
-
-  for (const r of recipients) {
-    if (!r.email) continue
-    const personalisedBody = campaign.body
-      .replace(/\{business_name\}/g, r.business_name || 'your business')
-      .replace(/\{contact_name\}/g, r.contact_name || 'there')
-      .replace(/\{service\}/g, campaign.service || 'our services')
-
-    const personalisedSubject = campaign.subject
-      .replace(/\{business_name\}/g, r.business_name || 'your business')
-      .replace(/\{contact_name\}/g, r.contact_name || 'there')
-      .replace(/\{service\}/g, campaign.service || 'our services')
-
-    if (smtpReady) {
-      try {
-        await sendEmail({
-          to: r.email,
-          subject: personalisedSubject,
-          body: personalisedBody,
-        })
-        sentCount++
-      } catch (err) {
-        console.error(`Failed to send campaign email to ${r.email}:`, err)
-      }
-    } else {
-      sentCount++
-    }
-  }
-
-  await supabase.from('email_campaigns').update({
-    status: 'sent',
-    sent_at: new Date().toISOString(),
-    recipient_count: sentCount,
+  const payload: Record<string, unknown> = {
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    contacts: JSON.stringify(cleanContacts),
+    contact_count: cleanContacts.length,
     updated_at: new Date().toISOString(),
-  }).eq('id', id)
+  }
 
-  revalidatePath('/dashboard/campaigns')
-  return { ok: true, data: { sentCount, simulated: !smtpReady } }
+  if (input.id) {
+    const { error } = await supabase.from('whatsapp_databases').update(payload).eq('id', input.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/whatsapp-campaigns')
+    return { ok: true, data: { id: input.id } }
+  } else {
+    payload.created_by = userId
+    const { data, error } = await supabase.from('whatsapp_databases').insert(payload).select('id').single()
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/whatsapp-campaigns')
+    return { ok: true, data: { id: data.id } }
+  }
+}
+
+export async function deleteWhatsAppDatabase(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase.from('whatsapp_databases').delete().eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/whatsapp-campaigns')
+  return { ok: true }
+}
+
+export type WhatsAppCampaignInput = {
+  id?: string | null
+  name: string
+  message: string
+  templateName?: string | null
+  service?: string
+  databaseId?: string | null
+  databaseName?: string | null
+  status?: 'draft' | 'scheduled' | 'sending' | 'sent' | 'archived'
+  recipientCount?: number
+  recipients?: Array<{ id: string; business_name: string; whatsapp_number: string; contact_name?: string | null }>
+  scheduledAt?: string | null
+}
+
+export async function saveWhatsAppCampaign(input: WhatsAppCampaignInput): Promise<ActionResult<{ id: string }>> {
+  if (!input.name.trim()) return { ok: false, error: 'Campaign name is required.' }
+  if (!input.message.trim()) return { ok: false, error: 'WhatsApp message body cannot be empty.' }
+
+  const supabase = await createClient()
+  const userId = await currentUserId()
+
+  const payload: Record<string, unknown> = {
+    name: input.name.trim(),
+    message: input.message.trim(),
+    template_name: input.templateName || null,
+    service: input.service || 'General',
+    database_id: input.databaseId || null,
+    database_name: input.databaseName || null,
+    status: input.status || 'draft',
+    recipient_count: input.recipientCount ?? (input.recipients ? input.recipients.length : 0),
+    recipients: JSON.stringify(input.recipients || []),
+    scheduled_at: input.scheduledAt || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (input.id) {
+    const { error } = await supabase.from('whatsapp_campaigns').update(payload).eq('id', input.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/whatsapp-campaigns')
+    return { ok: true, data: { id: input.id } }
+  } else {
+    payload.created_by = userId
+    const { data, error } = await supabase.from('whatsapp_campaigns').insert(payload).select('id').single()
+    if (error) return { ok: false, error: friendly(error.message) }
+    revalidatePath('/dashboard/whatsapp-campaigns')
+    return { ok: true, data: { id: data.id } }
+  }
+}
+
+export async function deleteWhatsAppCampaign(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase.from('whatsapp_campaigns').delete().eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/whatsapp-campaigns')
+  return { ok: true }
+}
+
+export async function sendTestWhatsAppCampaign({
+  to,
+  message,
+  templateName,
+}: {
+  to: string
+  message: string
+  templateName?: string | null
+}): Promise<ActionResult> {
+  if (!to || to.replace(/\D/g, '').length < 7) {
+    return { ok: false, error: 'Enter a valid phone number with country code (e.g. +44 7123 456789 or +91 98765 43210).' }
+  }
+  try {
+    const { isWhatsAppConfigured, sendWhatsAppMessage } = await import('@/lib/whatsapp')
+    if (!isWhatsAppConfigured()) {
+      return {
+        ok: false,
+        error: 'WhatsApp is not configured. Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN in .env.local.',
+      }
+    }
+    const res = await sendWhatsAppMessage({
+      to,
+      body: `[TEST CAMPAIGN]\n${message}`,
+      templateName: templateName || null,
+    })
+    if (!res.success) {
+      return { ok: false, error: res.error || 'WhatsApp message send failed.' }
+    }
+    return { ok: true }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to send test WhatsApp message.'
+    return { ok: false, error: msg }
+  }
+}
+
+export async function launchWhatsAppCampaign(id: string): Promise<ActionResult<LaunchResult>> {
+  return enqueueCampaign('whatsapp', id, '/dashboard/whatsapp-campaigns')
 }
 
 // ---------- Account ----------
@@ -595,15 +739,34 @@ export async function updateLeadField(
   field: string,
   value: string
 ): Promise<ActionResult<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>> {
-  const res = await rpc<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>('update_lead_field', {
+  return rpc<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>('update_lead_field', {
     p_business_id: businessId,
     p_field: field,
     p_value: value,
   })
-  if (res.ok) {
-    revalidatePath('/dashboard/leads')
+}
+
+export async function updateLeadAddressAndPostcode(
+  businessId: string,
+  address: string,
+  postcode: string
+): Promise<ActionResult<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>> {
+  const [res1, res2] = await Promise.all([
+    rpc<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>('update_lead_field', {
+      p_business_id: businessId,
+      p_field: 'address',
+      p_value: address,
+    }),
+    rpc<{ ok: boolean; business_id: string; problems: string[]; ready: boolean }>('update_lead_field', {
+      p_business_id: businessId,
+      p_field: 'postcode',
+      p_value: postcode,
+    }),
+  ])
+  if (res2.ok) {
+    return res2
   }
-  return res
+  return res1
 }
 
 export async function bulkSetField(

@@ -21,7 +21,7 @@ import {
   type ImportRow,
   PROBLEM_LABELS,
 } from '@/lib/importFields'
-import { ChipSelect, ErrorNote, Modal, Spinner } from '@/components/ui'
+import { ChipSelect, ErrorNote, Modal, Spinner, toast } from '@/components/ui'
 import { createImportBatch } from '@/app/dashboard/actions'
 
 const MAX_ROWS = 5000
@@ -78,6 +78,11 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   }
 
   const close = () => {
+    // Closing mid-import would hide the progress and the final result
+    if (busy) {
+      toast.warning('Please wait until the import finishes.')
+      return
+    }
     reset()
     onClose()
   }
@@ -195,6 +200,10 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     [builtRows]
   )
   const duplicatesCount = matches.length
+  const whatsAppReadyCount = useMemo(
+    () => builtRows.filter(r => !r.isCannotImport && r.phoneInfo?.isWhatsApp).length,
+    [builtRows]
+  )
 
   // ---------- Step 4: Import ----------
   const startImport = async () => {
@@ -237,6 +246,9 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
       return
     }
 
+    // Show the progress screen while the chunks upload
+    setStep(4)
+
     const total = {
       batchId,
       created: 0,
@@ -276,11 +288,12 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
       setProgressPercent(100)
       setResult(total)
       setStep(4)
+      toast.success(`Import completed: ${total.ready} sent to Approval queue, ${total.missing} in Missing data.`)
       router.refresh()
     } catch (e) {
-      setError(
-        `${e instanceof Error ? e.message : 'Import failed'}. Any rows saved before this failure were kept.`
-      )
+      const errMsg = `${e instanceof Error ? e.message : 'Import failed'}. Any rows saved before this failure were kept.`
+      setError(errMsg)
+      toast.error(errMsg)
       if (total.created + total.updated + total.pitches > 0) {
         setResult(total)
       }
@@ -312,7 +325,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   const STEPS = ['Upload', 'Match columns', 'Check', 'Import']
 
   return (
-    <Modal open={open} onClose={close} title="Import leads from CSV" wide>
+    <Modal open={open} onClose={close} locked={busy} title="Import leads from CSV" wide>
       {/* Stepper Header */}
       <ol className="mb-6 flex flex-wrap items-center gap-2 text-sm">
         {STEPS.map((s, i) => {
@@ -357,7 +370,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             <a
               href="/import-template.csv"
               download
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary-hover"
             >
               <Download size={15} /> Download template CSV
             </a>
@@ -373,13 +386,13 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
               <b>{fileName}</b>: {raw.length.toLocaleString('en-GB')} rows
               {ignored > 0 && ` (${ignored} title or repeated header rows ignored)`}.
             </div>
-            <button className="font-semibold text-primary hover:underline" onClick={reset}>
+            <button className="font-semibold text-primary hover:text-primary-hover" onClick={reset}>
               Choose another file
             </button>
           </div>
 
           <p className="text-sm text-slate-600">
-            Match each field to the corresponding column in your CSV. Required fields are marked with an asterisk (*).
+            Match each field to the corresponding column in your CSV. Required fields are marked with an asterisk (<span className="text-red-500 font-bold">*</span>).
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -387,7 +400,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
               <div key={f.key} className="space-y-1">
                 <label className="label text-xs">
                   {f.label}
-                  {f.required && ' *'}
+                  {f.required && <span className="text-red-500 font-bold ml-0.5">*</span>}
                 </label>
                 <select
                   className="input !py-1.5 text-sm"
@@ -406,7 +419,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           {/* Services Fallback */}
           {!map.services && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <label className="label mb-2">Services to pitch (applies to all rows) *</label>
+              <label className="label mb-2">Services to pitch (applies to all rows) <span className="text-red-500 font-bold ml-0.5">*</span></label>
               <ChipSelect options={CONFIG.SERVICES} value={defaultServices} onChange={setDefaultServices} />
             </div>
           )}
@@ -503,6 +516,17 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             </div>
           </div>
 
+          {/* WhatsApp Detection Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs text-emerald-900">
+            <div className="flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white font-bold text-[11px]">✓</span>
+              <span>
+                <b>{whatsAppReadyCount}</b> of <b>{readyCount + missingCount}</b> leads have a valid WhatsApp mobile number detected.
+              </span>
+            </div>
+            <span className="text-[11px] text-emerald-700">Mobile numbers (UK 07 / +447, India +91) automatically mapped to WhatsApp</span>
+          </div>
+
           {/* Duplicates Resolution Section (if any) */}
           {duplicatesCount > 0 && (
             <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-3">
@@ -575,7 +599,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                 </span>
               </div>
               <button
-                className="font-semibold underline hover:text-rose-950 inline-flex items-center gap-1"
+                className="font-semibold hover:text-rose-950 inline-flex items-center gap-1"
                 onClick={downloadCannotImport}
               >
                 <Download size={13} /> Download skipped rows
@@ -598,6 +622,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <th>Row</th>
                     <th>Business</th>
                     <th>Category</th>
+                    <th>WhatsApp / Phone</th>
                     <th>Services</th>
                     <th>Status</th>
                   </tr>
@@ -613,6 +638,20 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                           <td className="text-slate-500">{r.line}</td>
                           <td className="font-semibold">{r.data.business_name}</td>
                           <td>{r.data.business_type || <i className="text-slate-400">Missing</i>}</td>
+                          <td>
+                            {r.phoneInfo?.isWhatsApp ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800" title={r.phoneInfo.label}>
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                {r.data.whatsapp_number || r.phoneInfo.normalized}
+                              </span>
+                            ) : r.phoneInfo?.type === 'landline' ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600" title="Landline (Cannot receive WhatsApp)">
+                                {r.data.whatsapp_number || r.phoneInfo.normalized || 'Landline'} (No WA)
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">None</span>
+                            )}
+                          </td>
                           <td>{r.services.join(', ') || <i className="text-slate-400">None</i>}</td>
                           <td>
                             {isDup ? (
@@ -656,7 +695,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
               disabled={readyCount + missingCount === 0 || busy}
               onClick={startImport}
             >
-              Import {readyCount + missingCount} lead{readyCount + missingCount === 1 ? '' : 's'}
+              {busy && <Spinner />} Import {readyCount + missingCount} lead{readyCount + missingCount === 1 ? '' : 's'}
             </button>
           </div>
         </div>
@@ -731,7 +770,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                 {result.pitches > 0 && <span>New pitches: {result.pitches}</span>}
                 {result.skipped > 0 && <span>Skipped: {result.skipped}</span>}
                 {result.failed > 0 && <span className="text-rose-600">Failed: {result.failed}</span>}
-                <button className="text-primary font-semibold hover:underline" onClick={close}>
+                <button className="text-primary font-semibold hover:text-primary-hover" onClick={close}>
                   Close
                 </button>
               </div>

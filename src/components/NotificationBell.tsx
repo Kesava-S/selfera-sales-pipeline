@@ -6,6 +6,8 @@ import { Bell, CheckCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { markNotificationsRead } from '@/app/dashboard/actions'
 import { formatDateTime } from '@/lib/format'
+import { toast } from '@/components/v2/Toast'
+import { usePresence } from '@/components/usePresence'
 
 type Note = { id: string; type: string; title: string; link: string | null; is_read: boolean; created_at: string }
 
@@ -14,6 +16,7 @@ export function NotificationBell({ userId }: { userId: string }) {
   const [items, setItems] = useState<Note[]>([])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const panel = usePresence(open, 120)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -49,36 +52,48 @@ export function NotificationBell({ userId }: { userId: string }) {
 
   const unread = items.filter(i => !i.is_read).length
 
-  const openItem = async (n: Note) => {
+  // Marks read straight away; if the server refuses, reload the real state and say so
+  const markRead = async (ids: string[] | 'all') => {
+    try {
+      const res = await markNotificationsRead(ids)
+      if (!res.ok) throw new Error(res.error)
+    } catch {
+      toast.error('Could not mark notifications as read. Please try again.')
+      load()
+    }
+  }
+
+  const openItem = (n: Note) => {
     setOpen(false)
     if (!n.is_read) {
       setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
-      await markNotificationsRead([n.id])
+      markRead([n.id])
     }
     if (n.link) router.push(n.link)
   }
 
-  const readAll = async () => {
+  const readAll = () => {
     setItems(prev => prev.map(i => ({ ...i, is_read: true })))
-    await markNotificationsRead('all')
+    markRead('all')
   }
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)} className="btn btn-ghost btn-sm relative !p-2" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}>
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="btn btn-ghost btn-sm relative !p-2" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}>
         <Bell size={19} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+          // Keyed by count, so the badge pops whenever a new notification arrives
+          <span key={unread} className="motion-badge-pop absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
-      {open && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-lg">
+      {panel.mounted && (
+        <div className={`absolute right-0 top-[calc(100%+8px)] z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-lg ${panel.closing ? 'motion-dropdown-out' : 'motion-dropdown-in'}`}>
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
             <span className="text-sm font-bold">Notifications</span>
             {unread > 0 && (
-              <button onClick={readAll} className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+              <button onClick={readAll} className="flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-hover">
                 <CheckCheck size={14} /> Mark all as read
               </button>
             )}

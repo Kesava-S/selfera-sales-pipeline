@@ -10,7 +10,7 @@ import type { PitchRow } from '@/components/v2/LeadsManagement'
 import { createClient } from '@/lib/supabase/client'
 
 export function ConsultantQueue({ rows, consultants }: { rows: (PitchRow & { consultation_at?: string | null })[]; consultants: { id: string; full_name: string }[] }) {
-  const { run, pending, error } = useAction()
+  const { run, pending, isPending, error } = useAction()
   const [choice, setChoice] = useState<Record<string, string>>({})
   if (!rows.length) return <EmptyState icon={<Inbox size={36} />} title="Nobody is waiting for a consultant" />
   return (
@@ -29,8 +29,8 @@ export function ConsultantQueue({ rows, consultants }: { rows: (PitchRow & { con
             <option value="">Choose consultant…</option>
             {consultants.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
           </select>
-          <button className="btn btn-primary" disabled={!choice[r.opportunity_id] || pending} onClick={() => run(() => assignConsultant(r.opportunity_id, choice[r.opportunity_id]))}>
-            {pending && <Spinner />} Assign
+          <button className="btn btn-primary" disabled={!choice[r.opportunity_id] || pending} onClick={() => run(() => assignConsultant(r.opportunity_id, choice[r.opportunity_id]), undefined, { success: `Consultant assigned to ${r.business_name}.`, key: r.opportunity_id })}>
+            {isPending(r.opportunity_id) && <Spinner />} Assign
           </button>
         </div>
       ))}
@@ -82,7 +82,7 @@ function BookingRow({ b }: { b: Booking }) {
             {results.map(r => <option key={r.opportunity_id} value={r.opportunity_id}>{r.business_name}{r.area ? `, ${r.area}` : ''} ({r.stage})</option>)}
           </select>
         )}
-        <button className="btn btn-primary" disabled={!pick || pending} onClick={() => run(() => linkBooking(b.id, pick))}>
+        <button className="btn btn-primary" disabled={!pick || pending} onClick={() => run(() => linkBooking(b.id, pick), undefined, { success: 'Booking linked.' })}>
           {pending && <Spinner />} Link booking
         </button>
       </div>

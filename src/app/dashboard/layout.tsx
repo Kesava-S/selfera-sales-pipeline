@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
+import { NavigationProgress } from '@/components/NavigationProgress'
 import { BreadcrumbProvider } from '@/components/BreadcrumbContext'
 import { AccountNotSetup } from '@/components/v2/AccountNotSetup'
 import { requireProfile, getDashboardStatusCounts } from '@/lib/auth'
@@ -20,6 +21,7 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
 
   return (
     <BreadcrumbProvider>
+      <NavigationProgress />
       <div className="app-layout">
         <Sidebar userProfile={profile} reviewCount={profile.role === 'consultant' ? 0 : reviewCount} />
         <div className="main-wrapper">

@@ -98,6 +98,22 @@ export async function validateAndSyncUserAccess(opts: {
       }
     }
 
+    // Keep public.users in sync for public.current_user_role() and RLS
+    try {
+      await service
+        .schema('public')
+        .from('users')
+        .upsert({
+          user_id: userId,
+          email: email.toLowerCase(),
+          full_name: employee?.full_name || email.split('@')[0],
+          role_id: effectiveRoleId,
+          is_active: true,
+        }, { onConflict: 'email' })
+    } catch (pubSyncErr) {
+      console.warn('[AuthService] Non-fatal public.users sync warning:', pubSyncErr)
+    }
+
     const { data: existingProfile } = await service
       .schema('sales-pipe')
       .from('profiles')

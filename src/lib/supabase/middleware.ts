@@ -35,11 +35,13 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     pathname.startsWith('/api/whatsapp/webhook') ||
     pathname.startsWith('/api/email/sync') ||
+    // Campaign queue worker: checks the cron secret or a staff session itself
+    pathname.startsWith('/api/campaigns/process') ||
     pathname.startsWith('/_next') ||
     pathname === '/logo.png' ||
     pathname === '/favicon.ico'
 
-  if (isPublicRoute || process.env.NODE_ENV === 'development') {
+  if (isPublicRoute) {
     return supabaseResponse
   }
 

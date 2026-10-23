@@ -133,6 +133,69 @@ export function isUkMobile(phone?: string | null): boolean {
   return !!d && d.startsWith('447')
 }
 
+export function isIndianMobile(phone?: string | null): boolean {
+  if (!phone) return false
+  const digits = phone.replace(/\D/g, '')
+  if (digits.startsWith('91') && digits.length === 12) {
+    return /^[6-9]/.test(digits.slice(2))
+  }
+  if (digits.length === 10) {
+    return /^[6-9]/.test(digits)
+  }
+  return false
+}
+
+export type PhoneTypeInfo = {
+  type: 'whatsapp_mobile' | 'landline' | 'invalid' | 'empty'
+  label: string
+  isWhatsApp: boolean
+  normalized: string | null
+}
+
+export function getPhoneType(phone?: string | null): PhoneTypeInfo {
+  if (!phone || !phone.trim()) {
+    return { type: 'empty', label: 'No number', isWhatsApp: false, normalized: null }
+  }
+
+  const res = parseAndValidatePhone(phone)
+  if (!res.valid) {
+    return { type: 'invalid', label: res.error || 'Invalid phone', isWhatsApp: false, normalized: null }
+  }
+
+  const norm = res.normalized || phone.replace(/[^\d+]/g, '')
+
+  // 1. UK Mobile: 07... or +447...
+  if (isUkMobile(phone)) {
+    return { type: 'whatsapp_mobile', label: 'UK Mobile (WhatsApp Ready)', isWhatsApp: true, normalized: norm }
+  }
+
+  // 2. India Mobile: +91 [6-9]... or 10 digits [6-9]...
+  if (isIndianMobile(phone)) {
+    return { type: 'whatsapp_mobile', label: 'India Mobile (WhatsApp Ready)', isWhatsApp: true, normalized: norm }
+  }
+
+  // 3. UK Landline: 01..., 02..., 03..., +44 1..., +44 2..., +44 3...
+  const rawClean = phone.replace(/[\s()-]/g, '')
+  if (
+    rawClean.startsWith('01') || rawClean.startsWith('02') || rawClean.startsWith('03') ||
+    rawClean.startsWith('+441') || rawClean.startsWith('+442') || rawClean.startsWith('+443') ||
+    rawClean.startsWith('441') || rawClean.startsWith('442') || rawClean.startsWith('443')
+  ) {
+    return { type: 'landline', label: 'UK Landline (Not WhatsApp)', isWhatsApp: false, normalized: norm }
+  }
+
+  // 4. Other international mobile candidate
+  if (norm.startsWith('+') && norm.length >= 10 && norm.length <= 15) {
+    return { type: 'whatsapp_mobile', label: 'Mobile (WhatsApp Candidate)', isWhatsApp: true, normalized: norm }
+  }
+
+  return { type: 'landline', label: 'Landline / Unknown', isWhatsApp: false, normalized: norm }
+}
+
+export function isWhatsAppCapable(phone?: string | null): boolean {
+  return getPhoneType(phone).isWhatsApp
+}
+
 export function whatsappLink(phone?: string | null, text?: string): string | null {
   const n = ukToInternational(phone)
   if (!n) return null

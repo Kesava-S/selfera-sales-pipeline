@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Spinner } from '@/components/ui'
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -41,9 +42,14 @@ export default function SetPasswordPage() {
     if (password.length < 8) return setError('Use at least 8 characters.')
     if (password !== confirm) return setError('The two passwords do not match.')
     setBusy(true)
-    const { error } = await createClient().auth.updateUser({ password })
-    setBusy(false)
-    if (error) return setError(error.message)
+    try {
+      const { error } = await createClient().auth.updateUser({ password })
+      if (error) return setError(error.message)
+    } catch {
+      return setError('Could not reach the server. Check your connection and try again.')
+    } finally {
+      setBusy(false)
+    }
     router.replace('/dashboard')
     router.refresh()
   }
@@ -60,7 +66,7 @@ export default function SetPasswordPage() {
           <form className="flex flex-col gap-4" onSubmit={submit}>
             <input className="input" type="password" placeholder="New password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
             <input className="input" type="password" placeholder="Type it again" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} />
-            <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save and continue'}</button>
+            <button className="btn btn-primary" disabled={busy}>{busy && <Spinner />} {busy ? 'Saving…' : 'Save and continue'}</button>
           </form>
         )}
         {!ready && !error && <p className="text-center text-sm text-muted">Checking your link…</p>}
