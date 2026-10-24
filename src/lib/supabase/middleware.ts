@@ -35,6 +35,8 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     pathname.startsWith('/api/whatsapp/webhook') ||
     pathname.startsWith('/api/email/sync') ||
+    // Resend delivery events: the route checks Resend's signature itself
+    pathname.startsWith('/api/email/webhook') ||
     // Campaign queue worker: checks the cron secret or a staff session itself
     pathname.startsWith('/api/campaigns/process') ||
     pathname.startsWith('/_next') ||

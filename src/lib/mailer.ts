@@ -1,7 +1,17 @@
 import nodemailer from 'nodemailer'
 
+// Email goes out through Resend when RESEND_API_KEY is set (it reports delivery,
+// opens, clicks and bounces back to /api/email/webhook), otherwise through SMTP.
+export const isResendConfigured = () => Boolean(process.env.RESEND_API_KEY)
+
+// True when email can be sent by either route
 export function isSmtpConfigured(): boolean {
-  return Boolean(process.env.SMTP_PASS)
+  return isResendConfigured() || Boolean(process.env.SMTP_PASS)
+}
+
+// A send failure that retrying won't fix (bad address, rejected by the provider)
+export class PermanentEmailError extends Error {
+  permanent = true
 }
 
 export function getFromEmail(): string {
@@ -163,7 +173,9 @@ export async function sendEmail({
   to: string
   subject: string
   body: string
-}): Promise<{ messageId: string }> {
+}): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
+  if (isResendConfigured()) return sendWithResend({ to, subject, body })
+
   const user = process.env.SMTP_USER || 'support@selfera.co.uk'
   const pass = process.env.SMTP_PASS
 
@@ -203,5 +215,35 @@ export async function sendEmail({
     html,
   })
 
-  return { messageId: info.messageId }
+  return { messageId: info.messageId, provider: 'smtp' }
+}
+
+async function sendWithResend({ to, subject, body }: { to: string; subject: string; body: string }) {
+  // The From address must be on a domain verified in Resend. Replies go to the
+  // mailbox the IMAP sync reads, so reply matching keeps working.
+  const fromName = process.env.EMAIL_FROM_NAME || 'Selfera'
+  const fromAddress = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
+  const replyTo = process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: `${fromName} <${fromAddress}>`,
+      to: [to],
+      subject,
+      text: body,
+      html: renderEmailTemplate({ pageTitle: subject, preheader: body.replace(/\s+/g, ' ').trim().slice(0, 120), body }),
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const message = `Resend: ${json?.message || `HTTP ${res.status}`}`
+    // 4xx (bad address, unverified domain) won't succeed on retry; 429 and 5xx might
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) throw new PermanentEmailError(message)
+    throw new Error(message)
+  }
+  return { messageId: String(json.id), provider: 'resend' as const }
 }

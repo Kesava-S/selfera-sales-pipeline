@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
@@ -17,6 +17,7 @@ import type { Profile } from '@/lib/auth'
 type Msg = {
   id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string
   delivery_status?: string | null; delivered_at?: string | null; read_at?: string | null; error_detail?: string | null
+  opened_at?: string | null; clicked_at?: string | null
 }
 type Template = { id: string; name: string; platform: string; step: string; services: string[]; subject: string | null; body: string; whatsapp_template_name: string | null }
 
@@ -312,9 +313,9 @@ export function ChatInterface({
                       {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
                         .filter(Boolean).join(' · ')}
                     </span>
-                    {ours && platform === 'WhatsApp' && m.send_method === 'api' && <DeliveryTicks m={m} />}
+                    {ours && (platform === 'WhatsApp' || platform === 'Email') && m.send_method === 'api' && <DeliveryTicks m={m} />}
                   </div>
-                  {ours && m.delivery_status === 'failed' && m.error_detail && (
+                  {ours && ['failed', 'bounced', 'complained'].includes(m.delivery_status || '') && m.error_detail && (
                     <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white">Not delivered: {m.error_detail}</div>
                   )}
                 </div>
@@ -413,19 +414,70 @@ function Banner({ tone, icon, children }: { tone: 'amber' | 'red' | 'slate'; ico
   return <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${cls}`}><span className="mt-0.5 shrink-0">{icon}</span><span>{children}</span></div>
 }
 
-// WhatsApp-style ticks: ✓ sent, ✓✓ delivered, blue ✓✓ read, ! failed. Hover shows when.
+// Delivery state on our blue bubbles: a tick plus a word, so the states are easy
+// to tell apart. Read/Opened/Clicked get a white pill; problems a red one. Hover shows when.
+// Email: opened and clicked come from Resend's tracking and are the furthest state.
+type DeliveryState = 'sent' | 'delivered' | 'read' | 'opened' | 'clicked' | 'failed' | 'bounced' | 'complained'
+
 function DeliveryTicks({ m }: { m: Msg }) {
   const when = (t?: string | null) => (t ? formatDateTime(t) : '')
-  const status = m.delivery_status || 'sent'
-  const tick = {
-    read: { icon: <CheckCheck size={14} strokeWidth={2.5} className="text-sky-200" />, label: `Read ${when(m.read_at)}` },
-    delivered: { icon: <CheckCheck size={14} strokeWidth={2.5} />, label: `Delivered ${when(m.delivered_at)}` },
-    failed: { icon: <AlertCircle size={13} strokeWidth={2.5} className="text-rose-200" />, label: `Not delivered${m.error_detail ? `: ${m.error_detail}` : ''}` },
-    sent: { icon: <Check size={14} strokeWidth={2.5} />, label: 'Sent, not delivered yet' },
-  }[status as 'read' | 'delivered' | 'failed' | 'sent'] ?? { icon: <Check size={14} strokeWidth={2.5} />, label: status }
+  const problem = ['failed', 'bounced', 'complained'].includes(m.delivery_status || '')
+  const status: DeliveryState = !problem && m.clicked_at ? 'clicked' : !problem && m.opened_at ? 'opened' : ((m.delivery_status || 'sent') as DeliveryState)
+  const states: Record<DeliveryState, { cls: string; icon: React.ReactNode; word: string; title: string }> = {
+    sent: {
+      cls: 'text-white/70',
+      icon: <Check size={13} strokeWidth={2.5} />,
+      word: 'Sent',
+      title: 'Sent, not delivered yet',
+    },
+    delivered: {
+      cls: 'text-white font-semibold',
+      icon: <CheckCheck size={14} strokeWidth={2.5} />,
+      word: 'Delivered',
+      title: `Delivered ${when(m.delivered_at)}`,
+    },
+    read: {
+      cls: 'rounded-full bg-white px-1.5 py-0.5 font-bold text-sky-600 shadow-sm',
+      icon: <CheckCheck size={14} strokeWidth={2.75} />,
+      word: 'Read',
+      title: `Read ${when(m.read_at)}`,
+    },
+    opened: {
+      cls: 'rounded-full bg-white px-1.5 py-0.5 font-bold text-sky-600 shadow-sm',
+      icon: <Eye size={12} strokeWidth={2.75} />,
+      word: 'Opened',
+      title: `Opened ${when(m.opened_at)} (approximate: some mail apps open emails automatically)`,
+    },
+    clicked: {
+      cls: 'rounded-full bg-white px-1.5 py-0.5 font-bold text-emerald-600 shadow-sm',
+      icon: <MousePointerClick size={12} strokeWidth={2.75} />,
+      word: 'Clicked',
+      title: `Clicked a link ${when(m.clicked_at)}`,
+    },
+    failed: {
+      cls: 'rounded-full bg-rose-500 px-1.5 py-0.5 font-bold text-white',
+      icon: <AlertCircle size={12} strokeWidth={2.5} />,
+      word: 'Failed',
+      title: `Not delivered${m.error_detail ? `: ${m.error_detail}` : ''}`,
+    },
+    bounced: {
+      cls: 'rounded-full bg-rose-500 px-1.5 py-0.5 font-bold text-white',
+      icon: <AlertCircle size={12} strokeWidth={2.5} />,
+      word: 'Bounced',
+      title: m.error_detail || 'Bounced',
+    },
+    complained: {
+      cls: 'rounded-full bg-rose-500 px-1.5 py-0.5 font-bold text-white',
+      icon: <Ban size={12} strokeWidth={2.5} />,
+      word: 'Spam',
+      title: 'Marked as spam by the recipient. This address is now on the do-not-contact list.',
+    },
+  }
+  const t = states[status] ?? states.sent
   return (
-    <span key={status} title={tick.label.trim()} aria-label={tick.label.trim()} className="inline-flex shrink-0 motion-check-pop">
-      {tick.icon}
+    <span key={status} title={t.title.trim()} aria-label={t.title.trim()} className={`inline-flex shrink-0 items-center gap-0.5 text-[10px] leading-none motion-check-pop ${t.cls}`}>
+      {t.icon}
+      {t.word}
     </span>
   )
 }

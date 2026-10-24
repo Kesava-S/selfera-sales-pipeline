@@ -148,6 +148,16 @@ export function CampaignProgress({
         <Stat label="Opted out" value={p.skipped} tone="text-slate-600" />
       </div>
 
+      {/* Email via Resend: arrived, opened (approximate), clicked, bounced or spam */}
+      {channel === 'email' && p.sent + p.failed > 0 && (p.delivered > 0 || p.bounced > 0) && (
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <Stat label={`Delivered (${pctOf(p.delivered, p.sent + p.failed)})`} value={p.delivered} tone="text-slate-800" />
+          <Stat label={`Opened (${pctOf(p.opened, p.delivered)})`} value={p.opened} tone="text-sky-700" />
+          <Stat label={`Clicked (${pctOf(p.clicked, p.delivered)})`} value={p.clicked} tone="text-emerald-700" />
+          <Stat label="Bounced / spam" value={p.bounced} tone="text-rose-700" />
+        </div>
+      )}
+
       {/* WhatsApp tells us when each message arrives and is opened */}
       {channel === 'whatsapp' && p.sent + p.failed > 0 && (
         <div className="grid grid-cols-2 gap-2 text-xs">

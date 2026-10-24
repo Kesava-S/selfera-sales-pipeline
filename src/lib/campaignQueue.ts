@@ -21,6 +21,10 @@ export type CampaignProgress = {
   // WhatsApp only: what Meta reported after sending
   delivered: number
   read: number
+  // Email only: from Resend's tracking
+  opened: number
+  clicked: number
+  bounced: number
   failures: { to: string; name: string | null; error: string | null }[]
 }
 
@@ -58,7 +62,7 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined): Promise<
     if (!isSmtpConfigured()) {
       return canSimulate()
         ? { id: r.id, ok: true, simulated: true }
-        : { id: r.id, ok: false, error: 'Email sending is not configured (SMTP_PASS missing).', permanent: true }
+        : { id: r.id, ok: false, error: 'Email sending is not configured (add RESEND_API_KEY or SMTP_PASS).', permanent: true }
     }
     try {
       const { messageId } = await sendEmail({
@@ -68,13 +72,13 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined): Promise<
       })
       return { id: r.id, ok: true, external_id: messageId }
     } catch (err) {
-      // SMTP 5xx (unknown mailbox, rejected address) will never succeed, so don't retry it
+      // SMTP 5xx or a Resend 4xx (unknown mailbox, rejected address) will never succeed, so don't retry it
       const code = (err as { responseCode?: number })?.responseCode
       return {
         id: r.id,
         ok: false,
         error: err instanceof Error ? err.message : 'Email send failed.',
-        permanent: typeof code === 'number' && code >= 500 && code < 600,
+        permanent: Boolean((err as { permanent?: boolean })?.permanent) || (typeof code === 'number' && code >= 500 && code < 600),
       }
     }
   }
