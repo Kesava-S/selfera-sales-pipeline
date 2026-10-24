@@ -107,6 +107,7 @@ export function CampaignProgress({
         </div>
         <div className="text-[11px] font-medium text-slate-500">
           {p.sent} of {p.total} sent{p.failed ? ` · ${p.failed} failed` : ''}{p.retrying ? ` · ${p.retrying} retrying` : ''}
+          {channel === 'whatsapp' && p.delivered > 0 ? ` · ${p.delivered} delivered · ${p.read} read` : ''}
         </div>
       </div>
     )
@@ -146,6 +147,14 @@ export function CampaignProgress({
         <Stat label="Failed" value={p.failed} tone="text-rose-700" />
         <Stat label="Opted out" value={p.skipped} tone="text-slate-600" />
       </div>
+
+      {/* WhatsApp tells us when each message arrives and is opened */}
+      {channel === 'whatsapp' && p.sent + p.failed > 0 && (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <Stat label={`Delivered (${pctOf(p.delivered, p.sent + p.failed)})`} value={p.delivered} tone="text-slate-800" />
+          <Stat label={`Read (${pctOf(p.read, p.sent + p.failed)})`} value={p.read} tone="text-sky-700" />
+        </div>
+      )}
 
       {p.simulated > 0 && (
         <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
@@ -195,6 +204,8 @@ export function CampaignProgress({
     </div>
   )
 }
+
+const pctOf = (n: number, total: number) => (total ? `${Math.round((n / total) * 100)}%` : '0%')
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (

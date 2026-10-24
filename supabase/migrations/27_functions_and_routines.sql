@@ -1112,6 +1112,8 @@ AS $$
         'skipped', (SELECT count(*) FROM rows WHERE status = 'skipped'),
         'simulated', (SELECT count(*) FROM rows WHERE status = 'sent' AND simulated),
         'retrying', (SELECT count(*) FROM rows WHERE status = 'queued' AND attempts > 0),
+        'delivered', (SELECT count(*) FROM rows WHERE delivery_status IN ('delivered', 'read')),
+        'read', (SELECT count(*) FROM rows WHERE delivery_status = 'read'),
         'failures', coalesce((
             SELECT jsonb_agg(jsonb_build_object(
                 'to', coalesce(email, phone), 'name', business_name, 'error', error_detail) ORDER BY updated_at DESC)
@@ -1236,4 +1238,69 @@ GRANT EXECUTE ON FUNCTION "sales-pipe".campaign_progress(text, uuid) TO authenti
 GRANT EXECUTE ON FUNCTION "sales-pipe".retry_failed_campaign_sends(text, uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION "sales-pipe".claim_campaign_sends(int, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION "sales-pipe".complete_campaign_sends(jsonb) TO service_role;
+
+-- 48. record_whatsapp_status: called by webhook for delivery receipts (service role only)
+CREATE OR REPLACE FUNCTION "sales-pipe".record_whatsapp_status(p_statuses jsonb)
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = "sales-pipe", public
+AS $$
+DECLARE
+    v_count int := 0;
+    v_n int;
+BEGIN
+    WITH s AS (
+        SELECT DISTINCT ON (r.id, r.status)
+            r.id, r.status, coalesce(to_timestamp(nullif(r."timestamp", '')::bigint), now()) AS at, left(r.error, 500) AS error,
+            CASE r.status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END AS rank
+        FROM jsonb_to_recordset(p_statuses) AS r(id text, status text, "timestamp" text, error text)
+        WHERE r.id IS NOT NULL AND r.status IN ('sent', 'delivered', 'read', 'failed')
+    ), best AS (
+        SELECT DISTINCT ON (id) * FROM s ORDER BY id, rank DESC, at DESC
+    )
+    UPDATE "sales-pipe".messages m
+    SET delivery_status = CASE
+            WHEN b.status = 'failed' THEN CASE WHEN m.delivery_status IN ('delivered', 'read') THEN m.delivery_status ELSE 'failed' END
+            WHEN b.rank > CASE m.delivery_status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END THEN b.status
+            ELSE m.delivery_status END,
+        delivered_at = CASE WHEN b.status IN ('delivered', 'read') THEN coalesce(m.delivered_at, b.at) ELSE m.delivered_at END,
+        read_at = CASE WHEN b.status = 'read' THEN coalesce(m.read_at, b.at) ELSE m.read_at END,
+        error_detail = CASE WHEN b.status = 'failed' AND coalesce(m.delivery_status, '') NOT IN ('delivered', 'read') THEN coalesce(b.error, 'Not delivered') ELSE m.error_detail END
+    FROM best b
+    WHERE m.external_message_id = b.id;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_count := v_count + v_n;
+
+    WITH s AS (
+        SELECT DISTINCT ON (r.id, r.status)
+            r.id, r.status, coalesce(to_timestamp(nullif(r."timestamp", '')::bigint), now()) AS at, left(r.error, 500) AS error,
+            CASE r.status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END AS rank
+        FROM jsonb_to_recordset(p_statuses) AS r(id text, status text, "timestamp" text, error text)
+        WHERE r.id IS NOT NULL AND r.status IN ('sent', 'delivered', 'read', 'failed')
+    ), best AS (
+        SELECT DISTINCT ON (id) * FROM s ORDER BY id, rank DESC, at DESC
+    )
+    UPDATE "sales-pipe".campaign_recipients cr
+    SET delivery_status = CASE
+            WHEN b.status = 'failed' THEN CASE WHEN cr.delivery_status IN ('delivered', 'read') THEN cr.delivery_status ELSE 'failed' END
+            WHEN b.rank > CASE cr.delivery_status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END THEN b.status
+            ELSE cr.delivery_status END,
+        delivered_at = CASE WHEN b.status IN ('delivered', 'read') THEN coalesce(cr.delivered_at, b.at) ELSE cr.delivered_at END,
+        read_at = CASE WHEN b.status = 'read' THEN coalesce(cr.read_at, b.at) ELSE cr.read_at END,
+        status = CASE WHEN b.status = 'failed' AND coalesce(cr.delivery_status, '') NOT IN ('delivered', 'read') THEN 'failed' ELSE cr.status END,
+        error_detail = CASE WHEN b.status = 'failed' AND coalesce(cr.delivery_status, '') NOT IN ('delivered', 'read') THEN coalesce(b.error, 'Not delivered') ELSE cr.error_detail END,
+        updated_at = now()
+    FROM best b
+    WHERE cr.external_message_id = b.id AND cr.channel = 'whatsapp';
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_count := v_count + v_n;
+
+    RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION "sales-pipe".record_whatsapp_status(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION "sales-pipe".record_whatsapp_status(jsonb) TO service_role;
+
 

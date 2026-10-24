@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, AlertTriangle, Info, Lock, PauseCircle, Ban, RotateCw } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
@@ -14,7 +14,10 @@ import { createClient } from '@/lib/supabase/client'
 import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge, toast } from '@/components/ui'
 import type { Profile } from '@/lib/auth'
 
-type Msg = { id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string }
+type Msg = {
+  id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string
+  delivery_status?: string | null; delivered_at?: string | null; read_at?: string | null; error_detail?: string | null
+}
 type Template = { id: string; name: string; platform: string; step: string; services: string[]; subject: string | null; body: string; whatsapp_template_name: string | null }
 
 const STEP_ORDER = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
@@ -132,6 +135,11 @@ export function ChatInterface({
         }
         reloadMessages()
         router.refresh()
+      })
+      // Delivery receipts from WhatsApp update the ticks on messages already shown
+      .on('postgres_changes', { event: 'UPDATE', schema: 'sales-pipe', table: 'messages', filter: `thread_id=eq.${thread.id}` }, (payload) => {
+        const updated = payload?.new as Msg | undefined
+        if (updated) setMessages(prev => prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m)))
       })
       .subscribe()
     return () => { supabase.removeChannel(ch).catch(() => {}) }
@@ -299,10 +307,16 @@ export function ChatInterface({
                 <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
                   {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
                   <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
-                  <div className={`mt-1 text-[11px] ${ours ? 'text-white/75' : 'text-slate-400'}`}>
-                    {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
-                      .filter(Boolean).join(' · ')}
+                  <div className={`mt-1 flex items-center gap-1.5 text-[11px] ${ours ? 'justify-end text-white/75' : 'text-slate-400'}`}>
+                    <span>
+                      {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                    {ours && platform === 'WhatsApp' && m.send_method === 'api' && <DeliveryTicks m={m} />}
                   </div>
+                  {ours && m.delivery_status === 'failed' && m.error_detail && (
+                    <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white">Not delivered: {m.error_detail}</div>
+                  )}
                 </div>
               </div>
             )
@@ -397,4 +411,21 @@ export function ChatInterface({
 function Banner({ tone, icon, children }: { tone: 'amber' | 'red' | 'slate'; icon: React.ReactNode; children: React.ReactNode }) {
   const cls = tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : tone === 'red' ? 'border-red-200 bg-red-50 text-red-800' : 'border-slate-200 bg-slate-50 text-slate-700'
   return <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${cls}`}><span className="mt-0.5 shrink-0">{icon}</span><span>{children}</span></div>
+}
+
+// WhatsApp-style ticks: ✓ sent, ✓✓ delivered, blue ✓✓ read, ! failed. Hover shows when.
+function DeliveryTicks({ m }: { m: Msg }) {
+  const when = (t?: string | null) => (t ? formatDateTime(t) : '')
+  const status = m.delivery_status || 'sent'
+  const tick = {
+    read: { icon: <CheckCheck size={14} strokeWidth={2.5} className="text-sky-200" />, label: `Read ${when(m.read_at)}` },
+    delivered: { icon: <CheckCheck size={14} strokeWidth={2.5} />, label: `Delivered ${when(m.delivered_at)}` },
+    failed: { icon: <AlertCircle size={13} strokeWidth={2.5} className="text-rose-200" />, label: `Not delivered${m.error_detail ? `: ${m.error_detail}` : ''}` },
+    sent: { icon: <Check size={14} strokeWidth={2.5} />, label: 'Sent, not delivered yet' },
+  }[status as 'read' | 'delivered' | 'failed' | 'sent'] ?? { icon: <Check size={14} strokeWidth={2.5} />, label: status }
+  return (
+    <span key={status} title={tick.label.trim()} aria-label={tick.label.trim()} className="inline-flex shrink-0 motion-check-pop">
+      {tick.icon}
+    </span>
+  )
 }

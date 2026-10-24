@@ -353,19 +353,27 @@ CREATE POLICY "threads_manage" ON "sales-pipe".threads FOR ALL TO authenticated
 CREATE TABLE IF NOT EXISTS "sales-pipe".messages (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     thread_id uuid NOT NULL REFERENCES "sales-pipe".threads(id) ON DELETE CASCADE,
-    direction text NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    direction text NOT NULL CHECK (direction IN ('inbound', 'outbound', 'system')),
     sender_id uuid REFERENCES "sales-pipe".profiles(id),
     subject text,
     body text NOT NULL,
+    step_label text,
+    send_method text,
+    delivery_status text DEFAULT 'sent' CHECK (delivery_status IN ('queued', 'sent', 'delivered', 'read', 'failed')),
+    delivered_at timestamptz,
+    read_at timestamptz,
+    error_detail text,
     attachments jsonb DEFAULT '[]'::jsonb,
     is_read boolean DEFAULT false,
     external_id text,
+    external_message_id text,
     created_at timestamptz DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON "sales-pipe".messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON "sales-pipe".messages(created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON "sales-pipe".messages(is_read) WHERE NOT is_read;
 CREATE INDEX IF NOT EXISTS idx_messages_external_id ON "sales-pipe".messages(external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_external_msg_id ON "sales-pipe".messages(external_message_id) WHERE external_message_id IS NOT NULL;
 ALTER TABLE "sales-pipe".messages ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "messages_select" ON "sales-pipe".messages;
 CREATE POLICY "messages_select" ON "sales-pipe".messages FOR SELECT TO authenticated USING ("sales-pipe".get_user_role() IS NOT NULL);
@@ -646,10 +654,13 @@ CREATE TABLE IF NOT EXISTS "sales-pipe".campaign_recipients (
     business_name text,
     contact_name text,
     status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'skipped')),
+    delivery_status text CHECK (delivery_status IS NULL OR delivery_status IN ('sent', 'delivered', 'read', 'failed')),
     attempts int NOT NULL DEFAULT 0,
     next_attempt_at timestamptz NOT NULL DEFAULT now(),
     locked_at timestamptz,
     sent_at timestamptz,
+    delivered_at timestamptz,
+    read_at timestamptz,
     external_message_id text,
     error_detail text,
     simulated boolean NOT NULL DEFAULT false,
@@ -674,6 +685,8 @@ CREATE INDEX IF NOT EXISTS idx_campaign_recipients_bid
     ON "sales-pipe".campaign_recipients (business_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_recipients_status
     ON "sales-pipe".campaign_recipients (status);
+CREATE INDEX IF NOT EXISTS idx_campaign_recipients_external
+    ON "sales-pipe".campaign_recipients (external_message_id) WHERE external_message_id IS NOT NULL;
 ALTER TABLE "sales-pipe".campaign_recipients ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "campaign_recipients_select" ON "sales-pipe".campaign_recipients;
 CREATE POLICY "campaign_recipients_select" ON "sales-pipe".campaign_recipients FOR SELECT TO authenticated USING ("sales-pipe".get_user_role() IS NOT NULL);
@@ -1447,6 +1460,8 @@ AS $$
         'skipped', (SELECT count(*) FROM rows WHERE status = 'skipped'),
         'simulated', (SELECT count(*) FROM rows WHERE status = 'sent' AND simulated),
         'retrying', (SELECT count(*) FROM rows WHERE status = 'queued' AND attempts > 0),
+        'delivered', (SELECT count(*) FROM rows WHERE delivery_status IN ('delivered', 'read')),
+        'read', (SELECT count(*) FROM rows WHERE delivery_status = 'read'),
         'failures', coalesce((
             SELECT jsonb_agg(jsonb_build_object(
                 'to', coalesce(email, phone), 'name', business_name, 'error', error_detail) ORDER BY updated_at DESC)
@@ -1570,6 +1585,71 @@ GRANT EXECUTE ON FUNCTION "sales-pipe".campaign_progress(text, uuid) TO authenti
 GRANT EXECUTE ON FUNCTION "sales-pipe".retry_failed_campaign_sends(text, uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION "sales-pipe".claim_campaign_sends(int, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION "sales-pipe".complete_campaign_sends(jsonb) TO service_role;
+
+-- 48. record_whatsapp_status: called by webhook for delivery receipts (service role only)
+CREATE OR REPLACE FUNCTION "sales-pipe".record_whatsapp_status(p_statuses jsonb)
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = "sales-pipe", public
+AS $$
+DECLARE
+    v_count int := 0;
+    v_n int;
+BEGIN
+    WITH s AS (
+        SELECT DISTINCT ON (r.id, r.status)
+            r.id, r.status, coalesce(to_timestamp(nullif(r."timestamp", '')::bigint), now()) AS at, left(r.error, 500) AS error,
+            CASE r.status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END AS rank
+        FROM jsonb_to_recordset(p_statuses) AS r(id text, status text, "timestamp" text, error text)
+        WHERE r.id IS NOT NULL AND r.status IN ('sent', 'delivered', 'read', 'failed')
+    ), best AS (
+        SELECT DISTINCT ON (id) * FROM s ORDER BY id, rank DESC, at DESC
+    )
+    UPDATE "sales-pipe".messages m
+    SET delivery_status = CASE
+            WHEN b.status = 'failed' THEN CASE WHEN m.delivery_status IN ('delivered', 'read') THEN m.delivery_status ELSE 'failed' END
+            WHEN b.rank > CASE m.delivery_status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END THEN b.status
+            ELSE m.delivery_status END,
+        delivered_at = CASE WHEN b.status IN ('delivered', 'read') THEN coalesce(m.delivered_at, b.at) ELSE m.delivered_at END,
+        read_at = CASE WHEN b.status = 'read' THEN coalesce(m.read_at, b.at) ELSE m.read_at END,
+        error_detail = CASE WHEN b.status = 'failed' AND coalesce(m.delivery_status, '') NOT IN ('delivered', 'read') THEN coalesce(b.error, 'Not delivered') ELSE m.error_detail END
+    FROM best b
+    WHERE m.external_message_id = b.id;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_count := v_count + v_n;
+
+    WITH s AS (
+        SELECT DISTINCT ON (r.id, r.status)
+            r.id, r.status, coalesce(to_timestamp(nullif(r."timestamp", '')::bigint), now()) AS at, left(r.error, 500) AS error,
+            CASE r.status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END AS rank
+        FROM jsonb_to_recordset(p_statuses) AS r(id text, status text, "timestamp" text, error text)
+        WHERE r.id IS NOT NULL AND r.status IN ('sent', 'delivered', 'read', 'failed')
+    ), best AS (
+        SELECT DISTINCT ON (id) * FROM s ORDER BY id, rank DESC, at DESC
+    )
+    UPDATE "sales-pipe".campaign_recipients cr
+    SET delivery_status = CASE
+            WHEN b.status = 'failed' THEN CASE WHEN cr.delivery_status IN ('delivered', 'read') THEN cr.delivery_status ELSE 'failed' END
+            WHEN b.rank > CASE cr.delivery_status WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE 0 END THEN b.status
+            ELSE cr.delivery_status END,
+        delivered_at = CASE WHEN b.status IN ('delivered', 'read') THEN coalesce(cr.delivered_at, b.at) ELSE cr.delivered_at END,
+        read_at = CASE WHEN b.status = 'read' THEN coalesce(cr.read_at, b.at) ELSE cr.read_at END,
+        status = CASE WHEN b.status = 'failed' AND coalesce(cr.delivery_status, '') NOT IN ('delivered', 'read') THEN 'failed' ELSE cr.status END,
+        error_detail = CASE WHEN b.status = 'failed' AND coalesce(cr.delivery_status, '') NOT IN ('delivered', 'read') THEN coalesce(b.error, 'Not delivered') ELSE cr.error_detail END,
+        updated_at = now()
+    FROM best b
+    WHERE cr.external_message_id = b.id AND cr.channel = 'whatsapp';
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_count := v_count + v_n;
+
+    RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION "sales-pipe".record_whatsapp_status(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION "sales-pipe".record_whatsapp_status(jsonb) TO service_role;
+
 
 -- ==============================================================================
 -- BOOTSTRAP SEED DATA

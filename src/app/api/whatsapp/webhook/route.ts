@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 
@@ -31,9 +32,32 @@ export async function GET(request: Request) {
   return new Response('Forbidden', { status: 403 })
 }
 
+// Meta signs every webhook with the app secret (X-Hub-Signature-256). Without
+// WHATSAPP_APP_SECRET set we can't check it, so requests are accepted as before.
+function signatureOk(raw: string, header: string | null): boolean {
+  const secret = process.env.WHATSAPP_APP_SECRET
+  if (!secret) return true
+  if (!header?.startsWith('sha256=')) return false
+  const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
+  const given = header.slice(7)
+  return given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))
+}
+
+type MetaStatus = {
+  id: string
+  status: string
+  timestamp?: string
+  errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[]
+}
+
 export async function POST(request: Request) {
   try {
-    const payload = await request.json().catch(() => ({}))
+    const raw = await request.text()
+    if (!signatureOk(raw, request.headers.get('x-hub-signature-256'))) {
+      console.warn('[WhatsApp Webhook] Rejected a request with a missing or wrong signature.')
+      return NextResponse.json({ status: 'forbidden' }, { status: 401 })
+    }
+    const payload = (() => { try { return JSON.parse(raw) } catch { return {} } })()
 
     if (payload.object !== 'whatsapp_business_account') {
       return NextResponse.json({ status: 'ignored' }, { status: 200 })
@@ -49,6 +73,27 @@ export async function POST(request: Request) {
 
         const value = change.value || {}
         const messages = value.messages || []
+
+        // Delivery receipts for messages we sent: sent -> delivered -> read, or failed
+        const statuses = (value.statuses || []) as MetaStatus[]
+        if (statuses.length) {
+          const statusArgs = {
+            p_statuses: statuses.map(st => ({
+              id: st.id,
+              status: st.status,
+              timestamp: st.timestamp ?? null,
+              error: st.errors?.[0] ? st.errors[0].error_data?.details || st.errors[0].message || st.errors[0].title || null : null,
+            })),
+          }
+          const { error: statusError } = await supabase.rpc('record_whatsapp_status', statusArgs)
+          if (statusError) {
+            console.error('[WhatsApp Webhook] record_whatsapp_status error:', statusError.message)
+          } else if (isDualWriteEnabled()) {
+            replicateRpcToSecondary('record_whatsapp_status', statusArgs).catch(err => {
+              console.warn('[DualWrite] Failed to replicate record_whatsapp_status:', err)
+            })
+          }
+        }
 
         for (const msg of messages) {
           const from = msg.from // e.g. "447928750453"

@@ -18,6 +18,9 @@ export type CampaignProgress = {
   skipped: number
   simulated: number
   retrying: number
+  // WhatsApp only: what Meta reported after sending
+  delivered: number
+  read: number
   failures: { to: string; name: string | null; error: string | null }[]
 }
 

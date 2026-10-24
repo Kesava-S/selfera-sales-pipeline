@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
+  // Temporary: beta module for trying Google Places + Companies House lookups by hand
+  { href: '/dashboard/lookup', label: 'Lead Lookup', icon: ScanSearch, beta: true },
   { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail },
   { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
@@ -20,7 +22,7 @@ const NAV = [
 const LEAD_PAGE = /^\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/|$)/i
 const sectionOf = (path: string) => (LEAD_PAGE.test(path) ? '/dashboard/leads' : path)
 
-const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
+const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/lookup', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
 
 export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
   const pathname = sectionOf(usePathname())
@@ -71,6 +73,9 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
             >
               <Icon size={18} className="shrink-0" />
               <span className="flex-1 min-w-0 truncate">{item.label}</span>
+              {'beta' in item && item.beta && (
+                <span className="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">Beta</span>
+              )}
               {badge !== null && (
                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" title="Leads waiting for review">
                   {badge}

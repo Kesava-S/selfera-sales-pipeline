@@ -15,10 +15,13 @@ CREATE TABLE IF NOT EXISTS "sales-pipe".campaign_recipients (
     business_name text,
     contact_name text,
     status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'skipped')),
+    delivery_status text CHECK (delivery_status IS NULL OR delivery_status IN ('sent', 'delivered', 'read', 'failed')),
     attempts int NOT NULL DEFAULT 0,
     next_attempt_at timestamptz NOT NULL DEFAULT now(),
     locked_at timestamptz,
     sent_at timestamptz,
+    delivered_at timestamptz,
+    read_at timestamptz,
     external_message_id text,
     error_detail text,
     simulated boolean NOT NULL DEFAULT false,
@@ -47,6 +50,8 @@ CREATE INDEX IF NOT EXISTS idx_campaign_recipients_business
     ON "sales-pipe".campaign_recipients (business_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_recipients_status
     ON "sales-pipe".campaign_recipients (status);
+CREATE INDEX IF NOT EXISTS idx_campaign_recipients_external
+    ON "sales-pipe".campaign_recipients (external_message_id) WHERE external_message_id IS NOT NULL;
 
 -- Enable RLS
 ALTER TABLE "sales-pipe".campaign_recipients ENABLE ROW LEVEL SECURITY;
