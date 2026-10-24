@@ -9,6 +9,30 @@ import { Preloader } from '@/components/Preloader'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+function formatErrorMessage(err: unknown): string {
+  const msg = typeof err === 'string' ? err : (err as any)?.message || ''
+  if (!msg) return 'Something went wrong. Please try again.'
+
+  if (
+    msg.includes('Server Action') ||
+    msg.includes('failed-to-find-server-action') ||
+    msg.includes('was not found on the server')
+  ) {
+    return 'The application was updated. Refreshing page...'
+  }
+
+  if (msg.includes('ChunkLoadError') || msg.toLowerCase().includes('failed to fetch')) {
+    return 'Connection issue or update pending. Please check your network and try again.'
+  }
+
+  // Strip raw framework links and hashes
+  if (msg.includes('http://') || msg.includes('https://') || msg.includes('Invariant:')) {
+    return 'A temporary connection error occurred. Please refresh the page and try again.'
+  }
+
+  return msg
+}
+
 export function LoginForm({ initialError }: { initialError?: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -20,7 +44,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
 
   const [emailError, setEmailError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
-  const [serverError, setServerError] = useState<string | null>(initialError || null)
+  const [serverError, setServerError] = useState<string | null>(initialError ? formatErrorMessage(initialError) : null)
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   const [isPending, startTransition] = useTransition()
@@ -78,14 +102,26 @@ export function LoginForm({ initialError }: { initialError?: string }) {
       try {
         const result = await loginAjax(email, password, next)
         if (!result.success) {
-          setServerError(result.error || 'Invalid credentials or access denied.')
+          setServerError(formatErrorMessage(result.error || 'Invalid credentials or access denied.'))
         } else {
           setIsRedirecting(true)
           const target = next.startsWith('/') ? next : '/dashboard'
           window.location.href = target
         }
       } catch (err: any) {
-        setServerError(err?.message || 'Something went wrong. Please try again.')
+        const rawMsg = String(err?.message || '')
+        if (
+          rawMsg.includes('Server Action') ||
+          rawMsg.includes('failed-to-find-server-action') ||
+          rawMsg.includes('was not found on the server')
+        ) {
+          setServerError('The application was updated. Refreshing page...')
+          setTimeout(() => {
+            window.location.reload()
+          }, 400)
+          return
+        }
+        setServerError(formatErrorMessage(err))
       }
     })
   }
