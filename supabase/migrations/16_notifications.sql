@@ -7,9 +7,9 @@
 CREATE TABLE IF NOT EXISTS "sales-pipe".notifications (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES "sales-pipe".profiles(id) ON DELETE CASCADE,
-    type text NOT NULL,
+    type text NOT NULL CHECK (type IN ('new_reply', 'booking_matched', 'booking_unmatched', 'needs_consultant', 'assigned_to_you', 'upsell_due', 'unsubscribed')),
     title text NOT NULL,
-    message text NOT NULL,
+    message text,
     link text,
     is_read boolean DEFAULT false,
     created_at timestamptz DEFAULT now()

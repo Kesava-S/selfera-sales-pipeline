@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
 import { BusinessDetail } from '@/components/v2/BusinessDetail'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
+import { exactLike } from '@/lib/unsubscribe'
 
 export const dynamic = 'force-dynamic'
 const UUID = /^[0-9a-f-]{36}$/i
@@ -19,9 +20,14 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     .maybeSingle()
   if (!opp) notFound()
 
-  const [{ data: others }, { data: people }] = await Promise.all([
+  const email = opp.businesses?.email?.trim()
+  const [{ data: others }, { data: people }, { data: block }] = await Promise.all([
     supabase.from('opportunities').select('id, services_pitched, stage, created_at').eq('business_id', opp.business_id).neq('id', oppId).order('created_at', { ascending: false }),
     supabase.from('profiles').select('id, full_name, role, is_active'),
+    // On the do-not-contact list (unsubscribed, bounced, or reported spam)?
+    email
+      ? supabase.from('opt_outs').select('id, source, created_at').ilike('identifier', exactLike(email)).in('channel', ['All', 'Email', 'all', 'email']).limit(1).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   const type = opp.businesses?.business_type
@@ -35,7 +41,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
           { label: opp.businesses?.business_name || 'Business' },
         ]}
       />
-      <BusinessDetail opp={opp} otherPitches={others || []} people={people || []} me={profile} />
+      <BusinessDetail opp={opp} otherPitches={others || []} people={people || []} me={profile} emailBlock={block} />
     </>
   )
 }

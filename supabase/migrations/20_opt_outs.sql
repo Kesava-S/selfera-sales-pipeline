@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS "sales-pipe".opt_outs (
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_opt_outs_identifier ON "sales-pipe".opt_outs(identifier);
+CREATE INDEX IF NOT EXISTS idx_opt_outs_identifier_lower ON "sales-pipe".opt_outs (lower(identifier));
 CREATE INDEX IF NOT EXISTS idx_opt_outs_channel ON "sales-pipe".opt_outs(channel);
 
 -- Enable RLS

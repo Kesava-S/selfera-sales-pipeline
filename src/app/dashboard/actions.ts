@@ -248,6 +248,13 @@ export async function setMyName(fullName: string) {
   return rpc('set_my_name', { p_full_name: fullName })
 }
 
+// Admin only (checked in the database): the lead asked to hear from us again
+export async function removeOptOut(id: string): Promise<ActionResult> {
+  const res = await rpc<undefined>('remove_opt_out', { p_id: id })
+  if (res.ok) revalidatePath('/dashboard', 'layout')
+  return res
+}
+
 export async function setCadence(stepName: string, days: number) {
   return rpc('set_cadence', { p_step_name: stepName, p_days: days })
 }

@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Mail, Globe, MapPin, ExternalLink, StickyNote, Trophy, Handshake, ArrowRightLeft, Plus, UserCheck, Pencil,
-  CheckCircle2, AlertTriangle, CalendarClock, Star, Lock,
+  CheckCircle2, AlertTriangle, CalendarClock, Star, Lock, MailX,
 } from 'lucide-react'
 import { CONFIG, OPEN_STAGES } from '@/lib/config'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
 import { facebookLink, instagramLink, mailtoLink, websiteLink, whatsappLink } from '@/lib/contact'
-import { addNote, approveLeads, assignConsultant, changeStage, handOver, newPitch, recordWin, startThread } from '@/app/dashboard/actions'
+import { addNote, approveLeads, assignConsultant, changeStage, handOver, newPitch, recordWin, removeOptOut, startThread } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, useAction } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { readiness } from '@/components/v2/LeadsManagement'
@@ -18,15 +18,22 @@ import type { Profile } from '@/lib/auth'
 
 type Thread = { id: string; platform: string; status: string; step: number; next_due_on: string | null; paused_reason: string | null; last_inbound_at: string | null; drafts?: { id: string; step_label: string; status: string }[] }
 type Person = { id: string; full_name: string; role: string; is_active: boolean }
+type EmailBlock = { id: string; source: string | null; created_at: string }
+
+const BLOCK_LABEL: Record<string, string> = {
+  unsubscribe: 'Unsubscribed',
+  bounce: 'Email bounced',
+  complaint: 'Marked our email as spam',
+}
 
 const PLATFORM_ORDER = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
 
-export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; otherPitches: any[]; people: Person[]; me: Profile }) {
+export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = null }: { opp: any; otherPitches: any[]; people: Person[]; me: Profile; emailBlock?: EmailBlock | null }) {
   const router = useRouter()
   const b = opp.businesses
   const threads: Thread[] = [...(opp.threads || [])].sort((x: Thread, y: Thread) => PLATFORM_ORDER.indexOf(x.platform) - PLATFORM_ORDER.indexOf(y.platform))
   const name = (id?: string | null) => people.find(p => p.id === id)?.full_name
-  const [modal, setModal] = useState<null | 'stage' | 'handover' | 'win' | 'note' | 'pitch' | 'consultant' | 'edit'>(null)
+  const [modal, setModal] = useState<null | 'stage' | 'handover' | 'win' | 'note' | 'pitch' | 'consultant' | 'edit' | 'unblock'>(null)
   const { run, pending, isPending, error, setError } = useAction()
 
   // What this person may do (the database checks again)
@@ -77,6 +84,11 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
             <h1 className="!mb-0">{b.business_name}</h1>
             <StageBadge stage={opp.stage} />
             {b.archived && <span className="badge">Archived</span>}
+            {emailBlock && (
+              <span className="badge !bg-red-50 !text-red-700 flex items-center gap-1">
+                <MailX size={12} /> {BLOCK_LABEL[emailBlock.source || ''] || 'Do not email'}
+              </span>
+            )}
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-slate-500">
             <span>{b.business_type}{b.tier ? ` · ${b.tier}` : ''}{b.room_count ? ` · ${b.room_count} rooms` : ''}</span>
@@ -103,6 +115,26 @@ export function BusinessDetail({ opp, otherPitches, people, me }: { opp: any; ot
       </div>
 
       <ErrorNote error={modal ? null : error} />
+      {emailBlock && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <span className="flex items-center gap-2">
+            <MailX size={15} />
+            {BLOCK_LABEL[emailBlock.source || ''] || 'On the do-not-contact list'} on {formatDate(emailBlock.created_at)}. No emails can be sent to {b.email}.
+          </span>
+          {isAdmin && <button className="btn btn-secondary btn-sm" onClick={() => setModal('unblock')}>Undo</button>}
+        </div>
+      )}
+      {emailBlock && (
+        <Modal open={modal === 'unblock'} onClose={close} locked={pending} title="Allow emails again?">
+          <p className="text-sm">
+            {b.business_name} comes off the do-not-contact list and can be emailed again. Only do this if they asked to hear from us. The change is logged.
+          </p>
+          <Footer
+            onClose={close} pending={pending} label="Allow emails" error={error}
+            onConfirm={() => run(() => removeOptOut(emailBlock.id), close, { success: `${b.business_name} can be emailed again.` })}
+          />
+        </Modal>
+      )}
       {!canAct && (
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
           <Lock size={15} /> {handedOver && me.id === opp.assigned_sales_id ? `Handed over to ${name(opp.assigned_consultant_id)}. You can still read everything.` : 'You can view this business but not change it.'}

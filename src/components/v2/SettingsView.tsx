@@ -3,8 +3,13 @@
 import { useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import type { Profile } from '@/lib/auth'
-import { setMyName, setCadence, updateMember, inviteMember } from '@/app/dashboard/actions'
+import { setMyName, setCadence, updateMember, inviteMember, removeOptOut } from '@/app/dashboard/actions'
 import { Modal, useAction, ErrorNote, Spinner, SaveLabel } from '@/components/ui'
+
+export type OptOut = {
+  id: string; identifier: string; channel: string; reason: string | null
+  source: string | null; createdAt: string; business: string | null
+}
 
 export type Member = {
   id: string; fullName: string; role: string; capacity: number | null
@@ -24,9 +29,9 @@ const STEPS = [
   { key: 'Follow up 3', label: 'Follow-up 2 to Final check' },
 ]
 
-export function SettingsView({ me, isAdmin, team, teamNote, cadence }: {
+export function SettingsView({ me, isAdmin, team, teamNote, cadence, optOuts = [] }: {
   me: Profile; isAdmin: boolean; team: Member[]; teamNote: string | null
-  cadence: { step_name: string; days_delay: number }[]
+  cadence: { step_name: string; days_delay: number }[]; optOuts?: OptOut[]
 }) {
   return (
     <div className="max-w-3xl space-y-6">
@@ -34,6 +39,7 @@ export function SettingsView({ me, isAdmin, team, teamNote, cadence }: {
       <MyAccount me={me} />
       {isAdmin && <Team team={team} note={teamNote} meId={me.id} />}
       {isAdmin && <Timing cadence={cadence} />}
+      {isAdmin && <DoNotContact list={optOuts} />}
     </div>
   )
 }
@@ -292,6 +298,82 @@ function Timing({ cadence }: { cadence: { step_name: string; days_delay: number 
         </button>
       </div>
       <ErrorNote error={error} />
+    </section>
+  )
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  unsubscribe: 'Unsubscribed',
+  bounce: 'Email bounced',
+  complaint: 'Marked as spam',
+  inbound: 'Asked by message',
+}
+
+function DoNotContact({ list }: { list: OptOut[] }) {
+  const [query, setQuery] = useState('')
+  const [undoing, setUndoing] = useState<OptOut | null>(null)
+  const { run, pending, error } = useAction()
+  const q = query.trim().toLowerCase()
+  const shown = q
+    ? list.filter(o => o.identifier.toLowerCase().includes(q) || o.business?.toLowerCase().includes(q))
+    : list
+
+  return (
+    <section id="do-not-contact" className="card space-y-3 scroll-mt-20">
+      <div>
+        <h2 className="font-semibold">Do-not-contact</h2>
+        <p className="text-sm text-muted">
+          Nothing is sent to these addresses: leads who unsubscribed, whose email bounced, or who marked us as spam.
+        </p>
+      </div>
+      {list.length > 5 && (
+        <input className="input" placeholder="Search by email or business" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search do-not-contact list" />
+      )}
+      {shown.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-muted">
+          {list.length ? 'No matches.' : 'No one is on the list yet.'}
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {shown.map(o => (
+            <li key={o.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{o.business || o.identifier}</p>
+                <p className="truncate text-xs text-muted">
+                  {o.business && <>{o.identifier} · </>}
+                  {SOURCE_LABEL[o.source || ''] || o.source || 'Added'} · {o.channel} ·{' '}
+                  {new Date(o.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+              <button className="btn btn-secondary btn-sm shrink-0" onClick={() => setUndoing(o)}>Undo</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Modal title="Remove from do-not-contact?" open={!!undoing} onClose={() => setUndoing(null)} locked={pending}>
+        {undoing && (
+          <div className="space-y-3">
+            <p className="text-sm">
+              <span className="font-semibold">{undoing.business || undoing.identifier}</span> can be emailed again.
+              Only do this if they asked to hear from us. The change is logged.
+            </p>
+            {undoing.source === 'bounce' && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">This address bounced. Check it is correct first, or it will bounce again.</p>
+            )}
+            <ErrorNote error={error} />
+            <div className="flex justify-end gap-2">
+              <button className="btn btn-secondary btn-sm" onClick={() => setUndoing(null)} disabled={pending}>Cancel</button>
+              <button
+                className="btn btn-primary btn-sm" disabled={pending}
+                onClick={() => run(() => removeOptOut(undoing.id), () => setUndoing(null), { success: `${undoing.business || undoing.identifier} can be emailed again.` })}
+              >
+                {pending && <Spinner size={14} />} Remove
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   )
 }

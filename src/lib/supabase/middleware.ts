@@ -39,6 +39,9 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/email/webhook') ||
     // Campaign queue worker: checks the cron secret or a staff session itself
     pathname.startsWith('/api/campaigns/process') ||
+    // Leads unsubscribing from the link in our emails: the link is signed
+    pathname.startsWith('/unsubscribe') ||
+    pathname.startsWith('/api/unsubscribe') ||
     pathname.startsWith('/_next') ||
     pathname === '/logo.png' ||
     pathname === '/favicon.ico'

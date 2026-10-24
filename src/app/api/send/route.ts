@@ -6,6 +6,7 @@ import { ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
+import { exactLike } from '@/lib/unsubscribe'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +61,17 @@ export async function POST(request: Request) {
       : thread.platform === 'WhatsApp' ? ukToInternational(b?.whatsapp_number)
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
+
+  // Leads who unsubscribed (or bounced, or reported spam) are never emailed again
+  if (thread.platform === 'Email') {
+    const { data: blocked } = await supabase
+      .from('opt_outs').select('source, created_at').ilike('identifier', exactLike(String(to)))
+      .in('channel', ['All', 'Email', 'all', 'email']).limit(1).maybeSingle()
+    if (blocked) {
+      const why = blocked.source === 'bounce' ? 'their address bounced' : blocked.source === 'complaint' ? 'they marked our email as spam' : 'they unsubscribed'
+      return NextResponse.json({ error: `Not sent: this lead is on the do-not-contact list (${why} on ${new Date(blocked.created_at).toLocaleDateString('en-GB')}).` }, { status: 422 })
+    }
+  }
 
   // 1. Send the message
   let externalId: string | null = null
