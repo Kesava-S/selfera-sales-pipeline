@@ -6,7 +6,7 @@ import { ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
-import { exactLike } from '@/lib/unsubscribe'
+import { emailSendBlocked } from '@/lib/emailBlock'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,15 +62,11 @@ export async function POST(request: Request) {
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
 
-  // Leads who unsubscribed (or bounced, or reported spam) are never emailed again
+  // Leads who unsubscribed (or bounced, or reported spam) are not emailed again,
+  // except one answer each time an unsubscribed lead writes to us
   if (thread.platform === 'Email') {
-    const { data: blocked } = await supabase
-      .from('opt_outs').select('source, created_at').ilike('identifier', exactLike(String(to)))
-      .in('channel', ['All', 'Email', 'all', 'email']).limit(1).maybeSingle()
-    if (blocked) {
-      const why = blocked.source === 'bounce' ? 'their address bounced' : blocked.source === 'complaint' ? 'they marked our email as spam' : 'they unsubscribed'
-      return NextResponse.json({ error: `Not sent: this lead is on the do-not-contact list (${why} on ${new Date(blocked.created_at).toLocaleDateString('en-GB')}).` }, { status: 422 })
-    }
+    const blocked = await emailSendBlocked(supabase, thread.id, String(to), thread.last_inbound_at)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 422 })
   }
 
   // 1. Send the message

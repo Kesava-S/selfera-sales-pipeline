@@ -11,6 +11,7 @@ import crypto from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
+import { emailSendBlocked } from '@/lib/emailBlock'
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -89,6 +90,13 @@ export async function startThread(opportunityId: string, platform: string) {
 // Used for "Mark as sent" (manual send)
 export async function markSent(threadId: string, body: string, subject?: string | null, templateId?: string | null) {
   if (!body.trim()) return { ok: false, error: 'Write the message (or call notes) first.' } as ActionResult
+  const supabase = await createClient()
+  const { data: thread } = await supabase
+    .from('threads').select('platform, last_inbound_at, opportunities (businesses (email))').eq('id', threadId).maybeSingle()
+  if (thread?.platform === 'Email') {
+    const blocked = await emailSendBlocked(supabase, threadId, (thread.opportunities as any)?.businesses?.email, thread.last_inbound_at)
+    if (blocked) return { ok: false, error: blocked } as ActionResult
+  }
   return rpc('record_outbound', {
     p_thread_id: threadId,
     p_body: body,

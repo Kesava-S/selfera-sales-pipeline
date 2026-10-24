@@ -3,6 +3,7 @@ import { requireProfile } from '@/lib/auth'
 import { ChatInterface } from '@/components/v2/ChatInterface'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { parseApiPlatforms } from '@/lib/sending'
+import { findEmailBlock } from '@/lib/emailBlock'
 
 // "All platforms" templates cover messaging platforms
 const MESSAGING = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
@@ -25,10 +26,11 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
   if (!thread) notFound()
 
   const opp = thread.opportunities
-  const [{ data: siblings }, { data: templates }, { data: people }] = await Promise.all([
+  const [{ data: siblings }, { data: templates }, { data: people }, emailBlock] = await Promise.all([
     supabase.from('threads').select('id, platform, status').eq('opportunity_id', oppId),
     supabase.from('templates').select('id, name, platform, step, services, business_types, subject, body, whatsapp_template_name').in('platform', MESSAGING.includes(thread.platform) ? [thread.platform, 'All'] : [thread.platform]).eq('is_active', true).order('name'),
     supabase.from('profiles').select('id, full_name'),
+    thread.platform === 'Email' ? findEmailBlock(supabase, opp.businesses?.email) : Promise.resolve(null),
   ])
 
   const type = opp.businesses?.business_type
@@ -65,6 +67,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
         senderName={sender}
         apiPlatforms={parseApiPlatforms(process.env.SEND_API_PLATFORMS)}
         humanAgent={process.env.META_HUMAN_AGENT === 'true'}
+        emailBlock={emailBlock}
       />
     </>
   )

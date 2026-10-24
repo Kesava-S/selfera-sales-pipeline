@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
 import { BusinessDetail } from '@/components/v2/BusinessDetail'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
-import { exactLike } from '@/lib/unsubscribe'
+import { findEmailBlock } from '@/lib/emailBlock'
 
 export const dynamic = 'force-dynamic'
 const UUID = /^[0-9a-f-]{36}$/i
@@ -25,9 +25,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     supabase.from('opportunities').select('id, services_pitched, stage, created_at').eq('business_id', opp.business_id).neq('id', oppId).order('created_at', { ascending: false }),
     supabase.from('profiles').select('id, full_name, role, is_active'),
     // On the do-not-contact list (unsubscribed, bounced, or reported spam)?
-    email
-      ? supabase.from('opt_outs').select('id, source, created_at').ilike('identifier', exactLike(email)).in('channel', ['All', 'Email', 'all', 'email']).limit(1).maybeSingle()
-      : Promise.resolve({ data: null }),
+    findEmailBlock(supabase, email).then(data => ({ data })),
   ])
 
   const type = opp.businesses?.business_type

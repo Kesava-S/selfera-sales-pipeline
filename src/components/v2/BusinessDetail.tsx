@@ -15,16 +15,10 @@ import { ChipSelect, ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, Status
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { readiness } from '@/components/v2/LeadsManagement'
 import type { Profile } from '@/lib/auth'
+import { BLOCK_LABEL, type EmailBlock } from '@/lib/emailBlock'
 
 type Thread = { id: string; platform: string; status: string; step: number; next_due_on: string | null; paused_reason: string | null; last_inbound_at: string | null; drafts?: { id: string; step_label: string; status: string }[] }
 type Person = { id: string; full_name: string; role: string; is_active: boolean }
-type EmailBlock = { id: string; source: string | null; created_at: string }
-
-const BLOCK_LABEL: Record<string, string> = {
-  unsubscribe: 'Unsubscribed',
-  bounce: 'Email bounced',
-  complaint: 'Marked our email as spam',
-}
 
 const PLATFORM_ORDER = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
 
@@ -119,7 +113,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <span className="flex items-center gap-2">
             <MailX size={15} />
-            {BLOCK_LABEL[emailBlock.source || ''] || 'On the do-not-contact list'} on {formatDate(emailBlock.created_at)}. No emails can be sent to {b.email}.
+            {BLOCK_LABEL[emailBlock.source || ''] || 'On the do-not-contact list'} on {formatDate(emailBlock.created_at)}. No emails can be sent to {b.email}{emailBlock.source === 'unsubscribe' ? ', except a reply when they write to us' : ''}.
           </span>
           {isAdmin && <button className="btn btn-secondary btn-sm" onClick={() => setModal('unblock')}>Undo</button>}
         </div>

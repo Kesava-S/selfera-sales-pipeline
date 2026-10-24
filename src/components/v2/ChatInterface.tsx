@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick, MailX } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
 import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { facebookLink, instagramLink, mailtoLink, whatsappLink } from '@/lib/contact'
-import { markSent } from '@/app/dashboard/actions'
+import { markSent, removeOptOut } from '@/app/dashboard/actions'
 import { createClient } from '@/lib/supabase/client'
-import { ErrorNote, PlatformIcon, Spinner, StageBadge, StatusBadge, toast } from '@/components/ui'
+import { ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, toast, useAction } from '@/components/ui'
+import { BLOCK_LABEL, replyAllowed, type EmailBlock } from '@/lib/emailBlock'
 import type { Profile } from '@/lib/auth'
 
 type Msg = {
@@ -24,10 +25,11 @@ type Template = { id: string; name: string; platform: string; step: string; serv
 const STEP_ORDER = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
 
 export function ChatInterface({
-  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent,
+  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent, emailBlock = null,
 }: {
   thread: any; opp: any; draft: any; templates: Template[]; siblings: { id: string; platform: string; status: string }[]
   people: { id: string; full_name: string }[]; me: Profile; senderName: string; apiPlatforms: string[]; humanAgent: boolean
+  emailBlock?: EmailBlock | null
 }) {
   const router = useRouter()
   const b = opp.businesses
@@ -96,6 +98,15 @@ export function ChatInterface({
   const unassigned = !opp.assigned_sales_id && !opp.assigned_consultant_id
   const canAct = me.role === 'admin' || me.id === opp.assigned_consultant_id || (me.id === opp.assigned_sales_id && !handedOver) || (me.role === 'sales' && unassigned)
   const needsReview = opp.stage === 'Needs review'
+
+  // Do-not-contact: the email box is locked, except for answering a lead who
+  // unsubscribed and then wrote to us (checked again when sending)
+  const lastAt = (dir: Msg['direction']) => messages.filter(m => m.direction === dir).at(-1)?.created_at ?? null
+  const lastInbound = [thread.last_inbound_at, lastAt('inbound')].filter(Boolean).sort().at(-1) ?? null
+  const canReplyToBlocked = !!emailBlock && replyAllowed(emailBlock, lastInbound, lastAt('outbound'))
+  const emailLocked = !!emailBlock && !canReplyToBlocked
+  const [unblockOpen, setUnblockOpen] = useState(false)
+  const unblock = useAction()
 
   // Where to send manually
   const contactLink = useMemo(() => {
@@ -332,12 +343,47 @@ export function ChatInterface({
       )}
       {rule.mode === 'blocked' && <Banner tone="red" icon={<Ban size={16} />}>{rule.reason}</Banner>}
       {needsReview && <Banner tone="amber" icon={<Info size={16} />}>This lead is waiting for review. Approve it on the business page first.</Banner>}
-      {!canAct && rule.mode !== 'blocked' && (
+      {emailBlock && emailLocked && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <span className="flex items-start gap-2">
+            <MailX size={16} className="mt-0.5 shrink-0" />
+            <span>
+              {BLOCK_LABEL[emailBlock.source || ''] || 'On the do-not-contact list'} on {formatDate(emailBlock.created_at)}. Emails can&apos;t be sent to {b.email}.
+              {emailBlock.source === 'unsubscribe' && ' If they write to us, you can reply here.'}
+            </span>
+          </span>
+          {me.role === 'admin' && <button className="btn btn-secondary btn-sm" onClick={() => setUnblockOpen(true)}>Undo</button>}
+        </div>
+      )}
+      {emailBlock && canReplyToBlocked && (
+        <Banner tone="amber" icon={<MailX size={16} />}>
+          They unsubscribed on {formatDate(emailBlock.created_at)} but wrote to us since. You can answer their message; don&apos;t send follow-ups or offers.
+        </Banner>
+      )}
+      {emailBlock && (
+        <Modal open={unblockOpen} onClose={() => { setUnblockOpen(false); unblock.setError(null) }} locked={unblock.pending} title="Allow emails again?">
+          <p className="text-sm">
+            {b.business_name} comes off the do-not-contact list and can be emailed again. Only do this if they asked to hear from us. The change is logged.
+          </p>
+          {emailBlock.source === 'bounce' && <p className="mt-2 text-sm text-amber-800">This address bounced. Check it is correct first, or the next email will bounce too.</p>}
+          <ErrorNote error={unblock.error} />
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn btn-secondary" disabled={unblock.pending} onClick={() => { setUnblockOpen(false); unblock.setError(null) }}>Cancel</button>
+            <button
+              className="btn btn-primary" disabled={unblock.pending}
+              onClick={() => unblock.run(() => removeOptOut(emailBlock.id), () => setUnblockOpen(false), { success: `${b.business_name} can be emailed again.` })}
+            >
+              {unblock.pending && <Spinner />} Allow emails
+            </button>
+          </div>
+        </Modal>
+      )}
+      {!canAct && rule.mode !== 'blocked' && !emailLocked && (
         <Banner tone="slate" icon={<Lock size={16} />}>{handedOver && me.id === opp.assigned_sales_id ? 'Handed over to a consultant. You can read but not send.' : 'You can read this conversation but not send.'}</Banner>
       )}
 
       {/* Composer */}
-      {canAct && !needsReview && rule.mode !== 'blocked' && (
+      {canAct && !needsReview && rule.mode !== 'blocked' && !emailLocked && (
         <div className="card space-y-3 !p-4">
           <div className="flex flex-wrap items-center gap-2">
             {draft && <span className="badge !bg-primary-bg !text-primary">Draft: {draft.step_label}</span>}
