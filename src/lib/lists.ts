@@ -40,7 +40,8 @@ export const categoryNames = (lists: SalesLists) => lists.categories.map(c => c.
 export function categoryFromSlug(lists: SalesLists, slug: string): string | null {
   const clean = decodeURIComponent(slug).toLowerCase().trim()
   const hit = lists.categories.find(c => c.slug === clean || c.name.toLowerCase() === clean || slugify(c.name) === slugify(clean))
-  return hit?.name ?? null
+  // Older links used other spellings ("hotels", "restaurants-and-cafes")
+  return hit?.name ?? matchCategory(lists, clean.replace(/-/g, ' '))
 }
 
 export function categorySlug(lists: SalesLists, name: string): string {

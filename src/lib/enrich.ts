@@ -4,6 +4,8 @@
 //
 //   GOOGLE_PLACES_API_KEY    Google Cloud key with "Places API (New)" enabled (billed per search)
 //   COMPANIES_HOUSE_API_KEY  free key from developer.company-information.service.gov.uk
+import { getSalesLists } from '@/lib/dynamicData'
+import { matchCategory, type SalesLists } from '@/lib/lists'
 
 export type LookupField =
   | 'address' | 'postcode' | 'area' | 'phone' | 'existing_website' | 'maps_link'
@@ -36,12 +38,14 @@ export const lookupConfig = () => ({
   companiesHouse: Boolean(process.env.COMPANIES_HOUSE_API_KEY),
 })
 
-// Google place types -> our four business types
-function businessTypeFromGoogle(types: string[] = []): string | undefined {
-  if (types.some(t => ['lodging', 'hotel', 'motel', 'bed_and_breakfast', 'guest_house', 'hostel', 'resort_hotel', 'inn'].includes(t))) return 'Hotel'
-  if (types.some(t => ['bar', 'pub', 'wine_bar', 'night_club'].includes(t))) return 'Pub'
-  if (types.some(t => ['restaurant', 'cafe', 'coffee_shop', 'bakery', 'meal_takeaway', 'meal_delivery', 'food'].includes(t) || t.endsWith('_restaurant'))) return 'Restaurant or cafe'
-  if (types.some(t => ['real_estate_agency', 'property_management_company'].includes(t))) return 'Property management'
+// Google place types (e.g. "bed_and_breakfast", "italian_restaurant") -> one of
+// our categories, using each category's known spellings (business_categories)
+function businessTypeFromGoogle(lists: SalesLists, types: string[] = []): string | undefined {
+  for (const t of types) {
+    const words = t.replace(/_/g, ' ')
+    const hit = matchCategory(lists, words) || matchCategory(lists, words.split(' ').pop() || '')
+    if (hit) return hit
+  }
   return undefined
 }
 
@@ -72,6 +76,7 @@ type GooglePlace = {
 export async function searchPlaces(query: string): Promise<PlaceResult[]> {
   const key = process.env.GOOGLE_PLACES_API_KEY
   if (!key) throw new Error('Google Places is not set up: add GOOGLE_PLACES_API_KEY to .env.local.')
+  const lists = await getSalesLists()
 
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
@@ -102,7 +107,7 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
       maps_link: p.googleMapsUri,
       google_rating: p.rating,
       google_reviews_count: p.userRatingCount,
-      business_type: businessTypeFromGoogle(p.types),
+      business_type: businessTypeFromGoogle(lists, p.types),
     }
     return {
       id: p.id,

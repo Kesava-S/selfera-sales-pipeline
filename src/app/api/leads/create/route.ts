@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseAndValidatePhone } from '@/lib/contact'
+import { getPipelineSetting, getSalesLists } from '@/lib/dynamicData'
 
 export async function POST(request: Request) {
   try {
@@ -29,8 +30,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Business name is required.' }, { status: 400 })
     }
 
-    const cleanBusinessType = (business_type || 'Restaurant or cafe').trim()
-    const cleanService = (service_pitched || 'Website').trim()
+    const cleanBusinessType = (business_type || await getPipelineSetting('default_business_category', '')).trim()
+    const cleanService = (service_pitched || (await getSalesLists()).services[0] || '').trim()
     const cleanEmail = email?.trim() || null
     let normalizedWhatsapp: string | null = null
     if (whatsapp_number?.trim()) {

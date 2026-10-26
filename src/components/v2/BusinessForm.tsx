@@ -254,8 +254,8 @@ export function BusinessForm({
                   {categoryNames(lists).map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
-                  {typeof v.business_type === 'string' && v.business_type && !categoryNames(lists).includes(v.business_type) && (
-                    <option value={v.business_type}>{v.business_type}</option>
+                  {v.business_type && !categoryNames(lists).includes(v.business_type as string) && (
+                    <option value={v.business_type as string}>{v.business_type as string}</option>
                   )}
                 </select>
                 {errors.business_type && <p className="mt-1 text-xs text-red-600">{errors.business_type}</p>}

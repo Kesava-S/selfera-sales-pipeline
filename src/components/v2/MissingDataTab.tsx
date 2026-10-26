@@ -7,12 +7,6 @@ import {
   CheckCircle2,
   Trash2,
   SlidersHorizontal,
-  ChevronDown,
-  ExternalLink,
-  Hotel,
-  Utensils,
-  Beer,
-  Building2,
   X,
   Check,
 } from 'lucide-react'
@@ -22,6 +16,7 @@ import { PROBLEM_LABELS } from '@/lib/importFields'
 import { updateLeadField, updateLeadAddressAndPostcode, bulkSetField, deleteLeads } from '@/app/dashboard/actions'
 import { EmptyState, Modal, Pagination, Spinner, ButtonSpinner, toast } from '@/components/ui'
 import { useLists } from '@/components/ListsContext'
+import { CategoryIcon } from '@/components/CategoryIcon'
 
 export type MissingRow = {
   opportunity_id: string
@@ -65,12 +60,6 @@ export type BatchItem = {
   failed_count: number
 }
 
-const TYPE_CARDS = [
-  { key: 'Hotel', label: 'Hotels', icon: Hotel },
-  { key: 'Restaurant or cafe', label: 'Restaurants & cafes', icon: Utensils },
-  { key: 'Pub', label: 'Pubs', icon: Beer },
-  { key: 'Property management', label: 'Property management', icon: Building2 },
-] as const
 
 const FIELD_LABELS: Record<string, string> = {
   business_name: 'Business name',
@@ -204,7 +193,7 @@ export function MissingDataTab({
   // Bulk actions modal states
   const [showBulkSet, setShowBulkSet] = useState(false)
   const [bulkField, setBulkField] = useState<'category' | 'service' | 'tech_partner_type'>('category')
-  const [bulkVal, setBulkVal] = useState<string>('Hotel')
+  const [bulkVal, setBulkVal] = useState<string>(lists.categories[0]?.name ?? '')
   const [bulkServices, setBulkServices] = useState<string[]>([])
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [bulkActionBusy, setBulkActionBusy] = useState(false)
@@ -248,7 +237,7 @@ export function MissingDataTab({
     if (field === 'business_name') {
       setEditValue(row.business_name || '')
     } else if (field === 'category') {
-      setEditValue(row.business_type || 'Hotel')
+      setEditValue(row.business_type || lists.categories[0]?.name || '')
     } else if (field === 'services') {
       setBulkServices(row.services || [])
     } else if (field === 'website') {
@@ -525,17 +514,16 @@ export function MissingDataTab({
     <div className="space-y-5">
       {/* 1. Top: 4 Property Type Boxes */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {TYPE_CARDS.map(cat => {
-          const Icon = cat.icon
-          const count = typeCountsMap[cat.key] ?? 0
-          const isSelected = activeType === cat.key
+        {lists.categories.map(cat => {
+          const count = typeCountsMap[cat.name] ?? 0
+          const isSelected = activeType === cat.name
           return (
             <button
               type="button"
-              key={cat.key}
+              key={cat.name}
               onClick={() => {
                 onFilterChange({
-                  type: isSelected ? undefined : cat.key,
+                  type: isSelected ? undefined : cat.name,
                   page: '1',
                 })
               }}
@@ -551,7 +539,7 @@ export function MissingDataTab({
                     isSelected ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  <Icon size={18} />
+                  <CategoryIcon name={cat.icon_name} size={18} />
                 </div>
                 {isSelected && (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
@@ -561,7 +549,7 @@ export function MissingDataTab({
               </div>
               <div className="mt-4">
                 <div className="text-2xl font-extrabold text-slate-900">{count}</div>
-                <div className="text-xs font-semibold text-slate-700">{cat.label}</div>
+                <div className="text-xs font-semibold text-slate-700">{cat.name}</div>
               </div>
             </button>
           )
@@ -643,7 +631,7 @@ export function MissingDataTab({
               className="btn btn-secondary btn-sm"
               onClick={() => {
                 setBulkField('category')
-                setBulkVal('Hotel')
+                setBulkVal(lists.categories[0]?.name ?? '')
                 setShowBulkSet(true)
               }}
             >
@@ -1348,7 +1336,7 @@ export function MissingDataTab({
               onChange={e => {
                 const f = e.target.value as any
                 setBulkField(f)
-                if (f === 'category') setBulkVal('Hotel')
+                if (f === 'category') setBulkVal(lists.categories[0]?.name ?? '')
                 if (f === 'tech_partner_type') setBulkVal('None')
               }}
             >
