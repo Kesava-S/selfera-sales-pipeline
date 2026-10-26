@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseAndValidatePhone } from '@/lib/contact'
-import { LEAD_CATEGORIES } from '@/lib/config'
 
 export async function POST(request: Request) {
   try {

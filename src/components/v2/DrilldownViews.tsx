@@ -4,16 +4,10 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   ChevronRight,
-  Hotel,
-  Utensils,
-  Beer,
-  Building2,
   Calendar,
   User,
   Clock,
-  MessageCircle,
   Inbox,
-  AlertCircle
 } from 'lucide-react'
 import { toPlatformSlug } from '@/lib/config'
 import { useLists } from '@/components/ListsContext'

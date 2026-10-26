@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { searchCompanies, searchPlaces, type CompanyResult, type LookupField, type PlaceResult, type Suggestion } from '@/lib/enrich'
 import type { ActionResult } from '@/app/dashboard/actions'
+import { getSalesLists } from '@/lib/dynamicData'
+import { categoryNames } from '@/lib/lists'
 
 export type LookupResults = {
   places: PlaceResult[]
@@ -41,7 +43,6 @@ export async function lookupBusiness(query: string): Promise<ActionResult<Lookup
   }
 }
 
-const BUSINESS_TYPES = ['Hotel', 'Restaurant or cafe', 'Pub', 'Property management']
 const COMPANY_TYPES = ['Limited company', 'Sole trader', 'Partnership', 'Unknown']
 const TEXT_FIELDS: LookupField[] = ['address', 'postcode', 'area', 'phone', 'existing_website', 'maps_link', 'contact_name']
 
@@ -60,7 +61,7 @@ export async function applyLookup(businessId: string, values: Suggestion): Promi
     const n = Math.round(Number(values.google_reviews_count))
     if (Number.isFinite(n) && n >= 0) clean.google_reviews_count = n
   }
-  if (typeof values.business_type === 'string' && BUSINESS_TYPES.includes(values.business_type)) clean.business_type = values.business_type
+  if (typeof values.business_type === 'string' && categoryNames(await getSalesLists()).includes(values.business_type)) clean.business_type = values.business_type
   if (typeof values.company_type === 'string' && COMPANY_TYPES.includes(values.company_type)) clean.company_type = values.company_type
   // A website was found, so the lead no longer counts as "no website"
   if (clean.existing_website) clean.has_no_website = false

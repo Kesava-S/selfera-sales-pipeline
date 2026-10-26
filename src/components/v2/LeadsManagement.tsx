@@ -4,8 +4,22 @@ import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ChevronDown, ChevronRight, Download, Plus, Search, Upload, Inbox, CheckCircle2, AlertTriangle,
-  Pencil, Archive, UserPlus, Layers, Hotel, Utensils, Beer, Building2, MessageCircle, Phone, PhoneOff,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Plus,
+  Search,
+  Upload,
+  Inbox,
+  CheckCircle2,
+  AlertTriangle,
+  Pencil,
+  Archive,
+  UserPlus,
+  Layers,
+  MessageCircle,
+  Phone,
+  PhoneOff,
 } from 'lucide-react'
 import { getPhoneType, whatsappLink } from '@/lib/contact'
 import { CONFIG } from '@/lib/config'
