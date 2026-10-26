@@ -2,8 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { BarChart3 } from 'lucide-react'
-import { CONFIG } from '@/lib/config'
 import { PlatformIcon, ErrorNote, EmptyState } from '@/components/ui'
+import { useLists } from '@/components/ListsContext'
 
 export type InsightsData = {
   totals: { reached: number; replied: number; interested: number; consultation: number; won: number }
@@ -24,6 +24,7 @@ export function InsightsView({ data, loadError, params, isAdmin, staff }: {
   isAdmin: boolean
   staff: { id: string; full_name: string; role: string }[]
 }) {
+  const lists = useLists()
   const router = useRouter()
   const go = (patch: Partial<typeof params>) => {
     const next = { ...params, ...patch }
@@ -46,7 +47,7 @@ export function InsightsView({ data, loadError, params, isAdmin, staff }: {
         <input type="date" className="input !w-auto" value={params.to} min={params.from} onChange={e => e.target.value && go({ to: e.target.value })} aria-label="To" />
         <select className="input !w-auto" value={params.service} onChange={e => go({ service: e.target.value })} aria-label="Service">
           <option value="">All services</option>
-          {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
+          {lists.services.map(s => <option key={s}>{s}</option>)}
         </select>
         {isAdmin && (
           <select className="input !w-auto" value={params.user} onChange={e => go({ user: e.target.value })} aria-label="Person">

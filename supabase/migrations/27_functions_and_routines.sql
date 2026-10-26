@@ -7,9 +7,14 @@ SET search_path TO "sales-pipe", public;
 
 -- 1. Helper: valid_services()
 CREATE OR REPLACE FUNCTION "sales-pipe".valid_services()
-RETURNS text[] AS $$
-    SELECT ARRAY['Website', 'Micro Automation', 'End-to-End Automation', 'Custom Dashboard', 'Cold Outreach']
-$$ LANGUAGE sql IMMUTABLE;
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT coalesce(array_agg(s.name ORDER BY s.sort_order, s.name), '{}')
+  FROM "sales-pipe".services s
+$$;
 
 -- 2. Helper: clean_handle(text)
 CREATE OR REPLACE FUNCTION "sales-pipe".clean_handle(p text)
@@ -31,22 +36,46 @@ $function$;
 
 -- 4. Helper: type_category(text)
 CREATE OR REPLACE FUNCTION "sales-pipe".type_category(p_type text)
-RETURNS text AS $$
-    SELECT CASE
-        WHEN p_type IN ('Hotel', 'Hotels', 'Boutique hotel', 'B&B / Guesthouse', 'Hostel') THEN 'Accommodation'
-        WHEN p_type IN ('Restaurant or cafe', 'Restaurants and cafes', 'Restaurant', 'Cafe', 'Bakery', 'Takeaway') THEN 'Food & Drink'
-        WHEN p_type IN ('Pub', 'Pubs', 'Pub / Bar', 'Bar') THEN 'Food & Drink'
-        WHEN p_type IN ('Property management', 'Property Management', 'Short-let / Airbnb host', 'Serviced apartments') THEN 'Accommodation'
-        WHEN p_type IN ('Hair salon', 'Barber', 'Beauty', 'Nails & Lashes', 'Medical aesthetics', 'Spa', 'Fitness / Training studio') THEN 'Beauty & Wellness'
-        WHEN p_type IN ('Fashion boutique', 'Florist', 'Other') THEN 'Retail & Other'
-        ELSE p_type END
-$$ LANGUAGE sql IMMUTABLE;
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT coalesce(
+    (SELECT c.category_group FROM "sales-pipe".business_categories c
+     WHERE c.name = "sales-pipe".canonical_business_type(p_type)
+       AND nullif(trim(coalesce(p_type, '')), '') IS NOT NULL),
+    p_type
+  )
+$$;
 
 -- 5. Helper: canonical_business_type(text)
 CREATE OR REPLACE FUNCTION "sales-pipe".canonical_business_type(p_type text)
-RETURNS text AS $$
-    SELECT CASE WHEN p_type IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN p_type ELSE NULL END
-$$ LANGUAGE sql IMMUTABLE;
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  WITH t AS (SELECT lower(trim(coalesce(p_type, ''))) AS clean),
+  cats AS (
+    SELECT c.name, c.slug, c.synonyms, c.sort_order
+    FROM "sales-pipe".business_categories c
+    WHERE c.is_active
+  )
+  SELECT coalesce(
+    -- Name, slug or a known spelling
+    (SELECT cats.name FROM cats, t
+     WHERE t.clean <> '' AND (lower(cats.name) = t.clean OR cats.slug = t.clean OR t.clean = ANY(cats.synonyms))
+     ORDER BY cats.sort_order LIMIT 1),
+    -- A known spelling as a whole word inside it ("The Crown Hotel & Spa")
+    (SELECT cats.name FROM cats, t, unnest(cats.synonyms) AS w
+     WHERE t.clean <> '' AND length(w) >= 3
+       AND t.clean ~ ('\m' || regexp_replace(w, '([.^$*+?()\[\]{}|\\])', '\\\1', 'g') || '\M')
+     ORDER BY length(w) DESC, cats.sort_order LIMIT 1),
+    -- Nothing matched
+    (SELECT ps.value #>> '{}' FROM "sales-pipe".pipeline_settings ps WHERE ps.key = 'default_business_category')
+  )
+$$;
 
 -- 6. Helper: check_opp_access(uuid)
 CREATE OR REPLACE FUNCTION "sales-pipe".check_opp_access(p_opportunity_id uuid)
@@ -1478,6 +1507,113 @@ $$;
 
 REVOKE ALL ON FUNCTION "sales-pipe".remove_opt_out(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION "sales-pipe".remove_opt_out(uuid) TO authenticated, service_role;
+
+-- 52. sync_profile_from_matrix: syncs access from public.user_product_access & hr.employees
+CREATE OR REPLACE FUNCTION "sales-pipe".sync_profile_from_matrix(p_employee_id integer)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_emp  record;
+  v_role text;
+BEGIN
+  SELECT e.auth_user_id, e.full_name, e.status INTO v_emp
+  FROM hr.employees e WHERE e.id = p_employee_id;
+  IF NOT FOUND OR v_emp.auth_user_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT CASE pr.code WHEN 'admin' THEN 'admin' WHEN 'consultant' THEN 'consultant' ELSE 'sales' END
+  INTO v_role
+  FROM public.user_product_access upa
+  JOIN public.products p      ON p.product_id = upa.product_id AND p.code = 'sales_pipeline'
+  JOIN public.product_roles pr ON pr.id = upa.product_role_id
+  WHERE upa.employee_id = p_employee_id;
+
+  -- Same rule as the Admin Panel's sign-in: only terminated employees are blocked
+  IF v_role IS NOT NULL AND v_emp.status <> 'terminated' THEN
+    INSERT INTO "sales-pipe".profiles (id, full_name, role, is_active)
+    VALUES (v_emp.auth_user_id, v_emp.full_name, v_role, true)
+    ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, is_active = true;
+  ELSE
+    UPDATE "sales-pipe".profiles SET is_active = false WHERE id = v_emp.auth_user_id;
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION "sales-pipe".sync_profile_from_matrix(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION "sales-pipe".sync_profile_from_matrix(integer) TO service_role;
+
+-- 53. on_matrix_change: trigger on public.user_product_access
+CREATE OR REPLACE FUNCTION "sales-pipe".on_matrix_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    PERFORM "sales-pipe".sync_profile_from_matrix(OLD.employee_id);
+  END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    PERFORM "sales-pipe".sync_profile_from_matrix(NEW.employee_id);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- 54. on_employee_change: trigger on hr.employees
+CREATE OR REPLACE FUNCTION "sales-pipe".on_employee_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF OLD.auth_user_id IS NOT NULL AND OLD.auth_user_id IS DISTINCT FROM NEW.auth_user_id THEN
+    UPDATE "sales-pipe".profiles SET is_active = false WHERE id = OLD.auth_user_id;
+  END IF;
+  PERFORM "sales-pipe".sync_profile_from_matrix(NEW.id);
+  RETURN NULL;
+END;
+$$;
+
+-- 55. set_member_capacity: admin updates active lead capacity
+CREATE OR REPLACE FUNCTION "sales-pipe".set_member_capacity(p_id uuid, p_capacity integer)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'sales-pipe', 'public'
+AS $$
+BEGIN
+  PERFORM "sales-pipe".require_role(ARRAY['admin']);
+  IF p_capacity IS NOT NULL AND (p_capacity < 1 OR p_capacity > 1000) THEN
+    RAISE EXCEPTION 'Active leads must be between 1 and 1000';
+  END IF;
+  UPDATE "sales-pipe".profiles SET capacity = p_capacity WHERE id = p_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Person not found';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION "sales-pipe".set_member_capacity(uuid, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION "sales-pipe".set_member_capacity(uuid, integer) TO authenticated, service_role;
+
+-- 56. update_member: guard for legacy profile edits
+CREATE OR REPLACE FUNCTION "sales-pipe".update_member(p_id uuid, p_full_name text, p_role text, p_capacity integer, p_active boolean)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'sales-pipe', 'public'
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Roles and access are managed in the Admin Panel (Access page)';
+END;
+$$;
+
 
 
 

@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { UserPlus } from 'lucide-react'
 import type { Profile } from '@/lib/auth'
-import { setMyName, setCadence, updateMember, inviteMember, removeOptOut } from '@/app/dashboard/actions'
+import { setMyName, setCadence, setMemberCapacity, removeOptOut } from '@/app/dashboard/actions'
 import { Modal, useAction, ErrorNote, Spinner, SaveLabel } from '@/components/ui'
 
 export type OptOut = {
@@ -22,6 +21,20 @@ const ROLES = [
   { value: 'admin', label: 'Admin' },
 ]
 const roleLabel = (r: string) => ROLES.find(x => x.value === r)?.label ?? r
+
+// People, their role and whether they can log in are managed in the Admin Panel
+const ADMIN_ACCESS_URL = process.env.NEXT_PUBLIC_ADMIN_URL ? `${process.env.NEXT_PUBLIC_ADMIN_URL.replace(/\/+$/, '')}/access` : null
+
+function ManagedInAdmin() {
+  return (
+    <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+      To add someone, change their role or remove their access, use the{' '}
+      {ADMIN_ACCESS_URL
+        ? <a className="font-medium text-primary underline" href={ADMIN_ACCESS_URL} target="_blank" rel="noreferrer">Access page in the Admin Panel</a>
+        : <b>Access page in the Admin Panel</b>}.
+    </p>
+  )
+}
 
 const STEPS = [
   { key: 'Follow up 1', label: 'First contact to Follow-up 1' },
@@ -70,7 +83,6 @@ function MyAccount({ me }: { me: Profile }) {
 
 // ---------- Team ----------
 function Team({ team, note, meId }: { team: Member[]; note: string | null; meId: string }) {
-  const [inviting, setInviting] = useState(false)
   const [editing, setEditing] = useState<Member | null>(null)
   const [selectedRole, setSelectedRole] = useState<'admin' | 'sales' | 'consultant' | null>(null)
   
@@ -90,9 +102,9 @@ function Team({ team, note, meId }: { team: Member[]; note: string | null; meId:
             </button>
             <h2 className="font-semibold capitalize">{selectedRole} Team</h2>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => setInviting(true)} disabled={!!note}><UserPlus size={16} /> Add person</button>
         </div>
-        
+
+        <ManagedInAdmin />
         {note && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{note}</p>}
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -107,15 +119,14 @@ function Team({ team, note, meId }: { team: Member[]; note: string | null; meId:
                 </div>
                 <div className="text-sm text-slate-500 truncate" title={m.email}>{m.email}</div>
                 <div className="text-xs font-medium mt-2">
-                  {!m.active ? <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md">Disabled</span> : m.invited ? <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Invite sent</span> : <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Active</span>}
+                  {!m.active ? <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md">No access</span> : m.invited ? <span className="text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Password not set</span> : <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Active</span>}
                 </div>
               </div>
             ))
           )}
         </div>
 
-        {inviting && <InviteModal onClose={() => setInviting(false)} defaultRole={selectedRole} />}
-        {editing && <EditMember member={editing} isMe={editing.id === meId} onClose={() => setEditing(null)} />}
+        {editing && <EditMember member={editing} onClose={() => setEditing(null)} />}
       </section>
     )
   }
@@ -125,6 +136,7 @@ function Team({ team, note, meId }: { team: Member[]; note: string | null; meId:
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold">Team Management</h2>
       </div>
+      <ManagedInAdmin />
       
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {ROLES.map(role => {
@@ -150,106 +162,33 @@ function Team({ team, note, meId }: { team: Member[]; note: string | null; meId:
   )
 }
 
-function InviteModal({ onClose, defaultRole }: { onClose: () => void; defaultRole?: string }) {
-  const [v, setV] = useState({ email: '', fullName: '', role: defaultRole || 'sales' })
+function EditMember({ member, onClose }: { member: Member; onClose: () => void }) {
+  const [capacity, setCapacity] = useState(member.capacity ?? 150)
   const { run, pending, error } = useAction()
-  return (
-    <Modal title="Add person" open onClose={onClose} locked={pending}>
-      <form className="space-y-3" onSubmit={e => { e.preventDefault(); run(() => inviteMember(v), onClose, { success: `Invite sent to ${v.email}.` }) }}>
-        <input className="input" type="email" placeholder="Email" value={v.email} onChange={e => setV({ ...v, email: e.target.value })} autoFocus />
-        <input className="input" placeholder="Full name" value={v.fullName} onChange={e => setV({ ...v, fullName: e.target.value })} />
-        <select className="input" value={v.role} onChange={e => setV({ ...v, role: e.target.value })} aria-label="Role">
-          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-        <p className="text-xs text-muted">They get an email with a link to set their password.</p>
-        <ErrorNote error={error} />
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending}>Cancel</button>
-          <button className="btn btn-primary btn-sm" disabled={pending}>{pending && <Spinner size={14} />} Send invite</button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
+  const isSales = member.role === 'sales'
 
-import { deleteMember } from '@/app/dashboard/actions'
-
-function EditMember({ member, isMe, onClose }: { member: Member; isMe: boolean; onClose: () => void }) {
-  const [v, setV] = useState({ fullName: member.fullName, role: member.role, capacity: member.capacity ?? 150, active: member.active })
-  const { run, pending, error } = useAction()
-  const { run: runDelete, pending: deleting, error: deleteError } = useAction()
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  
   return (
-    <Modal title={member.fullName || member.email} open onClose={onClose} locked={pending || deleting}>
+    <Modal title={member.fullName || member.email} open onClose={onClose} locked={pending}>
       <form
         className="space-y-3"
-        onSubmit={e => { e.preventDefault(); run(() => updateMember({ id: member.id, ...v, capacity: v.role === 'sales' ? v.capacity : null }), onClose, { success: 'Changes saved.' }) }}
+        onSubmit={e => { e.preventDefault(); run(() => setMemberCapacity(member.id, capacity), onClose, { success: 'Changes saved.' }) }}
       >
         {member.email && <p className="text-sm text-muted">{member.email}</p>}
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-muted">Name</span>
-          <input className="input" value={v.fullName} onChange={e => setV({ ...v, fullName: e.target.value })} />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-muted">Role</span>
-          <select className="input" value={v.role} disabled={isMe} onChange={e => setV({ ...v, role: e.target.value })}>
-            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </label>
-        {v.role === 'sales' && (
+        <dl className="grid grid-cols-2 gap-2 text-sm">
+          <dt className="text-muted">Role</dt><dd>{roleLabel(member.role)}</dd>
+          <dt className="text-muted">Can log in</dt><dd>{member.active ? 'Yes' : 'No'}</dd>
+        </dl>
+        {isSales && (
           <label className="block space-y-1">
             <span className="text-xs font-medium text-muted">Most active leads at once</span>
-            <input className="input" type="number" min={1} max={1000} value={v.capacity} onChange={e => setV({ ...v, capacity: Number(e.target.value) })} />
+            <input className="input" type="number" min={1} max={1000} value={capacity} onChange={e => setCapacity(Number(e.target.value))} />
           </label>
         )}
-        {!isMe && (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={v.active} onChange={e => setV({ ...v, active: e.target.checked })} />
-            Can log in
-          </label>
-        )}
-        {!isMe && !v.active && member.active && (
-          <p className="text-xs text-muted">They will be logged out and blocked. Their history is kept. Reassign their leads in Lead Management.</p>
-        )}
-        
-        <ErrorNote error={error || deleteError} />
-
-        {confirmDelete && (
-          <div className="space-y-3 rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-sm text-red-800">
-              Delete <b>{member.fullName || 'this user'}</b> completely? This cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)} disabled={deleting}>Keep user</button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm !bg-red-600 hover:!bg-red-700"
-                disabled={deleting}
-                onClick={() => runDelete(() => deleteMember(member.id), onClose, { success: `${member.fullName || 'User'} was deleted.` })}
-              >
-                {deleting && <Spinner size={14} />} Delete permanently
-              </button>
-            </div>
-          </div>
-        )}
-        
-        <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-100">
-          {!isMe ? (
-            <button 
-              type="button" 
-              className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-              disabled={deleting || pending || confirmDelete}
-              onClick={() => setConfirmDelete(true)}
-            >
-              Delete User
-            </button>
-          ) : <div></div>}
-          
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending || deleting}>Cancel</button>
-            <button className="btn btn-primary btn-sm" disabled={pending || deleting}>{pending && <Spinner size={14} />} Save</button>
-          </div>
+        <ManagedInAdmin />
+        <ErrorNote error={error} />
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose} disabled={pending}>{isSales ? 'Cancel' : 'Close'}</button>
+          {isSales && <button className="btn btn-primary btn-sm" disabled={pending}>{pending && <Spinner size={14} />} Save</button>}
         </div>
       </form>
     </Modal>

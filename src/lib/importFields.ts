@@ -1,4 +1,5 @@
-import { CONFIG, LEAD_CATEGORIES, LeadCategory } from '@/lib/config'
+import { CONFIG } from '@/lib/config'
+import { categoryNames, matchCategory, type SalesLists } from '@/lib/lists'
 import { parseAndValidatePhone, isUkMobile, getPhoneType, type PhoneTypeInfo } from '@/lib/contact'
 
 export type FieldKey =
@@ -102,82 +103,9 @@ export function autoMap(headers: string[]): Partial<Record<FieldKey, string>> {
   return map
 }
 
-const CATEGORY_SYNONYMS: Record<string, LeadCategory> = {
-  // Hotel
-  hotel: 'Hotel',
-  hotels: 'Hotel',
-  'boutique hotel': 'Hotel',
-  'b b': 'Hotel',
-  bnb: 'Hotel',
-  'b&b': 'Hotel',
-  guesthouse: 'Hotel',
-  'guest house': 'Hotel',
-  inn: 'Hotel',
-  'pub with rooms': 'Hotel',
-  'barge b b': 'Hotel',
-  hostel: 'Hotel',
-  resort: 'Hotel',
-  motel: 'Hotel',
-  lodging: 'Hotel',
-  accommodation: 'Hotel',
-
-  // Restaurant or cafe
-  'restaurant or cafe': 'Restaurant or cafe',
-  'restaurants and cafes': 'Restaurant or cafe',
-  'restaurants & cafes': 'Restaurant or cafe',
-  restaurant: 'Restaurant or cafe',
-  restaurants: 'Restaurant or cafe',
-  cafe: 'Restaurant or cafe',
-  cafes: 'Restaurant or cafe',
-  'coffee shop': 'Restaurant or cafe',
-  coffee: 'Restaurant or cafe',
-  'park cafe': 'Restaurant or cafe',
-  'cafe bar': 'Restaurant or cafe',
-  'tea room': 'Restaurant or cafe',
-  bistro: 'Restaurant or cafe',
-  bakery: 'Restaurant or cafe',
-  takeaway: 'Restaurant or cafe',
-  diner: 'Restaurant or cafe',
-  eatery: 'Restaurant or cafe',
-  'food & drink': 'Restaurant or cafe',
-  food: 'Restaurant or cafe',
-
-  // Pub
-  pub: 'Pub',
-  pubs: 'Pub',
-  bar: 'Pub',
-  bars: 'Pub',
-  'pub bar': 'Pub',
-  'pub / bar': 'Pub',
-  'public house': 'Pub',
-  tavern: 'Pub',
-  gastropub: 'Pub',
-
-  // Property management
-  'property management': 'Property management',
-  'property manager': 'Property management',
-  property: 'Property management',
-  properties: 'Property management',
-  airbnb: 'Property management',
-  'airbnb host': 'Property management',
-  'short let': 'Property management',
-  'short-let': 'Property management',
-  'short-let / airbnb host': 'Property management',
-  'serviced apartments': 'Property management',
-  'serviced apartment': 'Property management',
-  'co living': 'Property management',
-  aparthotel: 'Property management',
-  'estate agent': 'Property management',
-  'letting agent': 'Property management',
-  'real estate': 'Property management',
-}
-
-export function guessType(value: string): LeadCategory | null {
-  const v = (value || '').trim()
-  if (!v) return null
-  const exact = (LEAD_CATEGORIES as readonly string[]).find(t => t.toLowerCase() === v.toLowerCase())
-  if (exact) return exact as LeadCategory
-  return CATEGORY_SYNONYMS[norm(v)] ?? null
+// Category names and their known spellings come from business_categories
+export function guessType(value: string, lists: SalesLists): string | null {
+  return matchCategory(lists, value)
 }
 
 export function guessTier(value: string): string | null {
@@ -238,13 +166,13 @@ export function parseRating(v: string): { rating: string; reviews: string } {
   return m ? { rating: m[1], reviews: (m[2] || '').replace(/,/g, '') } : { rating: '', reviews: '' }
 }
 
-export function parseServices(v: string, fallback: string[]): { services: string[]; unknown: string[] } {
+export function parseServices(v: string, fallback: string[], known: string[]): { services: string[]; unknown: string[] } {
   const parts = clean(v).split(/[;,/|]/).map(s => s.trim()).filter(Boolean)
   if (!parts.length) return { services: fallback, unknown: [] }
   const services: string[] = []
   const unknown: string[] = []
   for (const p of parts) {
-    const match = CONFIG.SERVICES.find(s => s.toLowerCase() === p.toLowerCase() || norm(s) === norm(p))
+    const match = known.find(s => s.toLowerCase() === p.toLowerCase() || norm(s) === norm(p))
     if (match) services.push(match)
     else unknown.push(p)
   }
@@ -271,7 +199,8 @@ export function buildRow(
   map: Partial<Record<FieldKey, string>>,
   typeOverrides: Record<string, string>,
   defaultServices: string[],
-  idx: number
+  idx: number,
+  lists: SalesLists
 ): ImportRow {
   const get = (k: FieldKey) => (map[k] ? clean(raw[map[k]!]) : '')
   const errors: string[] = []
@@ -280,7 +209,7 @@ export function buildRow(
 
   const name = get('business_name')
   const rawType = get('business_type')
-  const type = typeOverrides[rawType] || guessType(rawType) || ''
+  const type = typeOverrides[rawType] || guessType(rawType, lists) || ''
 
   // Website & No site
   const rawNoSite = get('no_site')
@@ -295,7 +224,7 @@ export function buildRow(
   const branches = parseBranches(rawBranches)
 
   // Services
-  const svc = parseServices(get('services'), defaultServices)
+  const svc = parseServices(get('services'), defaultServices, lists.services)
 
   // Owner info
   const ownerName = get('owner_name')
@@ -362,9 +291,9 @@ export function buildRow(
   }
 
   // --- Check 2: Category (required) ---
-  if (!type || !(LEAD_CATEGORIES as readonly string[]).includes(type)) {
+  if (!type || !categoryNames(lists).includes(type)) {
     problems.push('category')
-    errors.push('Category must be Hotel, Restaurant or cafe, Pub, or Property management')
+    errors.push(`Category must be one of: ${categoryNames(lists).join(', ')}`)
   }
 
   // --- Check 3: Service (required) ---

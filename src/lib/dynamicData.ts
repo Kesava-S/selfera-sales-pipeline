@@ -1,5 +1,7 @@
+import { cache } from 'react'
 import { createServiceClient } from '@/lib/supabase/server'
-import { CONFIG, LEAD_CATEGORIES, type LeadCategory } from '@/lib/config'
+import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
+import { SUPPORTED_PLATFORMS, type SalesLists } from '@/lib/lists'
 
 export interface DynamicCategory {
   id: string
@@ -134,6 +136,31 @@ export async function getDynamicPlatforms(): Promise<DynamicPlatform[]> {
     }))
   }
 }
+
+/**
+ * Services, platforms and categories that are switched on, in order, for one
+ * request. Platforms are limited to the channels the app can send on.
+ */
+export const getSalesLists = cache(async (): Promise<SalesLists> => {
+  const [services, platforms, categories] = await Promise.all([
+    getDynamicServices(),
+    getDynamicPlatforms(),
+    getDynamicCategories(),
+  ])
+  return {
+    services: services.map(s => s.name),
+    platforms: platforms
+      .filter(p => SUPPORTED_PLATFORMS.includes(p.name))
+      .map(p => ({ name: p.name, slug: p.slug })),
+    categories: categories.map(c => ({
+      name: c.name,
+      slug: c.slug,
+      description: c.description,
+      icon_name: c.icon_name,
+      synonyms: c.synonyms || [],
+    })),
+  }
+})
 
 /**
  * Fetch a pipeline setting by key with fallback

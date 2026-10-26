@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS "sales-pipe".business_categories (
     slug text NOT NULL UNIQUE,
     icon_name text DEFAULT 'Building2',
     description text,
+    category_group text,
     synonyms text[] DEFAULT '{}'::text[],
     is_active boolean DEFAULT true,
     sort_order int DEFAULT 0,

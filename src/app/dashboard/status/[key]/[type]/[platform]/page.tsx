@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
-import { fromTypeSlug, toTypeSlug, fromPlatformSlug } from '@/lib/config'
+import { categoryFromSlug, categorySlug, platformFromSlug } from '@/lib/lists'
+import { getSalesLists } from '@/lib/dynamicData'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { StatusLeadList, type StatusListRow } from '@/components/v2/DrilldownViews'
 import { ErrorNote } from '@/components/ui'
@@ -21,10 +22,11 @@ export default async function StatusTypePlatformPage({
   // Only Needs reply has the platform sub-step
   if (key !== 'needs-reply') notFound()
 
-  const canonicalType = fromTypeSlug(type)
+  const lists = await getSalesLists()
+  const canonicalType = categoryFromSlug(lists, type)
   if (!canonicalType) notFound()
 
-  const canonicalPlatform = fromPlatformSlug(platform)
+  const canonicalPlatform = platformFromSlug(lists, platform)
   if (!canonicalPlatform) notFound()
 
   const { supabase, profile } = await requireProfile()
@@ -32,7 +34,7 @@ export default async function StatusTypePlatformPage({
 
   const page = Math.max(1, parseInt(sp.page || '1') || 1)
   const offset = (page - 1) * PAGE_SIZE
-  const typeSlug = toTypeSlug(canonicalType)
+  const typeSlug = categorySlug(lists, canonicalType)
 
   const { data, error } = await supabase.rpc('status_list', {
     p_status: 'needs-reply',

@@ -21,7 +21,6 @@ import {
   X,
   BarChart3,
 } from 'lucide-react'
-import { CONFIG } from '@/lib/config'
 import { formatDate } from '@/lib/format'
 import {
   saveEmailCampaign,
@@ -35,6 +34,7 @@ import {
 } from '@/app/dashboard/actions'
 import { Modal, useAction, ErrorNote, Spinner, toast } from '@/components/ui'
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
+import { useLists } from '@/components/ListsContext'
 
 export type DatabaseContact = {
   id?: string
@@ -88,7 +88,6 @@ export type PipelineLead = {
   business_type: string | null
 }
 
-const SERVICES = ['General', ...CONFIG.SERVICES]
 
 export function EmailCampaignsView({
   campaigns: initialCampaigns,
@@ -103,6 +102,8 @@ export function EmailCampaignsView({
   templates: EmailTemplate[]
   userEmail: string
 }) {
+  const lists = useLists()
+  const services = ['General', ...lists.services]
   const [activeTab, setActiveTab] = useState<'campaigns' | 'databases'>('campaigns')
   const [campaigns, setCampaigns] = useState<CampaignRow[]>(initialCampaigns)
   const [databases, setDatabases] = useState<EmailDatabaseRow[]>(initialDatabases)
@@ -590,7 +591,7 @@ export function EmailCampaignsView({
                     value={service}
                     onChange={e => setService(e.target.value)}
                   >
-                    {SERVICES.map(s => (
+                    {services.map(s => (
                       <option key={s} value={s}>
                         {s}
                       </option>

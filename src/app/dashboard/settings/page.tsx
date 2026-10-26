@@ -42,7 +42,7 @@ export default async function SettingsPage() {
       if (error) throw error
       data.users.forEach(u => auth.set(u.id, { email: u.email || '', invited: !u.email_confirmed_at }))
     } catch {
-      teamNote = 'Add SUPABASE_SERVICE_ROLE_KEY to the server settings to see emails and send invites.'
+      teamNote = 'Add SUPABASE_SERVICE_ROLE_KEY to the server settings to see emails.'
     }
     team = (profiles || []).map(p => ({
       id: p.id, fullName: p.full_name || '', role: p.role, capacity: p.capacity, active: p.is_active,

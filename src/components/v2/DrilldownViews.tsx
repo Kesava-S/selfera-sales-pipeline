@@ -15,17 +15,13 @@ import {
   Inbox,
   AlertCircle
 } from 'lucide-react'
-import { DRILLDOWN_TYPES, DRILLDOWN_PLATFORMS, toTypeSlug, toPlatformSlug, type LeadCategory, type DrilldownPlatform } from '@/lib/config'
+import { toPlatformSlug } from '@/lib/config'
+import { useLists } from '@/components/ListsContext'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import { formatDate, formatDateTime, formatWaiting } from '@/lib/format'
 import { assignConsultant } from '@/app/dashboard/actions'
 import { EmptyState, ErrorNote, Pagination, PlatformIcon, Spinner, useAction } from '@/components/ui'
 
-const TYPE_ICONS: Record<LeadCategory, React.ComponentType<{ size?: number; className?: string }>> = {
-  Hotel: Hotel,
-  'Restaurant or cafe': Utensils,
-  Pub: Beer,
-  'Property management': Building2,
-}
 
 // ------------------------------------------------------------------------------
 // 1. Status Type Boxes (Status > Type step)
@@ -39,6 +35,7 @@ export function StatusTypeBoxes({
   statusLabel: string
   counts: { business_type: string; count: number }[]
 }) {
+  const lists = useLists()
   const countMap = new Map(counts.map(c => [c.business_type, Number(c.count)]))
   const total = counts.reduce((acc, c) => acc + Number(c.count), 0)
 
@@ -59,27 +56,26 @@ export function StatusTypeBoxes({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {DRILLDOWN_TYPES.map(cat => {
-          const Icon = TYPE_ICONS[cat.key]
-          const count = countMap.get(cat.key) ?? 0
+        {lists.categories.map(cat => {
+          const count = countMap.get(cat.name) ?? 0
           return (
             <Link
-              key={cat.key}
+              key={cat.name}
               href={`/dashboard/status/${statusKey}/${cat.slug}`}
               className="card card-link group relative flex flex-col justify-between !p-5 transition-all hover:border-primary hover:shadow-md"
             >
               <div className="flex items-center justify-between">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors group-hover:bg-primary/10 group-hover:text-primary">
-                  <Icon size={24} />
+                  <CategoryIcon name={cat.icon_name} size={24} />
                 </div>
                 <ChevronRight size={18} className="text-slate-400 transition-colors group-hover:text-primary" />
               </div>
               <div className="mt-6">
                 <div className="text-3xl font-extrabold tracking-tight text-slate-900">{count}</div>
                 <div className="mt-1 text-sm font-bold text-slate-800 transition-colors group-hover:text-primary">
-                  {cat.label}
+                  {cat.name}
                 </div>
-                <div className="text-xs text-slate-400">{cat.desc}</div>
+                {cat.description && <div className="text-xs text-slate-400">{cat.description}</div>}
               </div>
             </Link>
           )
@@ -101,6 +97,7 @@ export function ReplyPlatformBoxes({
   typeSlug: string
   counts: { platform: string; count: number }[]
 }) {
+  const lists = useLists()
   const countMap = new Map(counts.map(c => [c.platform, Number(c.count)]))
   const total = counts.reduce((acc, c) => acc + Number(c.count), 0)
 
@@ -121,7 +118,7 @@ export function ReplyPlatformBoxes({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {DRILLDOWN_PLATFORMS.map(platform => {
+        {lists.platforms.map(({ name: platform }) => {
           const count = countMap.get(platform) ?? 0
           return (
             <Link

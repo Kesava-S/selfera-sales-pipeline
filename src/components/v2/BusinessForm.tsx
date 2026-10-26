@@ -3,12 +3,14 @@
 // Add a business (saved as "Needs review") or edit an existing one.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
+import { CONFIG } from '@/lib/config'
+import { categoryNames } from '@/lib/lists'
 import { EMAIL_RE } from '@/lib/importFields'
 import { parseAndValidatePhone } from '@/lib/contact'
 import { updateBusiness } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, Spinner, toast } from '@/components/ui'
 import { PhoneInput } from '@/components/v2/PhoneInput'
+import { useLists } from '@/components/ListsContext'
 
 export type BusinessValues = Partial<Record<
   | 'business_name' | 'business_type' | 'tier' | 'room_count' | 'area' | 'address' | 'postcode' | 'maps_link'
@@ -22,6 +24,7 @@ type Dup = { business_id: string; business_name: string; matched_by: string; ope
 export function BusinessForm({
   open, onClose, mode, businessId, initial,
 }: { open: boolean; onClose: () => void; mode: 'add' | 'edit'; businessId?: string; initial?: BusinessValues }) {
+  const lists = useLists()
   const router = useRouter()
   const [v, setV] = useState<BusinessValues>(() => ({ company_type: 'Unknown', ...(initial || {}) }))
   const [services, setServices] = useState<string[]>([])
@@ -248,11 +251,11 @@ export function BusinessForm({
                   onChange={set('business_type')}
                 >
                   <option value="">Choose category…</option>
-                  {LEAD_CATEGORIES.map(cat => (
+                  {categoryNames(lists).map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
-                  {v.business_type && !LEAD_CATEGORIES.includes(v.business_type as any) && (
-                    <option value={v.business_type as string}>{v.business_type as string}</option>
+                  {typeof v.business_type === 'string' && v.business_type && !categoryNames(lists).includes(v.business_type) && (
+                    <option value={v.business_type}>{v.business_type}</option>
                   )}
                 </select>
                 {errors.business_type && <p className="mt-1 text-xs text-red-600">{errors.business_type}</p>}
@@ -274,7 +277,7 @@ export function BusinessForm({
             {mode === 'add' && (
               <div>
                 <label className="label">Service to pitch <span className="text-red-500 font-bold ml-0.5">*</span></label>
-                <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
+                <ChipSelect options={lists.services} value={services} onChange={setServices} />
                 {errors.services && <p className="mt-1 text-xs text-red-600">{errors.services}</p>}
               </div>
             )}

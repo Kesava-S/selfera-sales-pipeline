@@ -1,7 +1,7 @@
 import { requireProfile } from '@/lib/auth'
 import { LeadsManagement } from '@/components/v2/LeadsManagement'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
-import { APPROVAL_QUEUE_TYPES } from '@/lib/config'
+import { getSalesLists } from '@/lib/dynamicData'
 
 export const dynamic = 'force-dynamic'
 const PAGE_SIZE_ALL = 25
@@ -50,7 +50,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     supabase.rpc('list_import_batches'),
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
     Promise.all(
-      APPROVAL_QUEUE_TYPES.map(async t => {
+      (await getSalesLists()).categories.map(async ({ name: t }) => {
         const { data } = await supabase.rpc('list_pitches', {
           p_type: t,
           p_limit: 1,

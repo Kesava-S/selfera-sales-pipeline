@@ -16,11 +16,12 @@ import {
   X,
   Check,
 } from 'lucide-react'
-import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
+import { categoryNames } from '@/lib/lists'
 import { formatDate } from '@/lib/format'
 import { PROBLEM_LABELS } from '@/lib/importFields'
 import { updateLeadField, updateLeadAddressAndPostcode, bulkSetField, deleteLeads } from '@/app/dashboard/actions'
 import { EmptyState, Modal, Pagination, Spinner, ButtonSpinner, toast } from '@/components/ui'
+import { useLists } from '@/components/ListsContext'
 
 export type MissingRow = {
   opportunity_id: string
@@ -186,6 +187,7 @@ export function MissingDataTab({
   pageSize?: number
   onFilterChange: (patch: { type?: string; problem?: string; batch?: string; page?: string }) => void
 }) {
+  const lists = useLists()
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [rows, setRows] = useState<MissingRow[]>(initialRows)
@@ -830,7 +832,7 @@ export function MissingDataTab({
                                     if (e.key === 'Escape') cancelEdit()
                                   }}
                                 >
-                                  {LEAD_CATEGORIES.map(c => (
+                                  {categoryNames(lists).map(c => (
                                     <option key={c} value={c}>
                                       {c}
                                     </option>
@@ -864,7 +866,7 @@ export function MissingDataTab({
                               <div>
                                 <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Services Pitched</span>
                                 <div className="flex flex-wrap gap-1">
-                                  {CONFIG.SERVICES.map(s => {
+                                  {lists.services.map(s => {
                                     const on = bulkServices.includes(s)
                                     return (
                                       <button
@@ -1360,7 +1362,7 @@ export function MissingDataTab({
             <div>
               <label className="label">Category value</label>
               <select className="input" value={bulkVal} onChange={e => setBulkVal(e.target.value)}>
-                {LEAD_CATEGORIES.map(c => (
+                {categoryNames(lists).map(c => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -1373,7 +1375,7 @@ export function MissingDataTab({
             <div>
               <label className="label">Services to pitch</label>
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {CONFIG.SERVICES.map(s => {
+                {lists.services.map(s => {
                   const on = bulkServices.includes(s)
                   return (
                     <button

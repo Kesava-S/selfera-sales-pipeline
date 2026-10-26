@@ -16,6 +16,7 @@ import { BusinessForm } from '@/components/v2/BusinessForm'
 import { readiness } from '@/components/v2/LeadsManagement'
 import type { Profile } from '@/lib/auth'
 import { BLOCK_LABEL, type EmailBlock } from '@/lib/emailBlock'
+import { useLists } from '@/components/ListsContext'
 
 type Thread = { id: string; platform: string; status: string; step: number; next_due_on: string | null; paused_reason: string | null; last_inbound_at: string | null; drafts?: { id: string; step_label: string; status: string }[] }
 type Person = { id: string; full_name: string; role: string; is_active: boolean }
@@ -358,6 +359,7 @@ function HandOverModal({ opp, onClose }: { opp: any; onClose: () => void }) {
 }
 
 function WinModal({ opp, onClose }: { opp: any; onClose: () => void }) {
+  const lists = useLists()
   const { run, pending, error } = useAction()
   const [won, setWon] = useState<string[]>(opp.services_pitched)
   const [via, setVia] = useState('')
@@ -369,7 +371,7 @@ function WinModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   return (
     <Modal open onClose={onClose} locked={pending} title="Record win">
       <label className="label">Services won</label>
-      <ChipSelect options={CONFIG.SERVICES} value={won} onChange={setWon} />
+      <ChipSelect options={lists.services} value={won} onChange={setWon} />
       {type && <p className="mt-2 text-xs text-slate-500">Pitched {pitched.join(', ')}. This is recorded as <b>{type}</b>.</p>}
       <label className="label mt-4">How was it won?</label>
       <select className="input" value={via} onChange={e => setVia(e.target.value)}>
@@ -393,13 +395,14 @@ function NoteModal({ oppId, onClose }: { oppId: string; onClose: () => void }) {
 }
 
 function PitchModal({ opp, onClose }: { opp: any; onClose: () => void }) {
+  const lists = useLists()
   const router = useRouter()
   const { run, pending, error } = useAction()
   const [services, setServices] = useState<string[]>([])
   return (
     <Modal open onClose={onClose} locked={pending} title="New pitch to this business">
       <p className="mb-3 text-sm text-slate-600">Starts a separate pitch (for example an upsell). It goes to the review queue first.</p>
-      <ChipSelect options={CONFIG.SERVICES} value={services} onChange={setServices} />
+      <ChipSelect options={lists.services} value={services} onChange={setServices} />
       <Footer
         onClose={onClose} pending={pending} disabled={!services.length} label="Create pitch" error={error}
         onConfirm={() => run(() => newPitch(opp.business_id, services, opp.id), id => { onClose(); if (id) router.push(`/dashboard/${id}`) }, { success: 'New pitch created. It is in the review queue.' })}

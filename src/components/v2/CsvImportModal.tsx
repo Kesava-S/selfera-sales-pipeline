@@ -10,7 +10,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import { Upload, Download, AlertTriangle, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
-import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
+import { useLists } from '@/components/ListsContext'
 import {
   FIELDS,
   autoMap,
@@ -30,6 +30,7 @@ type Choice = 'skip' | 'update' | 'new_pitch'
 type Match = { idx: number; business_id: string; business_name: string; matched_by: string; open_pitches: number }
 
 export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const lists = useLists()
   const router = useRouter()
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [fileName, setFileName] = useState('')
@@ -131,16 +132,16 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     const counts = new Map<string, number>()
     raw.forEach(r => {
       const v = clean(r[col])
-      if (v && !guessType(v)) counts.set(v, (counts.get(v) || 0) + 1)
+      if (v && !guessType(v, lists)) counts.set(v, (counts.get(v) || 0) + 1)
     })
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])
-  }, [raw, map.business_type])
+  }, [raw, map.business_type, lists])
 
   // ---------- Build rows (all 10 checks) ----------
   const builtRows: ImportRow[] = useMemo(() => {
     if (!raw.length) return []
-    return raw.map((r, i) => buildRow(r, map, typeOverrides, defaultServices, i))
-  }, [raw, map, typeOverrides, defaultServices])
+    return raw.map((r, i) => buildRow(r, map, typeOverrides, defaultServices, i, lists))
+  }, [raw, map, typeOverrides, defaultServices, lists])
 
   const mappingProblems = [
     !map.business_name && 'Match the "Business name" column.',
@@ -420,13 +421,13 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           {!map.services && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <label className="label mb-2">Services to pitch (applies to all rows) <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <ChipSelect options={CONFIG.SERVICES} value={defaultServices} onChange={setDefaultServices} />
+              <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
             </div>
           )}
           {map.services && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <label className="label mb-2">Services fallback (for rows where services column is empty)</label>
-              <ChipSelect options={CONFIG.SERVICES} value={defaultServices} onChange={setDefaultServices} />
+              <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
             </div>
           )}
 
@@ -448,7 +449,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                       onChange={e => setTypeOverrides(o => ({ ...o, [val]: e.target.value }))}
                     >
                       <option value="">Leave unmapped</option>
-                      {LEAD_CATEGORIES.map(t => (
+                      {lists.categories.map(({ name: t }) => (
                         <option key={t}>{t}</option>
                       ))}
                     </select>

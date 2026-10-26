@@ -8,7 +8,8 @@ import {
   Pencil, Archive, UserPlus, Layers, Hotel, Utensils, Beer, Building2, MessageCircle, Phone, PhoneOff,
 } from 'lucide-react'
 import { getPhoneType, whatsappLink } from '@/lib/contact'
-import { CONFIG, BUSINESS_TYPES, APPROVAL_QUEUE_TYPES } from '@/lib/config'
+import { CONFIG } from '@/lib/config'
+import { categoryNames, matchCategory } from '@/lib/lists'
 import { dueLabel, formatDate } from '@/lib/format'
 import { approveLeads, bulkArchive, bulkAssign, bulkServices } from '@/app/dashboard/actions'
 import { ChipSelect, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction, toast } from '@/components/ui'
@@ -16,33 +17,9 @@ import { BusinessForm } from '@/components/v2/BusinessForm'
 import { CsvImportModal } from '@/components/v2/CsvImportModal'
 import { MissingDataTab, type MissingRow, type BatchItem } from '@/components/v2/MissingDataTab'
 import { startNavigation } from '@/components/NavigationProgress'
+import { useLists } from '@/components/ListsContext'
+import { CategoryIcon } from '@/components/CategoryIcon'
 
-const LEAD_CATEGORY_CARDS = [
-  {
-    key: 'Restaurants and cafes',
-    label: 'Restaurants and cafes',
-    desc: 'Restaurants, cafes, bakeries & takeaways',
-    icon: Utensils,
-  },
-  {
-    key: 'Hotels',
-    label: 'Hotels',
-    desc: 'Hotels, boutique hotels, B&Bs & guesthouses',
-    icon: Hotel,
-  },
-  {
-    key: 'Pubs',
-    label: 'Pubs',
-    desc: 'Pubs, bars & public houses',
-    icon: Beer,
-  },
-  {
-    key: 'Property Management',
-    label: 'Property Management',
-    desc: 'Short-let hosts & serviced properties',
-    icon: Building2,
-  },
-] as const
 
 export type PitchRow = {
   opportunity_id: string
@@ -126,6 +103,7 @@ export function LeadsManagement({
   staff: Staff[]
   typeCounts?: Record<string, number>
 }) {
+  const lists = useLists()
   const router = useRouter()
   const isAdmin = role === 'admin'
   const canIntake = role === 'admin' || role === 'sales'
@@ -260,27 +238,16 @@ export function LeadsManagement({
         <>
           {tab === 'all' && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {LEAD_CATEGORY_CARDS.map(cat => {
-                const Icon = cat.icon
-                const count = typeCounts[cat.key] ?? 0
-                const active = (() => {
-                  if (!params.type || params.type === 'all') return false
-                  if (params.type === cat.key) return true
-                  const normP = params.type.toLowerCase().trim()
-                  const normK = cat.key.toLowerCase().trim()
-                  if (normP === normK) return true
-                  if (normK.startsWith('hotel') && normP.startsWith('hotel')) return true
-                  if (normK.startsWith('pub') && normP.startsWith('pub')) return true
-                  if (normK.startsWith('restaurant') && normP.startsWith('restaurant')) return true
-                  if (normK.startsWith('property') && normP.startsWith('property')) return true
-                  return false
-                })()
+              {lists.categories.map(cat => {
+                const count = typeCounts[cat.name] ?? 0
+                // Older links used plural names ("Hotels"); those still match
+                const active = !!params.type && params.type !== 'all' && matchCategory(lists, params.type) === cat.name
 
                 return (
                   <button
                     type="button"
-                    key={cat.key}
-                    onClick={() => go({ type: active ? undefined : cat.key })}
+                    key={cat.name}
+                    onClick={() => go({ type: active ? undefined : cat.name })}
                     className={`card card-link group relative flex flex-col justify-between !p-5 text-left transition-all ${
                       active
                         ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/20 shadow-sm'
@@ -291,16 +258,16 @@ export function LeadsManagement({
                       <div className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
                         active ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 group-hover:bg-primary/10 group-hover:text-primary'
                       }`}>
-                        <Icon size={24} />
+                        <CategoryIcon name={cat.icon_name} size={24} />
                       </div>
                       <ChevronRight size={18} className={`transition-transform duration-200 ${active ? 'rotate-90 text-primary' : 'text-slate-400 group-hover:text-primary'}`} />
                     </div>
                     <div className="mt-6">
                       <div className="text-3xl font-extrabold tracking-tight text-slate-900">{count}</div>
                       <div className={`mt-1 text-sm font-bold transition-colors ${active ? 'text-primary' : 'text-slate-800 group-hover:text-primary'}`}>
-                        {cat.label}
+                        {cat.name}
                       </div>
-                      <div className="text-xs text-slate-400">{cat.desc}</div>
+                      {cat.description && <div className="text-xs text-slate-400">{cat.description}</div>}
                     </div>
                   </button>
                 )
@@ -334,11 +301,11 @@ export function LeadsManagement({
             </form>
             <select className="input !w-auto" value={params.type || ''} onChange={e => go({ type: e.target.value || undefined })}>
               <option value="">All types</option>
-              {APPROVAL_QUEUE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {categoryNames(lists).map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <select className="input !w-auto" value={params.service || ''} onChange={e => go({ service: e.target.value || undefined })}>
               <option value="">All services</option>
-              {CONFIG.SERVICES.map(s => <option key={s}>{s}</option>)}
+              {lists.services.map(s => <option key={s}>{s}</option>)}
             </select>
             {tab === 'all' && (
               <>
@@ -349,7 +316,7 @@ export function LeadsManagement({
                 </select>
                 <select className="input !w-auto" value={params.platform || ''} onChange={e => go({ platform: e.target.value || undefined })}>
                   <option value="">All platforms</option>
-                  {CONFIG.PLATFORMS.map(p => <option key={p}>{p}</option>)}
+                  {lists.platforms.map(p => <option key={p.name}>{p.name}</option>)}
                 </select>
               </>
             )}
@@ -692,7 +659,7 @@ export function LeadsManagement({
       </Modal>
       <Modal open={bulk === 'services'} onClose={() => { setBulk(null); setError(null) }} locked={pending} title={`Change services for ${selected.length} pitch(es)`}>
         <div className="space-y-4">
-          <ChipSelect options={CONFIG.SERVICES} value={bulkServicesValue} onChange={setBulkServicesValue} />
+          <ChipSelect options={lists.services} value={bulkServicesValue} onChange={setBulkServicesValue} />
           <p className="text-xs text-slate-500">Replaces the services pitched. The change is kept in each pitch&apos;s history.</p>
           <ErrorNote error={error} />
           <div className="flex justify-end gap-2">

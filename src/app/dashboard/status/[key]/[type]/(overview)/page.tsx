@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
-import { STATUS_PAGES, fromTypeSlug, toTypeSlug } from '@/lib/config'
+import { STATUS_PAGES } from '@/lib/config'
+import { categoryFromSlug, categorySlug } from '@/lib/lists'
+import { getSalesLists } from '@/lib/dynamicData'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { ReplyPlatformBoxes, StatusLeadList, type StatusListRow } from '@/components/v2/DrilldownViews'
 import { ErrorNote } from '@/components/ui'
@@ -20,14 +22,15 @@ export default async function StatusTypePage({
   const def = STATUS_PAGES[key]
   if (!def || key === 'unmatched-bookings') notFound()
 
-  const canonicalType = fromTypeSlug(type)
+  const lists = await getSalesLists()
+  const canonicalType = categoryFromSlug(lists, type)
   if (!canonicalType) notFound()
 
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
   if (def.adminOnly && profile.role !== 'admin') notFound()
 
-  const typeSlug = toTypeSlug(canonicalType)
+  const typeSlug = categorySlug(lists, canonicalType)
 
   // Needs reply flow: status > type > platform boxes with counts
   if (key === 'needs-reply') {
