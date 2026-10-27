@@ -1,4 +1,5 @@
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Role } from '@/lib/config'
@@ -24,6 +25,36 @@ export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): 
   return 'Sales Representative'
 }
 
+const getCachedCompanyRole = unstable_cache(
+  async (userId: string, email: string): Promise<string | null> => {
+    try {
+      const service = createServiceClient()
+      const { data: emp } = await service
+        .schema('hr')
+        .from('employees')
+        .select('role_id')
+        .or(`auth_user_id.eq.${userId},email.ilike.${email || ''}`)
+        .maybeSingle()
+
+      if (emp?.role_id) {
+        const { data: roleRow } = await service
+          .schema('public')
+          .from('roles')
+          .select('name')
+          .eq('id', emp.role_id)
+          .maybeSingle()
+        return roleRow?.name ?? null
+      }
+      return null
+    } catch (err) {
+      console.warn('[getCachedCompanyRole] Could not fetch company role:', err)
+      return null
+    }
+  },
+  ['user-company-role'],
+  { revalidate: 300 }
+)
+
 export const requireProfile = cache(async () => {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -47,29 +78,7 @@ export const requireProfile = cache(async () => {
     redirect('/login?error=' + encodeURIComponent('Your account is not active. Please contact an administrator.'))
   }
 
-  let companyRole: string | null = null
-  try {
-    const service = createServiceClient()
-    const { data: emp } = await service
-      .schema('hr')
-      .from('employees')
-      .select('role_id')
-      .or(`auth_user_id.eq.${user.id},email.ilike.${user.email || ''}`)
-      .maybeSingle()
-
-    if (emp?.role_id) {
-      const { data: roleRow } = await service
-        .schema('public')
-        .from('roles')
-        .select('name')
-        .eq('id', emp.role_id)
-        .maybeSingle()
-      companyRole = roleRow?.name ?? null
-    }
-  } catch (err) {
-    console.warn('[requireProfile] Could not fetch company role:', err)
-  }
-
+  const companyRole = await getCachedCompanyRole(user.id, user.email || '')
   const display_role = formatRoleTitle(companyRole, profile.role)
 
   return {

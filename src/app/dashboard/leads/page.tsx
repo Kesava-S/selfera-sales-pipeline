@@ -1,4 +1,4 @@
-import { requireProfile } from '@/lib/auth'
+import { requireProfile, getDashboardStatusCounts } from '@/lib/auth'
 import { LeadsManagement } from '@/components/v2/LeadsManagement'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { getSalesLists } from '@/lib/dynamicData'
@@ -29,17 +29,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   const tab = sp.tab === 'missing' ? 'missing' : sp.tab === 'review' ? 'review' : 'all'
   const page = Math.max(1, parseInt(sp.page || '1') || 1)
 
-  // Fetch batches & counts in parallel
+  // Fetch batches & counts in parallel — only query what's needed for the active tab
   const [
-    { data: reviewCountRows },
-    { data: overallMissingData },
-    { data: filteredMissingData },
-    { data: batches },
+    statusCounts,
+    overallMissingResult,
+    filteredMissingResult,
+    batchesResult,
     { data: staff },
     typeCounts,
   ] = await Promise.all([
-    supabase.rpc('list_pitches', { p_filter: 'Needs review', p_limit: 1 }),
-    supabase.rpc('missing_counts', { p_type: null, p_problem: null, p_batch: null }),
+    getDashboardStatusCounts(supabase, profile.id),
+    tab === 'missing'
+      ? supabase.rpc('missing_counts', { p_type: null, p_problem: null, p_batch: null })
+      : Promise.resolve({ data: null }),
     tab === 'missing'
       ? supabase.rpc('missing_counts', {
           p_type: sp.type === 'all' ? null : sp.type || null,
@@ -47,21 +49,31 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           p_batch: sp.batch || null,
         })
       : Promise.resolve({ data: null }),
-    supabase.rpc('list_import_batches'),
+    tab === 'missing'
+      ? supabase.rpc('list_import_batches')
+      : Promise.resolve({ data: [] }),
     supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
-    Promise.all(
-      (await getSalesLists()).categories.map(async ({ name: t }) => {
-        const { data } = await supabase.rpc('list_pitches', {
-          p_type: t,
-          p_limit: 1,
-        })
-        return {
-          type: t,
-          count: Number(data?.[0]?.total_count ?? 0),
-        }
-      })
-    ),
+    tab === 'all'
+      ? (async () => {
+          const lists = await getSalesLists()
+          const { data } = await supabase
+            .from('opportunities')
+            .select('businesses!inner(business_type, archived)')
+            .neq('stage', 'Needs review')
+            .eq('businesses.archived', false)
+          const counts: Record<string, number> = {}
+          data?.forEach((r: any) => {
+            const bt = r.businesses?.business_type
+            if (bt) counts[bt] = (counts[bt] || 0) + 1
+          })
+          return lists.categories.map(c => ({ type: c.name, count: counts[c.name] ?? 0 }))
+        })()
+      : Promise.resolve([]),
   ])
+
+  const overallMissingData = overallMissingResult.data
+  const filteredMissingData = filteredMissingResult.data
+  const batches = batchesResult.data || []
 
   let rows: any[] = []
   let missingRows: any[] = []
@@ -97,7 +109,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   }
 
   const typeCountsMap = Object.fromEntries(typeCounts.map(tc => [tc.type, tc.count]))
-  const reviewCount = Number(reviewCountRows?.[0]?.total_count ?? 0)
+  const reviewCount = Number(statusCounts?.data?.[0]?.needs_review ?? 0)
   const missingCount = Number(overallMissingData?.total ?? 0)
 
   const crumbs = [

@@ -1,4 +1,5 @@
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { createServiceClient } from '@/lib/supabase/server'
 import { CONFIG, LEAD_CATEGORIES } from '@/lib/config'
 import { SUPPORTED_PLATFORMS, type SalesLists } from '@/lib/lists'
@@ -138,10 +139,10 @@ export async function getDynamicPlatforms(): Promise<DynamicPlatform[]> {
 }
 
 /**
- * Services, platforms and categories that are switched on, in order, for one
- * request. Platforms are limited to the channels the app can send on.
+ * Services, platforms and categories that are switched on, in order.
+ * Cached across requests for 5 minutes with fallback to static defaults.
  */
-export const getSalesLists = cache(async (): Promise<SalesLists> => {
+const fetchSalesLists = async (): Promise<SalesLists> => {
   const [services, platforms, categories] = await Promise.all([
     getDynamicServices(),
     getDynamicPlatforms(),
@@ -160,12 +161,15 @@ export const getSalesLists = cache(async (): Promise<SalesLists> => {
       synonyms: c.synonyms || [],
     })),
   }
-})
+}
 
-/**
- * Fetch a pipeline setting by key with fallback
- */
-export async function getPipelineSetting<T>(key: string, fallback: T): Promise<T> {
+export const getSalesLists = unstable_cache(
+  fetchSalesLists,
+  ['sales-lists'],
+  { revalidate: 300, tags: ['sales-lists'] }
+)
+
+const fetchPipelineSetting = async (key: string): Promise<any> => {
   try {
     const supabase = createServiceClient()
     const { data, error } = await supabase
@@ -175,9 +179,23 @@ export async function getPipelineSetting<T>(key: string, fallback: T): Promise<T
       .eq('key', key)
       .maybeSingle()
 
-    if (error || !data) return fallback
-    return data.value as T
+    if (error || !data) return null
+    return data.value
   } catch {
-    return fallback
+    return null
   }
+}
+
+const getCachedSetting = unstable_cache(
+  fetchPipelineSetting,
+  ['pipeline-setting'],
+  { revalidate: 300 }
+)
+
+/**
+ * Fetch a pipeline setting by key with fallback (cached for 5 minutes)
+ */
+export async function getPipelineSetting<T>(key: string, fallback: T): Promise<T> {
+  const val = await getCachedSetting(key)
+  return val !== null && val !== undefined ? (val as T) : fallback
 }
