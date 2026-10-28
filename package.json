@@ -15,6 +15,7 @@
     "@types/pg": "^8.23.1",
     "date-fns": "^4.4.0",
     "imapflow": "^2.2.1",
+    "libphonenumber-js": "^1.12.40",
     "lucide-react": "^1.48.0",
     "mailparser": "^3.9.33",
     "next": "16.3.6",

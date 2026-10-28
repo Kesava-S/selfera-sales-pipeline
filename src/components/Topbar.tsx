@@ -39,11 +39,27 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
           <Menu size={20} />
         </button>
         {pathname !== '/dashboard' && (
-          <button onClick={() => router.back()} className="btn btn-secondary btn-sm hidden sm:inline-flex" aria-label="Back">
+          <button onClick={() => router.back()} className="btn btn-secondary btn-sm hidden min-[901px]:inline-flex" aria-label="Back">
             <ArrowLeft size={15} /> Back
           </button>
         )}
-        <nav className="flex min-w-0 items-center gap-1 overflow-x-auto text-sm" aria-label="Breadcrumb">
+
+        {/* Brand Logo and Name in Responsive Mode */}
+        <Link href="/dashboard" className="flex items-center gap-2 min-[901px]:hidden">
+          <div className="h-7 w-7 flex items-center justify-center shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Selfera" className="h-full w-full object-contain" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-base font-extrabold leading-tight tracking-tight text-slate-900">
+              Selfera<span className="text-primary">.</span>
+            </span>
+            <span className="text-[10px] font-semibold text-slate-500 -mt-0.5">Sales Pipeline</span>
+          </div>
+        </Link>
+
+        {/* Location path / Breadcrumbs in Desktop Mode */}
+        <nav className="hidden min-[901px]:flex min-w-0 items-center gap-1 overflow-x-auto text-sm" aria-label="Breadcrumb">
           {loadingPage ? (
             <span aria-hidden="true" className="skeleton h-7 w-40" />
           ) : (breadcrumbs.length ? breadcrumbs : [{ label: 'Dashboard' }]).map((c, i, arr) => (

@@ -16,32 +16,19 @@ export default async function WhatsAppCampaignsPage() {
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
 
-  // 1. Fetch WhatsApp campaigns
-  const { data: campaignRows, error: campaignError } = await supabase
-    .from('whatsapp_campaigns')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  // 2. Fetch custom WhatsApp databases
-  const { data: databaseRows, error: databaseError } = await supabase
-    .from('whatsapp_databases')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  // 3. Fetch all pipeline businesses with WhatsApp / phone numbers
-  const { data: leadRows, error: leadsError } = await supabase
-    .from('businesses')
-    .select('id, business_name, contact_name, whatsapp_number, category, business_type')
-    .not('whatsapp_number', 'is', null)
-    .neq('whatsapp_number', '')
-    .order('business_name')
-
-  // 4. Fetch WhatsApp templates
-  const { data: templateRows } = await supabase
-    .from('templates')
-    .select('id, name, body, whatsapp_template_name')
-    .in('platform', ['WhatsApp', 'All'])
-    .order('name')
+  // Campaigns, databases, businesses with a WhatsApp number (for building databases)
+  // and templates, all fetched at once
+  const [
+    { data: campaignRows, error: campaignError },
+    { data: databaseRows, error: databaseError },
+    { data: leadRows, error: leadsError },
+    { data: templateRows },
+  ] = await Promise.all([
+    supabase.from('whatsapp_campaigns').select('*').is('audience_business_id', null).order('created_at', { ascending: false }),
+    supabase.from('whatsapp_databases').select('*').order('created_at', { ascending: false }),
+    supabase.from('businesses').select('id, business_name, contact_name, whatsapp_number, category, business_type').not('whatsapp_number', 'is', null).neq('whatsapp_number', '').order('business_name'),
+    supabase.from('templates').select('id, name, body, whatsapp_template_name').in('platform', ['WhatsApp', 'All']).order('name'),
+  ])
 
   const parsedCampaigns: WhatsAppCampaignRow[] = (campaignRows || []).map((c: any) => ({
     ...c,

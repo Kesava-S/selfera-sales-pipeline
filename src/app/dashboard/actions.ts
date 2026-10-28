@@ -56,6 +56,11 @@ export async function changeStage(opportunityId: string, stage: string, reason: 
   return rpc('set_stage', { p_opportunity_id: opportunityId, p_stage: stage, p_reason: reason || null, p_user_id: await currentUserId() })
 }
 
+// A closed lead replied, and staff decided not to reopen it
+export async function dismissLateReply(opportunityId: string) {
+  return rpc('dismiss_late_reply', { p_opportunity_id: opportunityId })
+}
+
 export async function handOver(opportunityId: string, consultationAtIso: string) {
   if (!consultationAtIso) return { ok: false, error: 'Pick the consultation date and time.' } as ActionResult
   return rpc('hand_over', { p_opportunity_id: opportunityId, p_consultation_at: consultationAtIso, p_user_id: await currentUserId() })
@@ -269,12 +274,6 @@ export async function setCadence(stepName: string, days: number) {
 
 // Admin only (checked in the database). Who is on the team, their role and
 // whether they can log in are set in the Admin Panel's Access page.
-export async function setMemberCapacity(id: string, capacity: number | null): Promise<ActionResult> {
-  const res = await rpc<undefined>('set_member_capacity', { p_id: id, p_capacity: capacity })
-  if (res.ok) revalidatePath('/dashboard/settings')
-  return res
-}
-
 export async function markNotificationsRead(ids: string[] | 'all') {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

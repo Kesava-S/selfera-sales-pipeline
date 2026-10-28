@@ -4,7 +4,7 @@ import { Topbar } from '@/components/Topbar'
 import { NavigationProgress } from '@/components/NavigationProgress'
 import { BreadcrumbProvider } from '@/components/BreadcrumbContext'
 import { AccountNotSetup } from '@/components/v2/AccountNotSetup'
-import { requireProfile, getDashboardStatusCounts } from '@/lib/auth'
+import { requireProfile, requireUser, getDashboardStatusCounts } from '@/lib/auth'
 import { getSalesLists } from '@/lib/dynamicData'
 import { ListsProvider } from '@/components/ListsContext'
 
@@ -15,13 +15,14 @@ export const metadata: Metadata = {
 }
 
 export default async function DashboardLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const { supabase, user, profile } = await requireProfile()
-  if (!profile) return <AccountNotSetup />
-
-  const [{ data: counts }, lists] = await Promise.all([
+  // Who is signed in comes from the token; the profile, counts and lists then load together
+  const { supabase, user } = await requireUser()
+  const [{ profile }, { data: counts }, lists] = await Promise.all([
+    requireProfile(),
     getDashboardStatusCounts(supabase, user.id),
     getSalesLists(),
   ])
+  if (!profile) return <AccountNotSetup />
   const reviewCount = Number(counts?.[0]?.needs_review ?? 0)
 
   return (

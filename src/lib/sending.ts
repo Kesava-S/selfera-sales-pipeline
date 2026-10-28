@@ -33,6 +33,10 @@ export function getSendRule(opts: {
     return { mode: 'blocked', windowOpen: false, reason: 'This business asked not to be contacted.' }
   }
 
+  if (stage === 'Went cold' || stage === 'No response' || stage === 'Declined') {
+    return { mode: 'blocked', windowOpen: false, reason: `This lead is closed (${stage}). Reopen it from the lead page to send.` }
+  }
+
   const connected = apiPlatforms.includes(platform)
   const hours = hoursSince(lastInboundAt)
 

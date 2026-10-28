@@ -28,7 +28,10 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  let { data: { user } } = await supabase.auth.getUser()
+  // Checks the login token locally against the project's public signing key (no call
+  // to Supabase Auth on every page) and refreshes it when it has expired
+  const { data: claimsData } = await supabase.auth.getClaims()
+  let user: { id: string } | null = claimsData?.claims?.sub ? { id: claimsData.claims.sub } : null
 
   const pathname = request.nextUrl.pathname
 
@@ -39,7 +42,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/email/webhook') ||
     // Campaign queue worker: checks the cron secret or a staff session itself
     pathname.startsWith('/api/campaigns/process') ||
-    // Leads unsubscribing from the link in our emails: the link is signed
+    // Leads opting out from the link in our emails: the link is signed
+    // (/unsubscribe is the old address, still in emails already sent)
+    pathname.startsWith('/opt-out') ||
+    pathname.startsWith('/api/opt-out') ||
     pathname.startsWith('/unsubscribe') ||
     pathname.startsWith('/api/unsubscribe') ||
     pathname.startsWith('/_next') ||

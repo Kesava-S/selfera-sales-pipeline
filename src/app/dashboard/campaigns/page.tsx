@@ -15,32 +15,19 @@ export default async function CampaignsPage() {
   const { supabase, profile, user } = await requireProfile()
   if (!profile) return null
 
-  // 1. Fetch campaigns
-  const { data: campaignRows, error: campaignError } = await supabase
-    .from('email_campaigns')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  // 2. Fetch custom email databases
-  const { data: databaseRows, error: databaseError } = await supabase
-    .from('email_databases')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  // 3. Fetch all pipeline businesses with email (for populating databases)
-  const { data: leadRows, error: leadsError } = await supabase
-    .from('businesses')
-    .select('id, business_name, contact_name, email, category, business_type')
-    .not('email', 'is', null)
-    .neq('email', '')
-    .order('business_name')
-
-  // 4. Fetch email templates
-  const { data: templateRows } = await supabase
-    .from('templates')
-    .select('id, name, subject, body, step')
-    .in('platform', ['Email', 'All'])
-    .order('name')
+  // Campaigns, databases, businesses with an email (for building databases) and
+  // templates, all fetched at once
+  const [
+    { data: campaignRows, error: campaignError },
+    { data: databaseRows, error: databaseError },
+    { data: leadRows, error: leadsError },
+    { data: templateRows },
+  ] = await Promise.all([
+    supabase.from('email_campaigns').select('*').is('audience_business_id', null).order('created_at', { ascending: false }),
+    supabase.from('email_databases').select('*').order('created_at', { ascending: false }),
+    supabase.from('businesses').select('id, business_name, contact_name, email, category, business_type').not('email', 'is', null).neq('email', '').order('business_name'),
+    supabase.from('templates').select('id, name, subject, body, step').in('platform', ['Email', 'All']).order('name'),
+  ])
 
   const parsedCampaigns: CampaignRow[] = (campaignRows || []).map((c: any) => ({
     ...c,

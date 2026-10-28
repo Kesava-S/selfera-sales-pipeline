@@ -34,6 +34,7 @@ import {
 } from '@/app/dashboard/actions'
 import { Modal, useAction, ErrorNote, Spinner, toast } from '@/components/ui'
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
+import { RepliesLink } from '@/components/v2/CampaignReplies'
 import { useLists } from '@/components/ListsContext'
 
 export type DatabaseContact = {
@@ -498,6 +499,7 @@ export function EmailCampaignsView({
 
         {/* View Switcher / New Action */}
         <div className="flex items-center gap-2">
+          <RepliesLink channel="email" />
           {!isCreatingCampaign && (
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
               <button

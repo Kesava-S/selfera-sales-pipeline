@@ -12,6 +12,7 @@ export type Profile = {
   is_active: boolean
   company_role?: string | null
   display_role?: string
+  email?: string
 }
 
 export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): string {
@@ -55,19 +56,29 @@ const getCachedCompanyRole = unstable_cache(
   { revalidate: 300 }
 )
 
-export const requireProfile = cache(async () => {
+// The signed-in person, from the login token. The token is checked locally against the
+// project's public signing key, so this costs no call to Supabase Auth.
+export const requireUser = cache(async () => {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+  if (!claims?.sub) {
     redirect('/login')
   }
+  return { supabase, user: { id: claims.sub, email: typeof claims.email === 'string' ? claims.email : undefined } }
+})
 
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, capacity, is_active')
-    .eq('id', user.id)
-    .maybeSingle()
+export const requireProfile = cache(async () => {
+  const { supabase, user } = await requireUser()
+
+  const [{ data: profile, error }, companyRole] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, full_name, role, capacity, is_active')
+      .eq('id', user.id)
+      .maybeSingle(),
+    getCachedCompanyRole(user.id, user.email || ''),
+  ])
 
   if (error) {
     console.error('[requireProfile] Profile fetch error:', error)
@@ -78,7 +89,6 @@ export const requireProfile = cache(async () => {
     redirect('/login?error=' + encodeURIComponent('Your account is not active. Please contact an administrator.'))
   }
 
-  const companyRole = await getCachedCompanyRole(user.id, user.email || '')
   const display_role = formatRoleTitle(companyRole, profile.role)
 
   return {
@@ -86,6 +96,7 @@ export const requireProfile = cache(async () => {
     user,
     profile: {
       ...profile,
+      email: user.email,
       company_role: companyRole,
       display_role,
     } as Profile,

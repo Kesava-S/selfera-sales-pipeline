@@ -24,3 +24,21 @@ export async function isEmailOptedOut(email: string): Promise<boolean> {
     .from('opt_outs').select('id').ilike('identifier', exactLike(email)).in('channel', ['All', 'Email', 'all', 'email']).limit(1)
   return Boolean(data?.length)
 }
+
+// ---------- Client Audience emails: opting out of one client only ----------
+
+export async function recordAudienceOptOut(customerId: string, email: string): Promise<{ ok: boolean; client?: string }> {
+  const { data, error } = await createServiceClient().rpc('record_audience_opt_out', { p_customer_id: customerId, p_email: email })
+  if (error) {
+    console.error('[OptOut] record_audience_opt_out error:', error.message)
+    return { ok: false }
+  }
+  return { ok: true, client: (data as { client?: string } | null)?.client }
+}
+
+// The client's name and whether this customer has already opted out (null for a stale link)
+export async function audienceOptOutStatus(customerId: string, email: string): Promise<{ client: string; optedOut: boolean } | null> {
+  const { data } = await createServiceClient().rpc('audience_opt_out_status', { p_customer_id: customerId, p_email: email })
+  const d = data as { client?: string; opted_out?: boolean } | null
+  return d?.client ? { client: d.client, optedOut: !!d.opted_out } : null
+}

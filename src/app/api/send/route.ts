@@ -35,6 +35,8 @@ export async function POST(request: Request) {
   const opp: any = thread.opportunities
   const b: any = opp?.businesses
 
+  if (opp?.stage === 'Needs review') return NextResponse.json({ error: 'Approve this lead first. Outreach starts from the Approval queue.' }, { status: 422 })
+
   const webhook = process.env.N8N_WEBHOOK_URL
   const apiPlatforms = parseApiPlatforms(process.env.SEND_API_PLATFORMS)
   let templateName: string | null = null
@@ -62,8 +64,8 @@ export async function POST(request: Request) {
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
 
-  // Leads who unsubscribed (or bounced, or reported spam) are not emailed again,
-  // except one answer each time an unsubscribed lead writes to us
+  // Leads who opted out (or bounced, or reported spam) are not emailed again,
+  // except one answer each time a lead who opted out writes to us
   if (thread.platform === 'Email') {
     const blocked = await emailSendBlocked(supabase, thread.id, String(to), thread.last_inbound_at)
     if (blocked) return NextResponse.json({ error: blocked }, { status: 422 })

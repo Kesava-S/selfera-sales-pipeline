@@ -33,6 +33,7 @@ import { MissingDataTab, type MissingRow, type BatchItem } from '@/components/v2
 import { startNavigation } from '@/components/NavigationProgress'
 import { useLists } from '@/components/ListsContext'
 import { CategoryIcon } from '@/components/CategoryIcon'
+import { ColumnPicker, useColumns, type ColumnDef } from '@/components/ColumnPicker'
 
 
 export type PitchRow = {
@@ -74,6 +75,19 @@ export type PitchRow = {
 
 type Staff = { id: string; full_name: string; role: string }
 
+// All tab: the key columns show by default; the rest can be ticked on
+const LEAD_COLUMNS: ColumnDef[] = [
+  { key: 'stage', label: 'Stage', default: true },
+  { key: 'platforms', label: 'Platforms reached', default: true },
+  { key: 'due', label: 'Next due', default: true },
+  { key: 'services', label: 'Services' },
+  { key: 'assigned', label: 'Assigned to' },
+  { key: 'area', label: 'Area' },
+  { key: 'email', label: 'Email' },
+  { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'added', label: 'Added' },
+]
+
 export function readiness(r: PitchRow): string | null {
   if (!r.business_name) return 'Add business name'
   if (!r.business_type) return 'Add category'
@@ -91,6 +105,7 @@ export function LeadsManagement({
   importBatches = [],
   loadError,
   total,
+  allCount,
   reviewCount,
   missingCount = 0,
   page,
@@ -99,6 +114,8 @@ export function LeadsManagement({
   role,
   staff,
   typeCounts = {},
+  unassignedOpen = 0,
+  lateReplies = [],
 }: {
   tab: 'all' | 'review' | 'missing'
   rows: PitchRow[]
@@ -108,6 +125,7 @@ export function LeadsManagement({
   importBatches?: BatchItem[]
   loadError: string | null
   total: number
+  allCount?: number
   reviewCount: number
   missingCount?: number
   page: number
@@ -116,6 +134,8 @@ export function LeadsManagement({
   role: string
   staff: Staff[]
   typeCounts?: Record<string, number>
+  unassignedOpen?: number
+  lateReplies?: string[]
 }) {
   const lists = useLists()
   const router = useRouter()
@@ -123,7 +143,7 @@ export function LeadsManagement({
   const canIntake = role === 'admin' || role === 'sales'
   const [selected, setSelected] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [moreCols, setMoreCols] = useState(false)
+  const cols = useColumns('leads-all-columns', LEAD_COLUMNS)
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editRow, setEditRow] = useState<PitchRow | null>(null)
@@ -183,10 +203,17 @@ export function LeadsManagement({
         )}
       </div>
 
+      {tab === 'all' && unassignedOpen > 0 && !(params.assigned === 'unassigned' && params.stage === 'open') && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="flex items-center gap-2"><AlertTriangle size={15} /> {unassignedOpen} approved {unassignedOpen === 1 ? 'lead has' : 'leads have'} no sales person, so nobody is following {unassignedOpen === 1 ? 'it' : 'them'} up.</span>
+          <button className="btn btn-secondary btn-sm" onClick={() => go({ assigned: 'unassigned', stage: 'open', page: undefined })}>Show them</button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200">
         {[
-          { key: 'all', label: 'All', count: undefined },
+          { key: 'all', label: 'All', count: allCount },
           { key: 'review', label: 'Approval queue', count: reviewCount },
           { key: 'missing', label: 'Missing data', count: missingCount },
         ].map(t => (
@@ -211,12 +238,20 @@ export function LeadsManagement({
             }`}
           >
             {t.label}
-            {typeof t.count === 'number' && t.count > 0 && (
+            {typeof t.count === 'number' && (
               <span
-                className={`rounded-full px-2 text-xs font-bold ${
+                className={`rounded-full px-2 py-0.5 text-xs font-bold transition-colors ${
                   t.key === 'missing'
-                    ? 'bg-rose-100 text-rose-800'
-                    : 'bg-amber-100 text-amber-800'
+                    ? t.count > 0
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-slate-100 text-slate-500'
+                    : t.key === 'review'
+                    ? t.count > 0
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-500'
+                    : tab === 'all'
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-slate-100 text-slate-600'
                 }`}
               >
                 {t.count}
@@ -326,6 +361,7 @@ export function LeadsManagement({
                 <select className="input !w-auto" value={params.stage || ''} onChange={e => go({ stage: e.target.value || undefined })}>
                   <option value="">All stages</option>
                   <option value="needs-reply">Needs reply</option>
+                  <option value="open">Open (Active, Interested, Consultation)</option>
                   {CONFIG.STAGES.map(s => <option key={s}>{s}</option>)}
                 </select>
                 <select className="input !w-auto" value={params.platform || ''} onChange={e => go({ platform: e.target.value || undefined })}>
@@ -410,11 +446,7 @@ export function LeadsManagement({
         <>
           <div className="flex items-center justify-between text-sm text-slate-500">
             <span>{total.toLocaleString('en-GB')} {tab === 'review' ? 'waiting for review' : 'pitches'}</span>
-            {tab === 'all' && (
-              <label className="flex items-center gap-1.5">
-                <input type="checkbox" checked={moreCols} onChange={e => setMoreCols(e.target.checked)} /> Show more columns
-              </label>
-            )}
+            {tab === 'all' && <ColumnPicker columns={LEAD_COLUMNS} state={cols} />}
           </div>
           <div className="table-wrap">
             <table className="table">
@@ -437,9 +469,15 @@ export function LeadsManagement({
                     </>
                   ) : (
                     <>
-                      <th>Platforms reached</th>
-                      <th>Next due</th>
-                      {moreCols && <><th>Stage</th><th>Services</th><th>Assigned to</th><th>Area</th></>}
+                      {cols.has('stage') && <th>Stage</th>}
+                      {cols.has('platforms') && <th>Platforms reached</th>}
+                      {cols.has('due') && <th>Next due</th>}
+                      {cols.has('services') && <th>Services</th>}
+                      {cols.has('assigned') && <th>Assigned to</th>}
+                      {cols.has('area') && <th>Area</th>}
+                      {cols.has('email') && <th>Email</th>}
+                      {cols.has('whatsapp') && <th>WhatsApp</th>}
+                      {cols.has('added') && <th>Added</th>}
                     </>
                   )}
                 </tr>
@@ -473,6 +511,8 @@ export function LeadsManagement({
                             ) : null}
                             {r.needs_reply && <span className="ml-2 font-semibold text-emerald-700">Needs reply</span>}
                             {r.archived && <span className="ml-2 font-semibold text-slate-500">Archived</span>}
+                            {!r.assigned_sales_name && (r.stage === 'Active' || r.stage === 'Interested') && <span className="ml-2 font-semibold text-amber-700">Not assigned</span>}
+                            {lateReplies.includes(r.opportunity_id) && <span className="ml-2 font-semibold text-sky-700">Replied after closing</span>}
                           </div>
                         </td>
                         {tab === 'review' ? (
@@ -528,21 +568,20 @@ export function LeadsManagement({
                           </>
                         ) : (
                           <>
-                            <td>
+                            {cols.has('stage') && <td><StageBadge stage={r.stage} /></td>}
+                            {cols.has('platforms') && <td>
                               <div className="flex flex-wrap gap-1.5">
                                 {r.threads.length ? r.threads.map(t => <PlatformStatus key={t.platform} platform={t.platform} status={t.status} step={t.step} />)
                                   : <span className="text-xs text-slate-400">{r.stage === 'Needs review' ? 'Waiting for review' : 'Not started'}</span>}
                               </div>
-                            </td>
-                            <td className={`whitespace-nowrap text-sm ${due.tone === 'overdue' ? 'font-semibold text-red-600' : due.tone === 'today' ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>{due.text}</td>
-                            {moreCols && (
-                              <>
-                                <td><StageBadge stage={r.stage} /></td>
-                                <td>{r.services_pitched.join(', ')}</td>
-                                <td className="text-sm">{r.assigned_sales_name || <span className="text-slate-400">Unassigned</span>}</td>
-                                <td className="text-sm">{r.area || '-'}</td>
-                              </>
-                            )}
+                            </td>}
+                            {cols.has('due') && <td className={`whitespace-nowrap text-sm ${due.tone === 'overdue' ? 'font-semibold text-red-600' : due.tone === 'today' ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>{due.text}</td>}
+                            {cols.has('services') && <td>{r.services_pitched.join(', ')}</td>}
+                            {cols.has('assigned') && <td className="text-sm">{r.assigned_sales_name || <Unassigned stage={r.stage} />}</td>}
+                            {cols.has('area') && <td className="text-sm">{r.area || '-'}</td>}
+                            {cols.has('email') && <td className="max-w-56 truncate text-sm">{r.email || '-'}</td>}
+                            {cols.has('whatsapp') && <td className="whitespace-nowrap text-sm">{r.whatsapp_number || '-'}</td>}
+                            {cols.has('added') && <td className="whitespace-nowrap text-sm text-slate-500">{formatDate(r.created_at)}</td>}
                           </>
                         )}
                       </tr>
@@ -553,7 +592,7 @@ export function LeadsManagement({
                               <Detail label="Stage"><StageBadge stage={r.stage} /></Detail>
                               <Detail label="Services pitched">{r.services_pitched.join(', ')}</Detail>
                               {r.services_won?.length ? <Detail label="Services won">{r.services_won.join(', ')}</Detail> : null}
-                              <Detail label="Assigned to">{r.assigned_sales_name || 'Unassigned'}{r.assigned_consultant_name ? ` (consultant: ${r.assigned_consultant_name})` : ''}</Detail>
+                              <Detail label="Assigned to">{r.assigned_sales_name || <Unassigned stage={r.stage} />}{r.assigned_consultant_name ? ` (consultant: ${r.assigned_consultant_name})` : ''}</Detail>
                               <Detail label="Area">{[r.area, r.postcode].filter(Boolean).join(', ') || '-'}</Detail>
                               <Detail label="Website">{r.existing_website ? <a href={r.existing_website} target="_blank" rel="noreferrer" className="text-primary hover:text-primary-hover">{r.existing_website}</a> : r.has_no_website ? 'Marked as no website' : '-'}</Detail>
                               <Detail label="Phone / WhatsApp">
@@ -706,4 +745,11 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
       <div>{children}</div>
     </div>
   )
+}
+
+// An approved pitch with nobody on it stands out; one still waiting for review doesn't
+function Unassigned({ stage }: { stage: string }) {
+  return stage === 'Active' || stage === 'Interested'
+    ? <span className="badge !border-amber-200 !bg-amber-50 !text-amber-700">Not assigned</span>
+    : <span className="text-slate-400">Unassigned</span>
 }

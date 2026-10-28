@@ -37,11 +37,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     batchesResult,
     { data: staff },
     typeCounts,
+    { count: unassignedOpen },
+    { data: lateReplyRows },
   ] = await Promise.all([
     getDashboardStatusCounts(supabase, profile.id),
-    tab === 'missing'
-      ? supabase.rpc('missing_counts', { p_type: null, p_problem: null, p_batch: null })
-      : Promise.resolve({ data: null }),
+    supabase.rpc('missing_counts', { p_type: null, p_problem: null, p_batch: null }),
     tab === 'missing'
       ? supabase.rpc('missing_counts', {
           p_type: sp.type === 'all' ? null : sp.type || null,
@@ -69,6 +69,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           return lists.categories.map(c => ({ type: c.name, count: counts[c.name] ?? 0 }))
         })()
       : Promise.resolve([]),
+    // Approved pitches nobody is working on (admins see a warning)
+    tab === 'all' && profile.role === 'admin'
+      ? supabase.from('opportunities').select('id', { count: 'exact', head: true }).in('stage', ['Active', 'Interested']).is('assigned_sales_id', null)
+      : Promise.resolve({ count: 0 }),
+    // Closed leads that wrote back (a short list), fetched alongside rather than after the page
+    tab === 'all'
+      ? supabase.from('opportunities').select('id').not('replied_after_close_at', 'is', null).limit(1000)
+      : Promise.resolve({ data: [] }),
   ])
 
   const overallMissingData = overallMissingResult.data
@@ -108,9 +116,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     total = Number(rows[0]?.total_count ?? 0)
   }
 
+  // Closed leads that wrote back (staff decide whether to reopen)
+  const lateReplies: string[] = (lateReplyRows || []).map(r => r.id)
+
   const typeCountsMap = Object.fromEntries(typeCounts.map(tc => [tc.type, tc.count]))
-  const reviewCount = Number(statusCounts?.data?.[0]?.needs_review ?? 0)
-  const missingCount = Number(overallMissingData?.total ?? 0)
+  const reviewCount = tab === 'review' ? total : Number(statusCounts?.data?.[0]?.needs_review ?? 0)
+  const missingCount = tab === 'missing' ? total : Number(overallMissingData?.total ?? 0)
+  const allCount = tab === 'all' ? total : Number(statusCounts?.data?.[0]?.total_pitches ?? 0)
 
   const crumbs = [
     { label: 'Dashboard', href: '/dashboard' },
@@ -132,6 +144,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         importBatches={batches || []}
         loadError={loadError}
         total={total}
+        allCount={allCount}
         reviewCount={reviewCount}
         missingCount={missingCount}
         page={page}
@@ -140,6 +153,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         role={profile.role}
         staff={(staff || []).filter(s => s.role !== 'consultant')}
         typeCounts={typeCountsMap}
+        unassignedOpen={unassignedOpen ?? 0}
+        lateReplies={lateReplies}
       />
     </>
   )

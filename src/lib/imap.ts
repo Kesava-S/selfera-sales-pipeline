@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
+import { captureCampaignReply } from '@/lib/campaignReplies'
 
 /**
  * Strips quoted email thread history (e.g. "On [Date], [Sender] wrote:",
@@ -183,6 +184,16 @@ export async function syncEmailReplies(options?: {
             console.warn('[DualWrite] Failed to replicate email record_inbound:', err)
           })
         }
+
+        // Replies to campaigns (and unknown senders) are kept on the campaign side too
+        await captureCampaignReply(supabase, {
+          channel: 'email',
+          from: fromAddress,
+          body,
+          subject: parsed.subject || null,
+          externalMessageId: messageId,
+          looksLikeReply: !!inReplyTo || /^\s*(re|aw|sv)\s*:/i.test(parsed.subject || ''),
+        })
 
         // Check if the message was successfully stored in "sales-pipe".messages
         const { data: stored } = await supabase

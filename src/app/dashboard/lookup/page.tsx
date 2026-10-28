@@ -5,7 +5,7 @@ import { lookupConfig } from '@/lib/enrich'
 
 export const dynamic = 'force-dynamic'
 
-// Temporary beta module for trying Google Places + Companies House lookups by hand
+// Google Places + Companies House lookups, to fill in a lead's missing details
 export default async function LeadLookupPage() {
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
@@ -19,7 +19,7 @@ export default async function LeadLookupPage() {
 
   return (
     <>
-      <BreadcrumbSetter breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Lead Lookup (beta)' }]} />
+      <BreadcrumbSetter breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Lead Lookup' }]} />
       <LeadLookupView leads={(leads || []) as LookupLead[]} config={lookupConfig()} />
     </>
   )

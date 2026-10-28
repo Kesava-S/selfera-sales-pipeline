@@ -25,6 +25,10 @@ export type CampaignProgress = {
   opened: number
   clicked: number
   bounced: number
+  // Both: people who wrote back (see campaign_replies)
+  replied: number
+  // Client Audience campaigns: people who opted out from this campaign
+  opted_out: number
   failures: { to: string; name: string | null; error: string | null }[]
 }
 
@@ -41,12 +45,18 @@ type ClaimedSend = {
 
 type SendResult = { id: string; ok: boolean; error?: string; external_id?: string | null; simulated?: boolean; permanent?: boolean }
 
-type CampaignContent = { subject?: string; body?: string; message?: string; service?: string | null; template_name?: string | null }
+type CampaignContent = {
+  subject?: string; body?: string; message?: string; service?: string | null; template_name?: string | null
+  // Client Audience campaigns: sent in the client's name
+  audience_business_id?: string | null
+  brand?: { name: string; replyTo: string | null } | null
+}
 
+// Client Audience rows carry the client in business_name and the customer's first name in contact_name
 function personalise(text: string, r: ClaimedSend, service?: string | null) {
   return text
-    .replace(/\{business_name\}/g, r.business_name || 'your business')
-    .replace(/\{contact_name\}/g, r.contact_name || 'there')
+    .replace(/\{business_name\}|\{client_name\}/g, r.business_name || 'your business')
+    .replace(/\{contact_name\}|\{first_name\}/g, r.contact_name || 'there')
     .replace(/\{service\}/g, service || 'our services')
 }
 
@@ -54,7 +64,7 @@ function personalise(text: string, r: ClaimedSend, service?: string | null) {
 // so campaigns can be tried locally. In production it is a real failure.
 const canSimulate = () => process.env.NEXT_PUBLIC_APP_ENV !== 'production' && process.env.VERCEL_ENV !== 'production'
 
-async function sendOne(r: ClaimedSend, c: CampaignContent | undefined): Promise<SendResult> {
+async function sendOne(r: ClaimedSend, c: CampaignContent | undefined, customerId?: string | null): Promise<SendResult> {
   if (!c) return { id: r.id, ok: false, error: 'Campaign no longer exists.', permanent: true }
 
   if (r.channel === 'email') {
@@ -69,6 +79,7 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined): Promise<
         to: r.email!,
         subject: personalise(c.subject || '', r, c.service),
         body: personalise(c.body || '', r, c.service),
+        brand: c.brand ? { ...c.brand, customerId } : null,
       })
       return { id: r.id, ok: true, external_id: messageId }
     } catch (err) {
@@ -129,14 +140,36 @@ export async function processCampaignQueue({
       if (!ids.length) continue
       const { data: rows } = await db
         .from(channel === 'email' ? 'email_campaigns' : 'whatsapp_campaigns')
-        .select(channel === 'email' ? 'id, subject, body, service' : 'id, message, service, template_name')
+        .select(channel === 'email' ? 'id, subject, body, service, audience_business_id' : 'id, message, service, template_name, audience_business_id')
         .in('id', ids)
-      for (const row of (rows || []) as unknown as (CampaignContent & { id: string })[]) campaigns.set(row.id, row)
+      const list = (rows || []) as unknown as (CampaignContent & { id: string })[]
+      // Client Audience campaigns: the client's sender name and reply address
+      const clientIds = [...new Set(list.map(r => r.audience_business_id).filter(Boolean))] as string[]
+      const brands = new Map<string, { name: string; replyTo: string | null }>()
+      if (clientIds.length) {
+        const [{ data: biz }, { data: settings }] = await Promise.all([
+          db.from('businesses').select('id, business_name, email').in('id', clientIds),
+          db.from('audience_clients').select('business_id, sender_name, reply_to').in('business_id', clientIds),
+        ])
+        for (const b of biz || []) {
+          const s = settings?.find(x => x.business_id === b.id)
+          brands.set(b.id, { name: s?.sender_name || b.business_name, replyTo: s?.reply_to || b.email || null })
+        }
+      }
+      for (const row of list) campaigns.set(row.id, { ...row, brand: row.audience_business_id ? brands.get(row.audience_business_id) ?? null : null })
+    }
+
+    // Client Audience recipients: which customer each message is for (their opt-out link names them)
+    const customers = new Map<string, string>()
+    const audienceIds = batch.filter(b => campaigns.get(b.campaign_id)?.audience_business_id).map(b => b.id)
+    if (audienceIds.length) {
+      const { data: rows } = await db.from('campaign_recipients').select('id, customer_lead_id').in('id', audienceIds)
+      for (const row of rows || []) if (row.customer_lead_id) customers.set(row.id, row.customer_lead_id)
     }
 
     const results: SendResult[] = []
     for (const r of batch) {
-      const res = await sendOne(r, campaigns.get(r.campaign_id))
+      const res = await sendOne(r, campaigns.get(r.campaign_id), customers.get(r.id))
       if (res.ok) sent++
       else failed++
       results.push(res)

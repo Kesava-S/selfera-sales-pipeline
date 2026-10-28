@@ -1,6 +1,6 @@
 'use server'
 
-// Lead Lookup (temporary beta module): search Google Places and Companies House
+// Lead Lookup: search Google Places and Companies House
 // for a business, then copy the chosen values onto a lead.
 
 import { revalidatePath } from 'next/cache'

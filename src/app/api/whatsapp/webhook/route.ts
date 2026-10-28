@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
+import { captureCampaignReply } from '@/lib/campaignReplies'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +83,9 @@ export async function POST(request: Request) {
               id: st.id,
               status: st.status,
               timestamp: st.timestamp ?? null,
-              error: st.errors?.[0] ? st.errors[0].error_data?.details || st.errors[0].message || st.errors[0].title || null : null,
+              error: st.errors?.[0]
+                ? `${st.errors[0].code ? `(#${st.errors[0].code}) ` : ''}${st.errors[0].error_data?.details || st.errors[0].message || st.errors[0].title || ''}`.trim() || null
+                : null,
             })),
           }
           const { error: statusError } = await supabase.rpc('record_whatsapp_status', statusArgs)
@@ -125,6 +128,8 @@ export async function POST(request: Request) {
           }
 
           const { error: rpcError } = await supabase.rpc('record_inbound', inboundArgs)
+          // Replies to campaigns (and unknown senders) are kept on the campaign side too
+          await captureCampaignReply(supabase, { channel: 'whatsapp', from, body, externalMessageId: messageId })
 
           if (rpcError) {
             console.error('[WhatsApp Webhook] record_inbound error:', rpcError.message)

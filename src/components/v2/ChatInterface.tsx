@@ -98,9 +98,10 @@ export function ChatInterface({
   const unassigned = !opp.assigned_sales_id && !opp.assigned_consultant_id
   const canAct = me.role === 'admin' || me.id === opp.assigned_consultant_id || (me.id === opp.assigned_sales_id && !handedOver) || (me.role === 'sales' && unassigned)
   const needsReview = opp.stage === 'Needs review'
+  const roundStart: string | null = thread.round_started_at ?? null
 
   // Do-not-contact: the email box is locked, except for answering a lead who
-  // unsubscribed and then wrote to us (checked again when sending)
+  // opted out and then wrote to us (checked again when sending)
   const lastAt = (dir: Msg['direction']) => messages.filter(m => m.direction === dir).at(-1)?.created_at ?? null
   const lastInbound = [thread.last_inbound_at, lastAt('inbound')].filter(Boolean).sort().at(-1) ?? null
   const canReplyToBlocked = !!emailBlock && replyAllowed(emailBlock, lastInbound, lastAt('outbound'))
@@ -308,36 +309,30 @@ export function ChatInterface({
             <p className="text-center text-sm text-slate-400">No messages yet. The first message is below.</p>
           </div>
         ) : (
-          messages.map(m => {
-            if (m.direction === 'system') {
-              return <div key={m.id} className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
-            }
-            const ours = m.direction === 'outbound'
-            const who = ours ? people.find(p => p.id === m.sent_by)?.full_name : b.contact_name || b.business_name
+          messages.map((m, i) => {
+            // After a reopen, messages from the earlier round stay but are greyed out
+            const earlier = !!roundStart && m.created_at < roundStart
+            const firstOfRound = !!roundStart && !earlier && (i === 0 || messages[i - 1].created_at < roundStart)
             return (
-              <div key={m.id} className={`flex ${ours ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
-                  {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
-                  <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
-                  <div className={`mt-1 flex items-center gap-1.5 text-[11px] ${ours ? 'justify-end text-white/75' : 'text-slate-400'}`}>
-                    <span>
-                      {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
-                        .filter(Boolean).join(' · ')}
-                    </span>
-                    {ours && (platform === 'WhatsApp' || platform === 'Email') && m.send_method === 'api' && <DeliveryTicks m={m} />}
-                  </div>
-                  {ours && ['failed', 'bounced', 'complained'].includes(m.delivery_status || '') && m.error_detail && (
-                    <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white">Not delivered: {m.error_detail}</div>
-                  )}
+              <div key={m.id} className="space-y-3">
+                {firstOfRound && <RoundDivider at={roundStart!} round={thread.round} />}
+                <div className={earlier ? 'opacity-50 grayscale' : ''} title={earlier ? 'Previous round' : undefined}>
+                  <MessageBubble m={m} platform={platform} who={m.direction === 'outbound' ? people.find(p => p.id === m.sent_by)?.full_name : b.contact_name || b.business_name} />
                 </div>
               </div>
             )
           })
         )}
+        {roundStart && messages.length > 0 && messages.every(m => m.created_at < roundStart) && <RoundDivider at={roundStart} round={thread.round} />}
         <div ref={bottom} />
       </div>
 
       {/* Banners */}
+      {opp.replied_after_close_at && (
+        <Banner tone="slate" icon={<Info size={16} />}>
+          They replied after this lead was closed ({opp.stage}). <Link href={`/dashboard/${opp.id}`} className="font-semibold text-primary hover:underline">Reopen it from the lead page</Link> to answer.
+        </Banner>
+      )}
       {thread.status === 'Paused' && (
         <Banner tone="slate" icon={<PauseCircle size={16} />}>Paused: {String(thread.paused_reason || '').replace(/^Replied on/, 'replied on')}. Carry on the conversation there; you can still message here if needed.</Banner>
       )}
@@ -357,7 +352,7 @@ export function ChatInterface({
       )}
       {emailBlock && canReplyToBlocked && (
         <Banner tone="amber" icon={<MailX size={16} />}>
-          They unsubscribed on {formatDate(emailBlock.created_at)} but wrote to us since. You can answer their message; don&apos;t send follow-ups or offers.
+          They opted out on {formatDate(emailBlock.created_at)} but wrote to us since. You can answer their message; don&apos;t send follow-ups or offers.
         </Banner>
       )}
       {emailBlock && (
@@ -525,5 +520,40 @@ function DeliveryTicks({ m }: { m: Msg }) {
       {t.icon}
       {t.word}
     </span>
+  )
+}
+
+function MessageBubble({ m, platform, who }: { m: Msg; platform: string; who?: string }) {
+  if (m.direction === 'system') {
+    return <div className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
+  }
+  const ours = m.direction === 'outbound'
+  return (
+    <div className={`flex ${ours ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm sm:max-w-[70%] ${ours ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md border border-slate-200 bg-white'}`}>
+        {m.subject && <div className="mb-1 text-sm font-semibold">{m.subject}</div>}
+        <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
+        <div className={`mt-1 flex items-center gap-1.5 text-[11px] ${ours ? 'justify-end text-white/75' : 'text-slate-400'}`}>
+          <span>
+            {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+              .filter(Boolean).join(' · ')}
+          </span>
+          {ours && (platform === 'WhatsApp' || platform === 'Email') && m.send_method === 'api' && <DeliveryTicks m={m} />}
+        </div>
+        {ours && ['failed', 'bounced', 'complained'].includes(m.delivery_status || '') && m.error_detail && (
+          <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white">Not delivered: {m.error_detail}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RoundDivider({ at, round }: { at: string; round: number }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-400">
+      <span className="h-px flex-1 bg-slate-200" />
+      Reopened {formatDateTime(at)} · round {round}. Earlier messages are greyed out.
+      <span className="h-px flex-1 bg-slate-200" />
+    </div>
   )
 }

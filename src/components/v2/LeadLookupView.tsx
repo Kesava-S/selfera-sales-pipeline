@@ -1,6 +1,6 @@
 'use client'
 
-// Lead Lookup (temporary beta module). Pick a lead, search Google Places and
+// Lead Lookup. Pick a lead, search Google Places and
 // Companies House, compare what was found with what we have, and apply the
 // values you want. Empty fields are ticked by default; existing ones never are.
 
@@ -125,10 +125,9 @@ export function LeadLookupView({ leads: initialLeads, config }: { leads: LookupL
       <div>
         <div className="flex items-center gap-2">
           <h1 className="!mb-0 text-2xl font-bold tracking-tight text-slate-900">Lead Lookup</h1>
-          <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700">Beta</span>
         </div>
         <p className="mt-0.5 text-sm text-slate-500">
-          Find a business on Google and Companies House, then fill in a lead&apos;s missing details. Temporary module for testing.
+          Find a business on Google and Companies House, then fill in a lead&apos;s missing details.
         </p>
       </div>
 

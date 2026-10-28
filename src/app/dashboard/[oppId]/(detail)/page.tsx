@@ -24,7 +24,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
   const [{ data: others }, { data: people }, { data: block }] = await Promise.all([
     supabase.from('opportunities').select('id, services_pitched, stage, created_at').eq('business_id', opp.business_id).neq('id', oppId).order('created_at', { ascending: false }),
     supabase.from('profiles').select('id, full_name, role, is_active'),
-    // On the do-not-contact list (unsubscribed, bounced, or reported spam)?
+    // On the do-not-contact list (opted out, bounced, or reported spam)?
     findEmailBlock(supabase, email).then(data => ({ data })),
   ])
 

@@ -141,7 +141,7 @@ const EMAIL_TEMPLATE = `<!DOCTYPE html>
       </td>
     </tr>
 
-    <!-- UNSUBSCRIBE / DO-NOT-CONTACT: plain, small, under the footer card -->
+    <!-- OPT-OUT / DO-NOT-CONTACT: plain, small, under the footer card -->
     <tr>
       <td class="fluid-padding" style="padding:0 32px 8px 32px; text-align:center;">
         <p style="margin:0 0 6px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.6; color:#86868b;">
@@ -149,7 +149,7 @@ const EMAIL_TEMPLATE = `<!DOCTYPE html>
         </p>
         <p style="margin:0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.6; color:#86868b;">
           Not interested?
-          <a href="{{unsubscribe_url}}" style="color:#002921; text-decoration:underline; font-weight:600;">Unsubscribe</a>
+          <a href="{{unsubscribe_url}}" style="color:#002921; text-decoration:underline; font-weight:600;">Opt out</a>
           and we won't email you again.
         </p>
       </td>
@@ -164,27 +164,73 @@ const EMAIL_TEMPLATE = `<!DOCTYPE html>
 </html>
 `
 
+// Client Audience emails go out in the client's name: a plain layout with no
+// Selfera branding. Same markers as the main layout, plus {{client}}.
+const CLIENT_TEMPLATE = `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{title}}</title>
+<style>
+  :root { color-scheme: light only; supported-color-schemes: light only; }
+  body { margin: 0; padding: 0; width: 100% !important; background-color: #f5f5f7; }
+  @media screen and (max-width: 600px) { .fluid-padding { padding-left: 20px !important; padding-right: 20px !important; } }
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:#f5f5f7;">
+<div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#f5f5f7;">{{preheader}}</div>
+<center style="width:100%; background-color:#f5f5f7; padding:32px 0 40px 0;">
+<div style="max-width:600px; margin:0 auto;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; margin:0 auto; background-color:#ffffff; border-radius:14px;">
+    <tr>
+      <td class="fluid-padding" style="padding:28px 32px 8px 32px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:18px; font-weight:700; color:#1d1d1f;">{{client}}</td>
+    </tr>
+    <tr>
+      <td class="fluid-padding" style="padding:16px 32px 24px 32px;">
+        <!-- CONTENT START: each paragraph uses the first <p> tag's style -->
+        <p style="margin:0 0 16px 0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:15px; line-height:1.65; color:#1d1d1f;">Sample</p>
+        <!-- CONTENT END -->
+      </td>
+    </tr>
+  </table>
+  <p style="margin:16px 32px 0 32px; text-align:center; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:1.6; color:#86868b;">
+    You're receiving this because you're a customer of {{client}}. Not interested?
+    <a href="{{unsubscribe_url}}" style="color:#1d1d1f; text-decoration:underline; font-weight:600;">Opt out</a>
+    and {{client}} won't email you again.
+  </p>
+</div>
+</center>
+</body>
+</html>
+`
+
 function loadTemplate(): string {
   return EMAIL_TEMPLATE
 }
 
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-// Used when no unsubscribe link can be made (no signing secret)
-const UNSUBSCRIBE_MAILTO = 'mailto:support@selfera.co.uk?subject=Unsubscribe&body=Please%20stop%20contacting%20me.'
+// Used when no opt-out link can be made (no signing secret)
+const UNSUBSCRIBE_MAILTO = 'mailto:support@selfera.co.uk?subject=Opt-Out&body=Please%20stop%20contacting%20me.'
+
+// Who an email is sent for: Selfera by default, or a client (Client Audience campaigns)
+export type EmailBrand = { name: string; replyTo?: string | null; customerId?: string | null }
 
 export function renderEmailTemplate({
   pageTitle,
   preheader,
   body,
   unsubscribeUrl = null,
+  client = null,
 }: {
   pageTitle: string
   preheader: string
   body: string
   unsubscribeUrl?: string | null
+  client?: string | null
 }): string {
-  const template = loadTemplate()
+  const template = client ? CLIENT_TEMPLATE : loadTemplate()
   const start = template.indexOf('<!-- CONTENT START')
   const end = template.indexOf('<!-- CONTENT END -->')
   if (start < 0 || end < start) throw new Error('The email template is missing its CONTENT START / CONTENT END markers')
@@ -203,20 +249,22 @@ export function renderEmailTemplate({
     .replaceAll('{{title}}', escapeHtml(pageTitle))
     .replaceAll('{{preheader}}', escapeHtml(preheader))
     .replaceAll('{{unsubscribe_url}}', escapeHtml(unsubscribeUrl || UNSUBSCRIBE_MAILTO))
+    .replaceAll('{{client}}', escapeHtml(client || ''))
 }
 
 // Everything both senders need: the HTML, a plain-text copy, and the
 // List-Unsubscribe headers that make Gmail and Outlook show their own
 // "Unsubscribe" button (one click, RFC 8058).
-function buildMessage(to: string, subject: string, body: string) {
-  const link = unsubscribeUrl(to)
+function buildMessage(to: string, subject: string, body: string, brand?: EmailBrand | null) {
+  const link = unsubscribeUrl(to, brand?.customerId)
   const html = renderEmailTemplate({
     pageTitle: subject,
     preheader: body.replace(/\s+/g, ' ').trim().slice(0, 120),
     body,
     unsubscribeUrl: link,
+    client: brand?.name ?? null,
   })
-  const text = link ? `${body}\n\n--\nNot interested? Unsubscribe: ${link}` : body
+  const text = link ? `${body}\n\n--\nNot interested? Opt out: ${link}` : body
   const headers: Record<string, string> = link
     ? { 'List-Unsubscribe': `<${link}>, <${UNSUBSCRIBE_MAILTO}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
     : { 'List-Unsubscribe': `<${UNSUBSCRIBE_MAILTO}>` }
@@ -227,12 +275,14 @@ export async function sendEmail({
   to,
   subject,
   body,
+  brand = null,
 }: {
   to: string
   subject: string
   body: string
+  brand?: EmailBrand | null
 }): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
-  if (isResendConfigured()) return sendWithResend({ to, subject, body })
+  if (isResendConfigured()) return sendWithResend({ to, subject, body, brand })
 
   const user = process.env.SMTP_USER || 'support@selfera.co.uk'
   const pass = process.env.SMTP_PASS
@@ -255,9 +305,10 @@ export async function sendEmail({
     },
   })
 
-  const { html, text, headers } = buildMessage(to, subject, body)
+  const { html, text, headers } = buildMessage(to, subject, body, brand)
   const info = await transporter.sendMail({
-    from: getFromEmail(),
+    from: brand ? `"${brand.name.replace(/"/g, '')}" <${user}>` : getFromEmail(),
+    ...(brand?.replyTo ? { replyTo: brand.replyTo } : {}),
     to,
     subject,
     text,
@@ -268,14 +319,15 @@ export async function sendEmail({
   return { messageId: info.messageId, provider: 'smtp' }
 }
 
-async function sendWithResend({ to, subject, body }: { to: string; subject: string; body: string }) {
+async function sendWithResend({ to, subject, body, brand }: { to: string; subject: string; body: string; brand?: EmailBrand | null }) {
   // The From address must be on a domain verified in Resend. Replies go to the
   // mailbox the IMAP sync reads, so reply matching keeps working.
-  const fromName = process.env.EMAIL_FROM_NAME || 'Selfera'
+  // A client's email shows the client's name, and replies go to the client
+  const fromName = brand ? brand.name.replace(/[<>"]/g, '') : process.env.EMAIL_FROM_NAME || 'Selfera'
   const fromAddress = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
-  const replyTo = process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+  const replyTo = brand ? brand.replyTo || null : process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
 
-  const { html, text, headers } = buildMessage(to, subject, body)
+  const { html, text, headers } = buildMessage(to, subject, body, brand)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },

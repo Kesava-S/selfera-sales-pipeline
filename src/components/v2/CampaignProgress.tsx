@@ -9,6 +9,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, RotateCw, Send } from 'lucide
 import { retryFailedCampaignSends } from '@/app/dashboard/actions'
 import { Spinner, useAction } from '@/components/ui'
 import type { CampaignChannel, CampaignProgress as Progress } from '@/lib/campaignQueue'
+import { CampaignRepliesList } from '@/components/v2/CampaignReplies'
 
 export function useCampaignProgress(channel: CampaignChannel, campaignId: string | null) {
   const [progress, setProgress] = useState<Progress | null>(null)
@@ -57,11 +58,14 @@ export function CampaignProgress({
   channel,
   campaignId,
   compact = false,
+  audience = false,
   onStatusChange,
 }: {
   channel: CampaignChannel
   campaignId: string
   compact?: boolean
+  // Client Audience campaign: "skipped" covers more than opt-outs, and replies are a count only
+  audience?: boolean
   onStatusChange?: (status: string, progress: Progress) => void
 }) {
   const { progress: p, error, refresh } = useCampaignProgress(channel, campaignId)
@@ -108,6 +112,7 @@ export function CampaignProgress({
         <div className="text-[11px] font-medium text-slate-500">
           {p.sent} of {p.total} sent{p.failed ? ` · ${p.failed} failed` : ''}{p.retrying ? ` · ${p.retrying} retrying` : ''}
           {channel === 'whatsapp' && p.delivered > 0 ? ` · ${p.delivered} delivered · ${p.read} read` : ''}
+          {p.replied > 0 ? ` · ${p.replied} replied` : ''}
         </div>
       </div>
     )
@@ -145,7 +150,7 @@ export function CampaignProgress({
         <Stat label="Sent" value={p.sent} tone="text-emerald-700" />
         <Stat label="Retrying" value={p.retrying} tone="text-sky-700" />
         <Stat label="Failed" value={p.failed} tone="text-rose-700" />
-        <Stat label="Opted out" value={p.skipped} tone="text-slate-600" />
+        <Stat label={audience ? 'Skipped' : 'Opted out'} value={p.skipped} tone="text-slate-600" />
       </div>
 
       {/* Email via Resend: arrived, opened (approximate), clicked, bounced or spam */}
@@ -166,6 +171,14 @@ export function CampaignProgress({
         </div>
       )}
 
+      {p.sent > 0 && (
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <Stat label={`Replied (${pctOf(p.replied ?? 0, p.sent)})`} value={p.replied ?? 0} tone="text-violet-700" />
+          {audience && <Stat label="Opted out" value={p.opted_out ?? 0} tone="text-rose-700" />}
+        </div>
+      )}
+      {!audience && <CampaignRepliesList channel={channel} campaignId={campaignId} count={p.replied ?? 0} />}
+
       {p.simulated > 0 && (
         <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
           {p.simulated} recorded as simulated: {channel === 'email' ? 'SMTP' : 'WhatsApp'} is not set up in this environment, so nothing was actually sent.
@@ -180,7 +193,7 @@ export function CampaignProgress({
             onClick={() => setShowFailures(v => !v)}
             aria-expanded={showFailures}
           >
-            Not sent ({failures.length + optedOut.length})
+            {audience ? 'Not sent or skipped' : 'Not sent'} ({failures.length + optedOut.length})
             <ChevronDown size={14} className={`transition-transform duration-200 ${showFailures ? 'rotate-180' : ''}`} />
           </button>
           {showFailures && (

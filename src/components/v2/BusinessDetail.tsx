@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Mail, Globe, MapPin, ExternalLink, StickyNote, Trophy, Handshake, ArrowRightLeft, Plus, UserCheck, Pencil,
-  CheckCircle2, AlertTriangle, CalendarClock, Star, Lock, MailX,
+  CheckCircle2, AlertTriangle, CalendarClock, Star, Lock, MailX, MessageSquareReply,
 } from 'lucide-react'
 import { CONFIG, OPEN_STAGES } from '@/lib/config'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
 import { facebookLink, instagramLink, mailtoLink, websiteLink, whatsappLink } from '@/lib/contact'
-import { addNote, approveLeads, assignConsultant, changeStage, handOver, newPitch, recordWin, removeOptOut, startThread } from '@/app/dashboard/actions'
+import { addNote, approveLeads, assignConsultant, changeStage, dismissLateReply, handOver, newPitch, recordWin, removeOptOut, startThread } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, useAction } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { readiness } from '@/components/v2/LeadsManagement'
@@ -110,6 +110,21 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
       </div>
 
       <ErrorNote error={modal ? null : error} />
+      {opp.replied_after_close_at && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <span className="flex items-center gap-2">
+            <MessageSquareReply size={15} /> Replied after closing ({opp.stage}) on {formatDateTime(opp.replied_after_close_at)}. Reopen to answer them, or dismiss.
+          </span>
+          {canAct && (
+            <span className="flex gap-2">
+              <button className="btn btn-secondary btn-sm" disabled={pending} onClick={() => run(() => dismissLateReply(opp.id), undefined, { success: 'Dismissed. The lead stays closed.', key: 'dismiss' })}>
+                {isPending('dismiss') && <Spinner size={14} />} Dismiss
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => setModal('stage')}>Reopen</button>
+            </span>
+          )}
+        </div>
+      )}
       {emailBlock && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <span className="flex items-center gap-2">
@@ -328,8 +343,10 @@ function StageModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   const { run, pending, error } = useAction()
   const [stage, setStage] = useState('')
   const [reason, setReason] = useState('')
-  // Won goes through "Record win", Consultation through "Hand over", Needs review is only for imports
-  const options = CONFIG.STAGES.filter(s => !['Needs review', 'Won', 'Consultation', opp.stage].includes(s))
+  // Won goes through "Record win", Consultation through "Hand over", Needs review is only for imports.
+  // A lead waiting for review can only be closed: outreach starts from the Approval queue.
+  const inReview = opp.stage === 'Needs review'
+  const options = CONFIG.STAGES.filter(s => !['Needs review', 'Won', 'Consultation', opp.stage].includes(s) && (!inReview || !OPEN_STAGES.includes(s)))
   return (
     <Modal open onClose={onClose} locked={pending} title="Change stage">
       <label className="label">New stage</label>
@@ -337,6 +354,12 @@ function StageModal({ opp, onClose }: { opp: any; onClose: () => void }) {
         <option value="">Choose…</option>
         {options.map(s => <option key={s}>{s}</option>)}
       </select>
+      {inReview && <p className="mt-2 text-xs text-slate-500">To start outreach, approve this lead in the Approval queue. That also assigns a sales person.</p>}
+      {['Went cold', 'No response', 'Declined', 'Do not contact'].includes(opp.stage) && OPEN_STAGES.includes(stage) && (
+        <p className="mt-2 text-xs text-slate-500">
+          {opp.replied_after_close_at ? 'Their reply opens as a conversation to answer; other channels wait.' : 'Follow-ups start again from First contact, due today.'} Earlier messages stay, shown as the previous round.
+        </p>
+      )}
       {stage === 'Do not contact' && <p className="mt-2 text-xs text-red-700">All platforms are closed and nothing more can be sent to this business.</p>}
       <label className="label mt-4">Reason (optional)</label>
       <input className="input" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Asked us to follow up in spring" />
