@@ -17,14 +17,62 @@ export type Profile = {
 
 export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): string {
   if (companyRole === 'founder') return 'Founder'
-  if (companyRole === 'team_lead') return salesRole === 'consultant' ? 'Team Lead (Consultant)' : 'Team Lead (Sales)'
-  if (companyRole === 'uk_staff') return 'UK Operations (Sales)'
-  if (companyRole === 'full_time') return 'Sales Executive'
-  if (companyRole === 'intern') return 'Sales Intern'
-  if (salesRole === 'admin') return 'Pipeline Administrator'
+  if (salesRole === 'admin') return 'Admin'
   if (salesRole === 'consultant') return 'Consultant'
-  return 'Sales Representative'
+  return 'Sales'
 }
+
+export const getCachedProductRole = unstable_cache(
+  async (userId: string, email: string, salesRole?: Role): Promise<string> => {
+    try {
+      const service = createServiceClient()
+
+      // 1. Try to get role from user_product_access for Sales Pipeline
+      const { data: emp } = await service
+        .schema('hr')
+        .from('employees')
+        .select('id')
+        .or(`auth_user_id.eq.${userId},email.ilike.${email || ''}`)
+        .maybeSingle()
+
+      if (emp?.id) {
+        const { data: access } = await service
+          .schema('public')
+          .from('user_product_access')
+          .select('product_roles(name, code), products!inner(code)')
+          .eq('employee_id', emp.id)
+          .eq('products.code', 'sales_pipeline')
+          .maybeSingle()
+
+        const rawPr = access?.product_roles
+        const pr = (Array.isArray(rawPr) ? rawPr[0] : rawPr) as { name?: string; code?: string } | null | undefined
+        if (pr?.name) {
+          return pr.name
+        }
+      }
+
+      // 2. Direct lookup from public.product_roles by role code
+      const { data: roleRow } = await service
+        .schema('public')
+        .from('product_roles')
+        .select('name, products!inner(code)')
+        .eq('products.code', 'sales_pipeline')
+        .eq('code', salesRole || 'sales')
+        .maybeSingle()
+
+      if (roleRow?.name) {
+        return roleRow.name
+      }
+
+      return formatRoleTitle(null, salesRole)
+    } catch (err) {
+      console.warn('[getCachedProductRole] Could not fetch role from product_roles:', err)
+      return formatRoleTitle(null, salesRole)
+    }
+  },
+  ['user-product-role'],
+  { revalidate: 300 }
+)
 
 const getCachedCompanyRole = unstable_cache(
   async (userId: string, email: string): Promise<string | null> => {
@@ -89,7 +137,9 @@ export const requireProfile = cache(async () => {
     redirect('/login?error=' + encodeURIComponent('Your account is not active. Please contact an administrator.'))
   }
 
-  const display_role = formatRoleTitle(companyRole, profile.role)
+  const display_role = companyRole === 'founder'
+    ? 'Founder'
+    : await getCachedProductRole(user.id, user.email || '', profile.role)
 
   return {
     supabase,

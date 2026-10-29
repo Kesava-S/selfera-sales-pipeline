@@ -50,6 +50,9 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/unsubscribe') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/animations') ||
+    pathname.startsWith('/404') ||
+    pathname.startsWith('/500') ||
+    pathname.startsWith('/403') ||
     pathname.startsWith('/offline') ||
     pathname === '/logo.png' ||
     pathname === '/favicon.ico'
