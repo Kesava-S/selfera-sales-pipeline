@@ -82,7 +82,7 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
                   {c.missing > 0 && <span className="badge !border-amber-200 !bg-amber-50 !text-amber-700">{c.missing} missing data</span>}
                   {c.whatsapp > 0 && <span className="badge !border-sky-200 !bg-sky-50 !text-sky-700">{c.whatsapp} WhatsApp</span>}
                   {c.do_not_contact > 0 && <span className="badge !border-red-200 !bg-red-50 !text-red-700">{c.do_not_contact} do not contact</span>}
-                  {c.test > 0 && <span className="badge !border-violet-200 !bg-violet-50 !text-violet-700">{c.test} test (India)</span>}
+                  {c.test > 0 && <span className="badge !border-violet-200 !bg-violet-50 !text-violet-700">{c.test} India</span>}
                 </div>
                 {c.last_added_at && <p className="mt-3 text-xs text-slate-400">Last added {formatDate(c.last_added_at)}</p>}
               </Link>

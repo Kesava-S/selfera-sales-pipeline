@@ -156,7 +156,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
         <select className="input !w-auto" value={filters.country} onChange={e => setFilter({ country: e.target.value })}>
           <option value="">UK and India</option>
           <option value="UK">UK</option>
-          <option value="India">India (test)</option>
+          <option value="India">India</option>
         </select>
         {filtered && <button className="btn btn-ghost btn-sm" onClick={() => { setQ(''); setFilter({ q: '', phone: '', country: '' }) }}><X size={14} /> Clear</button>}
         {navigating && <Spinner size={14} className="text-slate-400" />}
@@ -224,7 +224,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                     <td className="max-w-64">
                       <div className="flex items-center gap-1.5">
                         <span className={`truncate font-semibold ${name ? 'text-slate-900' : 'italic text-slate-400'}`}>{name || 'No name'}</span>
-                        {c.country === 'India' && <span className="badge !border-violet-200 !bg-violet-50 !py-0 !text-[10px] !text-violet-700">Test</span>}
+                        {c.country === 'India' && <span className="badge !border-violet-200 !bg-violet-50 !py-0 !text-[10px] !text-violet-700">India</span>}
                       </div>
                     </td>
                     {cols.has('phone') && <td>
@@ -382,14 +382,14 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
   return (
     <Modal open onClose={onClose} locked={pending} wide title={customer ? 'Edit customer' : 'Add customer'}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="First name"><input className="input" autoFocus value={v.first_name ?? ''} onChange={set('first_name')} /></Field>
+        <Field label="First name" required><input className="input" autoFocus value={v.first_name ?? ''} onChange={set('first_name')} /></Field>
         <Field label="Last name"><input className="input" value={v.last_name ?? ''} onChange={set('last_name')} /></Field>
-        <Field label="Email" span><input className="input" type="email" value={v.email ?? ''} onChange={set('email')} /></Field>
+        <Field label="Email" span hint={<span className="text-xs text-slate-500">Provide at least one contact method (email or phone) <span className="text-red-500 font-bold ml-0.5">*</span></span>}><input className="input" type="email" value={v.email ?? ''} onChange={set('email')} /></Field>
         <Field label="Phone / mobile" hint={<PhoneHint check={p1} />}><input className="input" inputMode="tel" placeholder={country === 'UK' ? '07911 123456' : '98765 43210'} value={v.phone ?? ''} onChange={set('phone')} /></Field>
         <Field label="Second phone" hint={<PhoneHint check={p2} />}><input className="input" inputMode="tel" placeholder="Landline or other" value={v.phone2 ?? ''} onChange={set('phone2')} /></Field>
-        <Field label="Country">
+        <Field label="Country" required>
           <select className="input" value={country} onChange={e => setCountry(e.target.value as Country)}>
-            {COUNTRIES.map(c => <option key={c} value={c}>{c === 'India' ? 'India (test)' : c}</option>)}
+            {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
         <Field label="Town / city"><input className="input" value={v.town ?? ''} onChange={set('town')} /></Field>
@@ -407,7 +407,9 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
       </div>
       <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
         <input type="checkbox" className="mt-1" checked={consent} onChange={e => setConsent(e.target.checked)} />
-        The client confirmed this customer agreed to marketing. Without this, the customer stays in &ldquo;Missing data&rdquo;.
+        <span>
+          The client confirmed this customer agreed to marketing <span className="text-red-500 font-bold ml-0.5">*</span>. Without this, the customer stays in &ldquo;Missing data&rdquo;.
+        </span>
       </label>
       <ErrorNote error={error} />
       <div className="mt-4 flex items-center justify-end gap-2">
@@ -425,10 +427,13 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
   )
 }
 
-function Field({ label, hint, span, children }: { label: string; hint?: React.ReactNode; span?: boolean; children: React.ReactNode }) {
+function Field({ label, hint, span, required, children }: { label: string; hint?: React.ReactNode; span?: boolean; required?: boolean; children: React.ReactNode }) {
   return (
     <div className={span ? 'sm:col-span-2' : ''}>
-      <label className="label">{label}</label>
+      <label className="label">
+        {label}
+        {required && <span className="text-red-500 font-bold ml-0.5">*</span>}
+      </label>
       {children}
       {hint && <div className="mt-1">{hint}</div>}
     </div>

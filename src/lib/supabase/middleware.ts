@@ -49,6 +49,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/unsubscribe') ||
     pathname.startsWith('/api/unsubscribe') ||
     pathname.startsWith('/_next') ||
+    pathname.startsWith('/animations') ||
+    pathname.startsWith('/offline') ||
     pathname === '/logo.png' ||
     pathname === '/favicon.ico'
 

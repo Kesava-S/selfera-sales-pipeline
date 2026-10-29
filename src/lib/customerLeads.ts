@@ -116,11 +116,11 @@ export type CustomerInput = {
   notes?: string | null
 }
 
-export const CSV_FIELDS: { key: keyof CustomerInput; label: string; hints: string[] }[] = [
-  { key: 'first_name', label: 'First name', hints: ['first name', 'firstname', 'first', 'forename', 'given name', 'name', 'full name', 'customer name', 'customer'] },
+export const CSV_FIELDS: { key: keyof CustomerInput; label: string; hints: string[]; required?: boolean }[] = [
+  { key: 'first_name', label: 'First name', hints: ['first name', 'firstname', 'first', 'forename', 'given name', 'name', 'full name', 'customer name', 'customer'], required: true },
   { key: 'last_name', label: 'Last name', hints: ['last name', 'lastname', 'surname', 'family name'] },
-  { key: 'email', label: 'Email', hints: ['email', 'e-mail', 'email address', 'mail'] },
-  { key: 'phone', label: 'Phone / mobile', hints: ['mobile', 'phone', 'mobile number', 'phone number', 'whatsapp', 'cell', 'contact number', 'tel', 'telephone'] },
+  { key: 'email', label: 'Email', hints: ['email', 'e-mail', 'email address', 'mail'], required: true },
+  { key: 'phone', label: 'Phone / mobile', hints: ['mobile', 'phone', 'mobile number', 'phone number', 'whatsapp', 'cell', 'contact number', 'tel', 'telephone'], required: true },
   { key: 'phone2', label: 'Second phone', hints: ['landline', 'home phone', 'work phone', 'phone 2', 'second phone', 'other phone', 'alternate phone'] },
   { key: 'town', label: 'Town / city', hints: ['town', 'city', 'area', 'location'] },
   { key: 'postcode', label: 'Postcode / PIN', hints: ['postcode', 'post code', 'zip', 'pincode', 'pin code', 'pin'] },

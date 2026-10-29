@@ -201,18 +201,18 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
           ))}
         </div>
         <div>
-          <label className="label">Campaign name (only we see this)</label>
+          <label className="label">Campaign name (only we see this) <span className="text-red-500 font-bold ml-0.5">*</span></label>
           <input className="input" placeholder="e.g. Spring offer" value={name} onChange={e => setName(e.target.value)} />
         </div>
 
         {channel === 'email' ? (
           <>
             <div>
-              <label className="label">Subject</label>
+              <label className="label">Subject <span className="text-red-500 font-bold ml-0.5">*</span></label>
               <input className="input" value={subject} onChange={e => setSubject(e.target.value)} />
             </div>
             <div>
-              <label className="label">Message</label>
+              <label className="label">Message <span className="text-red-500 font-bold ml-0.5">*</span></label>
               <textarea className="input min-h-40" value={body} onChange={e => setBody(e.target.value)} />
               <p className="mt-1 text-xs text-slate-500">Use {'{first_name}'} and {'{client_name}'}. An opt-out link is added at the bottom.</p>
             </div>
@@ -220,12 +220,12 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
         ) : (
           <>
             <div>
-              <label className="label">WhatsApp template name</label>
+              <label className="label">WhatsApp template name <span className="text-red-500 font-bold ml-0.5">*</span></label>
               <input className="input" placeholder="approved_marketing_template" value={templateName} onChange={e => setTemplateName(e.target.value)} />
               <p className="mt-1 text-xs text-slate-500">WhatsApp only allows marketing messages through a template Meta has approved. The message below fills the template&apos;s text.</p>
             </div>
             <div>
-              <label className="label">Message</label>
+              <label className="label">Message <span className="text-red-500 font-bold ml-0.5">*</span></label>
               <textarea className="input min-h-28" value={message} onChange={e => setMessage(e.target.value)} />
               <p className="mt-1 text-xs text-slate-500">Use {'{first_name}'} and {'{client_name}'}. Replies of STOP or OPT OUT stop messages from this client.</p>
             </div>
@@ -258,7 +258,7 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
               Country
               <select className="input !w-auto" value={country} onChange={e => setCountry(e.target.value)}>
                 <option value="UK">UK</option>
-                <option value="India">India (test)</option>
+                <option value="India">India</option>
                 <option value="">Both</option>
               </select>
             </label>

@@ -88,7 +88,9 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
     return { rows, empty, dupes, phones, ready: rows.filter(r => !r.missing.length).length }
   }, [step, inputs, country])
 
-  const mappedSomething = !!(map.first_name || map.email || map.phone || map.phone2)
+  const hasName = Boolean(map.first_name)
+  const hasContact = Boolean(map.email || map.phone || map.phone2)
+  const canProceed = hasName && hasContact
 
   const runImport = async () => {
     setBusy(true); setError(null); setProgress(0)
@@ -134,7 +136,7 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
           <div>
             <label className="label">Where are these customers?</label>
             <select className="input !w-auto" value={country} onChange={e => setCountry(e.target.value as Country)}>
-              {COUNTRIES.map(c => <option key={c} value={c}>{c === 'India' ? 'India (test data)' : c}</option>)}
+              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <p className="mt-1 text-xs text-slate-500">Numbers without +44 or +91 are read as this country. Numbers with a code keep their own.</p>
           </div>
@@ -150,11 +152,16 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
 
       {step === 2 && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-600"><b>{fileName}</b> · {raw.length.toLocaleString('en-GB')} rows. Match each field to a column in the file.</p>
+          <p className="text-sm text-slate-600">
+            <b>{fileName}</b> · {raw.length.toLocaleString('en-GB')} rows. Match each field to a column in your file. Required fields are marked with an asterisk (<span className="text-red-500 font-bold">*</span>). At least one contact method (Email or Phone) is required.
+          </p>
           <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
             {CSV_FIELDS.map(f => (
               <div key={f.key} className="flex items-center gap-2">
-                <span className="w-40 shrink-0 text-sm font-medium text-slate-700">{f.label}</span>
+                <span className="w-40 shrink-0 text-sm font-medium text-slate-700">
+                  {f.label}
+                  {f.required && <span className="text-red-500 font-bold ml-0.5">*</span>}
+                </span>
                 <select className="input !py-1.5" value={map[f.key] ?? ''} onChange={e => setMap({ ...map, [f.key]: e.target.value || undefined })}>
                   <option value="">Not in file</option>
                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
@@ -162,10 +169,16 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
               </div>
             ))}
           </div>
-          {!mappedSomething && <p className="text-sm text-amber-700">Match at least a name, an email or a phone column.</p>}
+          {(!hasName || !hasContact) && (
+            <p className="text-sm text-amber-700">
+              {!hasName
+                ? 'Please match the First name column.'
+                : 'Please match at least one contact column (Email or Phone / mobile).'}
+            </p>
+          )}
           <div className="flex justify-between gap-2 pt-2">
             <button className="btn btn-secondary" onClick={reset}>Choose another file</button>
-            <button className="btn btn-primary" disabled={!mappedSomething} onClick={() => setStep(3)}>Check rows <ArrowRight size={16} /></button>
+            <button className="btn btn-primary" disabled={!canProceed} onClick={() => setStep(3)}>Check rows <ArrowRight size={16} /></button>
           </div>
         </div>
       )}
@@ -217,7 +230,9 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
           </div>
           <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             <input type="checkbox" className="mt-1" checked={consent} onChange={e => setConsent(e.target.checked)} />
-            {businessName} confirmed these customers agreed to receive marketing. This is recorded with your name and today&apos;s date.
+            <span>
+              {businessName} confirmed these customers agreed to receive marketing <span className="text-red-500 font-bold ml-0.5">*</span>. This is recorded with your name and today&apos;s date.
+            </span>
           </label>
 
           {busy && (
