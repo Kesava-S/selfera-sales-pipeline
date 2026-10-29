@@ -23,7 +23,7 @@ export default async function LoginPage({
           </div>
 
           <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
-            Selfera<span className="text-[#0284c7]">.</span>
+            Selfera<span className="text-primary">.</span>
           </h2>
 
           <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">

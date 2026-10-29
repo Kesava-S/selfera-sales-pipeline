@@ -227,7 +227,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
         <button
           type="submit"
           disabled={showPreloader}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#067A52] py-3.5 text-base font-semibold text-white shadow-sm transition-all hover:bg-[#056845] active:scale-[0.99] disabled:opacity-70"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0071e3] py-3.5 text-base font-semibold text-white shadow-sm transition-all hover:bg-[#005bb8] active:scale-[0.99] focus:outline-none focus:ring-4 focus:ring-[#0071e3]/20 disabled:opacity-70"
         >
           {showPreloader ? (
             <>
