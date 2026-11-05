@@ -106,7 +106,8 @@ export async function loginAjax(emailInput: string, passwordInput: string, nextI
   })
 
   if (authError || !authData?.user) {
-    console.warn('[Login] signInWithPassword error for ' + email + ':', authError?.message)
+    const maskedEmail = email.replace(/^(.)(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 5))}${c}`)
+    console.warn('[Login] signInWithPassword error for ' + maskedEmail + ':', authError?.message)
     return { success: false, error: authError?.message || 'Invalid email or password.' }
   }
 

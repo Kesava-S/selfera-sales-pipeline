@@ -33,11 +33,14 @@ export async function GET(request: Request) {
   return new Response('Forbidden', { status: 403 })
 }
 
-// Meta signs every webhook with the app secret (X-Hub-Signature-256). Without
-// WHATSAPP_APP_SECRET set we can't check it, so requests are accepted as before.
+// Meta signs every webhook with the app secret (X-Hub-Signature-256).
+// For security, if WHATSAPP_APP_SECRET is not configured or signature is invalid, reject the request.
 function signatureOk(raw: string, header: string | null): boolean {
   const secret = process.env.WHATSAPP_APP_SECRET
-  if (!secret) return true
+  if (!secret) {
+    console.error('[WhatsApp Webhook] WHATSAPP_APP_SECRET is not configured. Webhook rejected for security.')
+    return false
+  }
   if (!header?.startsWith('sha256=')) return false
   const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
   const given = header.slice(7)

@@ -209,7 +209,8 @@ function loadTemplate(): string {
   return EMAIL_TEMPLATE
 }
 
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')
 
 // Used when no opt-out link can be made (no signing secret)
 const UNSUBSCRIBE_MAILTO = 'mailto:support@selfera.co.uk?subject=Opt-Out&body=Please%20stop%20contacting%20me.'
@@ -237,11 +238,11 @@ export function renderEmailTemplate({
 
   // Each paragraph gets the style of the template's first sample paragraph
   const paragraphTag = template.slice(template.indexOf('-->', start), end).match(/<p\b[^>]*>/)?.[0] || '<p>'
-  // Paragraphs split on blank lines; single line breaks become <br />
+  // Paragraphs split on blank lines; HTML is safely escaped and single line breaks become <br />
   const contentHtml = body
     .trim()
     .split(/\n\s*\n/)
-    .map(paragraph => `${paragraphTag}${paragraph.replace(/\n/g, '<br />')}</p>`)
+    .map(paragraph => `${paragraphTag}${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`)
     .join('\n')
 
   return (template.slice(0, start) + contentHtml + template.slice(end + '<!-- CONTENT END -->'.length))
