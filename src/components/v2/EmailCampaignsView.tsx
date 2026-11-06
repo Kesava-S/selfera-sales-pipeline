@@ -558,7 +558,7 @@ export function EmailCampaignsView({
       {isCreatingCampaign ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* LEFT: Builder */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-7 2xl:col-span-8 space-y-6">
             {/* Step 1: Campaign Details */}
             <div className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -641,7 +641,7 @@ export function EmailCampaignsView({
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3">
                     {databases.map(db => {
                       const selected = db.id === selectedDatabaseId
                       return (
@@ -857,7 +857,7 @@ export function EmailCampaignsView({
           </div>
 
           {/* RIGHT: Live Preview */}
-          <div className="lg:col-span-5 sticky top-20 space-y-4">
+          <div className="lg:col-span-5 2xl:col-span-4 sticky top-20 space-y-4">
             <div className="card p-0 overflow-hidden shadow-sm border border-slate-200">
               <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">

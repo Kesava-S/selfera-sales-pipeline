@@ -101,12 +101,12 @@ export function DashboardHome({
       <section>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Due today</h2>
         <div className="card !p-0">
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-2">
+          <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 px-3 pt-2">
             {TABS.map(t => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
+                className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
                   tab === t.key
                     ? 'border-primary text-primary'
                     : 'border-transparent text-slate-500 hover:text-slate-800'

@@ -4,7 +4,7 @@ import { SkeletonPage, Skeleton } from '@/components/Skeleton'
 export default function TemplateStepsLoading() {
   return (
     <SkeletonPage label="Loading templates">
-      <div className="max-w-3xl space-y-5">
+      <div className="w-full max-w-5xl space-y-5">
         <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 !rounded-xl" />
           <div className="space-y-2">

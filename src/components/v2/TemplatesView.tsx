@@ -83,7 +83,7 @@ export function TemplatesHome({
       {/* Level 1: Business Types */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">1. Business types</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
           {CATEGORIES.map(c => {
             const Icon = c.icon
             const isSelected = selected === c.key
@@ -142,7 +142,7 @@ export function TemplatesHome({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
             {PLATFORMS.map(p => (
               <Link
                 key={p}
@@ -197,7 +197,7 @@ export function TemplateSlots({
     templates.find(t => t.step === step && businessTypeOf(t) === bType && t.platform === p)
 
   return (
-    <div className="max-w-3xl space-y-5">
+    <div className="w-full max-w-5xl space-y-5">
       <div>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">

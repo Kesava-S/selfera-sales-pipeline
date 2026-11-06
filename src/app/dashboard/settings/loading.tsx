@@ -4,14 +4,13 @@ import { SkeletonPage, Skeleton, FormCardSkeleton, SectionTitleSkeleton, TileGri
 export default function SettingsLoading() {
   return (
     <SkeletonPage label="Loading settings">
-      <div className="max-w-3xl space-y-6">
+      <div className="w-full max-w-6xl space-y-6">
         <Skeleton className="h-8 w-32" />
         <FormCardSkeleton rows={1} />
-        <div className="space-y-4">
-          <SectionTitleSkeleton />
-          <TileGridSkeleton count={3} className="grid grid-cols-1 gap-4 sm:grid-cols-3" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FormCardSkeleton rows={3} />
+          <FormCardSkeleton rows={2} />
         </div>
-        <FormCardSkeleton rows={3} />
       </div>
     </SkeletonPage>
   )

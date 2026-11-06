@@ -66,7 +66,7 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
               <input className="input !pl-9" placeholder="Search clients" value={q} onChange={e => setQ(e.target.value)} />
             </div>
           )}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {shown.map(c => (
               <Link key={c.business_id} href={`/dashboard/audience/${c.business_id}`} className="card card-link block">
                 <div className="flex items-start justify-between gap-2">

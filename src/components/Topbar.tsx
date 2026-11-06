@@ -59,7 +59,7 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
         </Link>
 
         {/* Location path / Breadcrumbs in Desktop Mode */}
-        <nav className="hidden min-[901px]:flex min-w-0 items-center gap-1 overflow-x-auto text-sm" aria-label="Breadcrumb">
+        <nav className="hidden min-[901px]:flex min-w-0 items-center gap-1 overflow-x-auto no-scrollbar text-sm" aria-label="Breadcrumb">
           {loadingPage ? (
             <span aria-hidden="true" className="skeleton h-7 w-40" />
           ) : (breadcrumbs.length ? breadcrumbs : [{ label: 'Dashboard' }]).map((c, i, arr) => (

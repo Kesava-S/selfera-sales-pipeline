@@ -43,6 +43,11 @@
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 300ms;
+
+  /* Custom scrollbar tokens */
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+  --scrollbar-track: transparent;
 }
 
 @theme inline {
@@ -228,7 +233,27 @@
    Base (in a layer, so Tailwind utilities always win)
 --------------------------------------------------------------------------- */
 @layer base {
-  html { scrollbar-gutter: stable; }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  /* Custom WebKit/Blink scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: var(--background);
@@ -294,7 +319,11 @@
     padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
     position: sticky; top: 0; z-index: 20;
   }
-  .main-content { flex: 1; padding: 1.5rem; width: 100%; max-width: 1440px; margin: 0 auto; }
+  .main-content {
+    flex: 1;
+    width: 100%;
+    padding: 1.5rem 1.5rem 2rem 1.5rem;
+  }
 
   .sidebar-overlay {
     display: none;
@@ -306,13 +335,16 @@
     animation: fadeIn 0.15s ease-out;
   }
 
+  @media (max-width: 640px) {
+    .topbar { padding: 0 1rem; }
+    .main-content { padding: 1.5rem 1rem 2rem 1rem; }
+  }
+
   @media (max-width: 900px) {
     .sidebar { transform: translateX(-100%); }
     .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
     .sidebar.open + .sidebar-overlay { display: block; }
     .main-wrapper { margin-left: 0; }
-    .topbar { padding: 0 1rem; }
-    .main-content { padding: 1rem; }
   }
 
   .card {
@@ -384,6 +416,14 @@
   .table tbody tr:hover { background: #fafcff; }
 
   .text-muted { color: var(--muted); }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------

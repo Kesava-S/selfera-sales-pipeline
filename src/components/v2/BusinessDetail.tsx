@@ -161,9 +161,9 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 2xl:grid-cols-4">
         {/* Left: pitch + contact */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-1 2xl:col-span-1">
           <div className="card space-y-3">
             <h2 className="!text-base">This pitch</h2>
             <Row label="Services pitched"><div className="flex flex-wrap gap-1">{opp.services_pitched.map((s: string) => <span key={s} className="badge">{s}</span>)}</div></Row>
@@ -231,13 +231,13 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
         </div>
 
         {/* Right: platforms + history */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2 2xl:col-span-3">
           <div>
             <h2 className="mb-3 !text-base">Platforms</h2>
             {threads.length === 0 && needsReview ? (
               <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">Platforms are set up when this lead is approved.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {threads.map(t => {
                   const draft = t.drafts?.find(d => d.status === 'ready' || d.status === 'needs_data')
                   const due = dueLabel(t.status === 'Not contacted' || t.status === 'Awaiting reply' ? t.next_due_on : null)

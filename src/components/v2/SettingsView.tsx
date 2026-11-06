@@ -21,11 +21,15 @@ export function SettingsView({ me, isAdmin, cadence, optOuts = [] }: {
   cadence: { step_name: string; days_delay: number }[]; optOuts?: OptOut[]
 }) {
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="w-full max-w-6xl space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
       <MyAccount me={me} />
-      {isAdmin && <Timing cadence={cadence} />}
-      {isAdmin && <AudienceTiming cadence={cadence} />}
+      {isAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Timing cadence={cadence} />
+          <AudienceTiming cadence={cadence} />
+        </div>
+      )}
       {isAdmin && <DoNotContact list={optOuts} />}
     </div>
   )
