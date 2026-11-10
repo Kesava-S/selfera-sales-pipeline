@@ -463,6 +463,10 @@ export function MissingDataTab({
   // Bulk actions
   const handleBulkSet = async () => {
     if (!selected.length) return
+    if (bulkField === 'service' && !bulkServices.length) {
+      toast.error('Select at least one service to pitch.')
+      return
+    }
     setBulkActionBusy(true)
     const val = bulkField === 'service' ? bulkServices.join(';') : bulkVal
     let res: Awaited<ReturnType<typeof bulkSetField>>
@@ -1329,7 +1333,9 @@ export function MissingDataTab({
       <Modal open={showBulkSet} onClose={() => setShowBulkSet(false)} locked={bulkActionBusy} title={`Set value for ${selected.length} leads`}>
         <div className="space-y-4">
           <div>
-            <label className="label">Field to set</label>
+            <label className="label">
+              Field to set <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+            </label>
             <select
               className="input"
               value={bulkField}
@@ -1348,7 +1354,9 @@ export function MissingDataTab({
 
           {bulkField === 'category' && (
             <div>
-              <label className="label">Category value</label>
+              <label className="label">
+                Category value <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
               <select className="input" value={bulkVal} onChange={e => setBulkVal(e.target.value)}>
                 {categoryNames(lists).map(c => (
                   <option key={c} value={c}>
@@ -1361,7 +1369,9 @@ export function MissingDataTab({
 
           {bulkField === 'service' && (
             <div>
-              <label className="label">Services to pitch</label>
+              <label className="label">
+                Services to pitch <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {lists.services.map(s => {
                   const on = bulkServices.includes(s)
@@ -1388,7 +1398,9 @@ export function MissingDataTab({
 
           {bulkField === 'tech_partner_type' && (
             <div>
-              <label className="label">Tech partner type</label>
+              <label className="label">
+                Tech partner type <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
               <select className="input" value={bulkVal} onChange={e => setBulkVal(e.target.value)}>
                 <option value="None">None</option>
                 <option value="Agency">Agency</option>
@@ -1417,7 +1429,7 @@ export function MissingDataTab({
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Are you sure you want to delete {selected.length} leads? They will be removed permanently.
+            Permanently delete {selected.length} leads?
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)} disabled={bulkActionBusy}>

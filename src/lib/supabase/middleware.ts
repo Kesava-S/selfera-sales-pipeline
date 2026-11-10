@@ -61,11 +61,13 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/auth')
+  const isSetPasswordRoute = pathname.startsWith('/auth/set-password')
+  const isAuthConfirmRoute = pathname.startsWith('/auth/confirm')
+  const isAuthRoute = (pathname.startsWith('/login') || pathname.startsWith('/auth')) && !isSetPasswordRoute && !isAuthConfirmRoute
   const isSsoRoute = pathname.startsWith('/sso') || pathname.startsWith('/api/auth')
 
   // Silent refresh if Supabase session is expired but refresh token exists
-  if (!user && !isAuthRoute && !isSsoRoute) {
+  if (!user && !isAuthRoute && !isSsoRoute && !isSetPasswordRoute && !isAuthConfirmRoute) {
     const refreshToken =
       request.cookies.get('refreshToken')?.value ||
       request.cookies.get('selfera_refresh_token')?.value
@@ -145,7 +147,7 @@ export async function updateSession(request: NextRequest) {
   }
 }
 
-  if (!user && !isAuthRoute && !isSsoRoute) {
+  if (!user && !isAuthRoute && !isSsoRoute && !isSetPasswordRoute && !isAuthConfirmRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     if (pathname !== '/' && pathname !== '/dashboard') {

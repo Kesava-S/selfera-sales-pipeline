@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react'
 import { loginAjax } from './actions'
@@ -48,6 +48,18 @@ export function LoginForm({ initialError }: { initialError?: string }) {
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   const [isPending, startTransition] = useTransition()
+
+  // Catch invite or recovery hash tokens accidentally landing on /login
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = new URLSearchParams(window.location.hash.slice(1))
+      const access_token = hash.get('access_token')
+      const type = hash.get('type')
+      if (access_token && (type === 'invite' || type === 'recovery')) {
+        window.location.replace(`/auth/set-password${window.location.hash}`)
+      }
+    }
+  }, [])
 
   const validateEmail = (val: string): string | null => {
     const trimmed = val.trim()
@@ -144,7 +156,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
             htmlFor="email"
             className="mb-1.5 block text-[11px] font-bold tracking-wider text-slate-700 uppercase"
           >
-            Email Address
+            Email Address <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
           </label>
           <div
             className={`relative flex items-center rounded-2xl border bg-white transition-all ${
@@ -182,7 +194,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
             htmlFor="password"
             className="mb-1.5 block text-[11px] font-bold tracking-wider text-slate-700 uppercase"
           >
-            Password
+            Password <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
           </label>
           <div
             className={`relative flex items-center rounded-2xl border bg-white transition-all ${

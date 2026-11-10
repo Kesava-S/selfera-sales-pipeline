@@ -147,7 +147,7 @@ export function EmailCampaignsView({
   const [reportCampaignId, setReportCampaignId] = useState<string | null>(null)
 
   const { run, pending, isPending, error } = useAction()
-  const { run: runDb, pending: dbPending, error: dbError } = useAction()
+  const { run: runDb, pending: dbPending, error: dbError, setError: setDbError } = useAction()
   const { run: runTest, pending: testPending, error: testError } = useAction()
   const { run: runLaunch, pending: launchPending, error: launchError } = useAction()
 
@@ -280,9 +280,18 @@ export function EmailCampaignsView({
 
   // Save database handler
   const handleSaveDatabase = () => {
+    if (!dbName.trim()) {
+      setDbError('Database name is required.')
+      return
+    }
+    if (dbContacts.length === 0) {
+      setDbError('At least one contact is required in this database.')
+      return
+    }
+
     const payload: EmailDatabaseInput = {
       id: editingDb?.id || null,
-      name: dbName,
+      name: dbName.trim(),
       description: dbDescription.trim() || null,
       contacts: dbContacts,
     }
@@ -372,7 +381,24 @@ export function EmailCampaignsView({
   // Save campaign handler
   // onSaved runs only after the server confirms (used by Review & Launch)
   const handleSaveCampaign = (status: 'draft' | 'scheduled' = 'draft', onSaved?: (row: CampaignRow) => void) => {
+    if (!campaignName.trim()) {
+      toast.error('Campaign name is required.')
+      return
+    }
     const db = activeSelectedDb
+    if (!db) {
+      toast.error('Please select a target database.')
+      return
+    }
+    if (!subject.trim()) {
+      toast.error('Subject line is required.')
+      return
+    }
+    if (!body.trim()) {
+      toast.error('Message body is required.')
+      return
+    }
+
     const recipients = db?.contacts || []
 
     const payload: EmailCampaignInput = {
@@ -1205,7 +1231,9 @@ export function EmailCampaignsView({
             <div className="space-y-3 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-semibold text-sm text-slate-900">Database Contacts</h4>
+                  <h4 className="font-semibold text-sm text-slate-900">
+                    Database Contacts <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+                  </h4>
                   <p className="text-xs text-slate-500">
                     Currently <strong>{dbContacts.length}</strong> contact{dbContacts.length === 1 ? '' : 's'} in this database.
                   </p>
@@ -1584,7 +1612,7 @@ export function EmailCampaignsView({
         >
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
-              Are you sure you want to delete this campaign? This action cannot be undone.
+              Permanently delete this campaign?
             </p>
             <ErrorNote error={error} />
             <div className="flex justify-end gap-2 pt-2">
@@ -1620,7 +1648,7 @@ export function EmailCampaignsView({
         >
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
-              Are you sure you want to delete this target database? Campaigns already sent will keep their records.
+              Permanently delete this target database?
             </p>
             <ErrorNote error={error} />
             <div className="flex justify-end gap-2 pt-2">

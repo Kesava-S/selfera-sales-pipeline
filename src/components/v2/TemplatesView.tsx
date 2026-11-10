@@ -344,6 +344,7 @@ type Editing = {
 
 function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void }) {
   const [v, setV] = useState(value)
+  const [formErrors, setFormErrors] = useState<{ subject?: string; body?: string }>({})
   const area = useRef<HTMLTextAreaElement>(null)
   const { run, pending, error } = useAction()
 
@@ -352,10 +353,23 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
     const start = el?.selectionStart ?? v.body.length
     const end = el?.selectionEnd ?? v.body.length
     setV({ ...v, body: v.body.slice(0, start) + ph + v.body.slice(end) })
+    if (formErrors.body) setFormErrors(prev => ({ ...prev, body: undefined }))
     requestAnimationFrame(() => {
       el?.focus()
       el?.setSelectionRange(start + ph.length, start + ph.length)
     })
+  }
+
+  const validate = () => {
+    const errs: { subject?: string; body?: string } = {}
+    if (hasSubject(v.platform) && !v.subject?.trim()) {
+      errs.subject = 'Email subject is required.'
+    }
+    if (!v.body?.trim()) {
+      errs.body = 'Message body is required.'
+    }
+    setFormErrors(errs)
+    return Object.keys(errs).length === 0
   }
 
   return (
@@ -367,8 +381,10 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
     >
       <form
         className="space-y-4"
+        noValidate
         onSubmit={e => {
           e.preventDefault()
+          if (!validate()) return
           run(
             () =>
               saveTemplate({
@@ -391,27 +407,38 @@ function EditTemplate({ value, onClose }: { value: Editing; onClose: () => void 
 
         {hasSubject(v.platform) && (
           <div>
-            <label className="label">Email Subject</label>
+            <label className="label">
+              Email Subject <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+            </label>
             <input
-              className="input w-full"
+              className={`input w-full ${formErrors.subject ? '!border-rose-400' : ''}`}
               value={v.subject}
-              onChange={e => setV({ ...v, subject: e.target.value })}
+              onChange={e => {
+                setV({ ...v, subject: e.target.value })
+                if (formErrors.subject) setFormErrors(prev => ({ ...prev, subject: undefined }))
+              }}
               placeholder="e.g. Quick question for {business_name}"
             />
+            {formErrors.subject && <p className="mt-1 text-xs text-rose-600 font-medium">{formErrors.subject}</p>}
           </div>
         )}
 
         <div>
-          <label className="label">Message Body</label>
+          <label className="label">
+            Message Body <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+          </label>
           <textarea
             ref={area}
             rows={8}
-            className="input w-full font-mono text-sm leading-relaxed"
+            className={`input w-full font-mono text-sm leading-relaxed ${formErrors.body ? '!border-rose-400' : ''}`}
             value={v.body}
-            onChange={e => setV({ ...v, body: e.target.value })}
+            onChange={e => {
+              setV({ ...v, body: e.target.value })
+              if (formErrors.body) setFormErrors(prev => ({ ...prev, body: undefined }))
+            }}
             placeholder="Write your outreach message here…"
-            required
           />
+          {formErrors.body && <p className="mt-1 text-xs text-rose-600 font-medium">{formErrors.body}</p>}
         </div>
 
         <div>

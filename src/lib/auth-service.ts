@@ -41,9 +41,73 @@ export async function validateAndSyncUserAccess(opts: {
       console.warn('[AuthService] HR employee check error:', hrErr.message)
     }
 
-    // Only Selfera employees use the Sales Pipeline; access is given in the Admin Panel
     if (!employee) {
-      return { ok: false, error: NO_ACCESS }
+      // User is not in central hr.employees. Check if they were invited directly to Sales Pipeline
+      const { data: salesProfile, error: profErr } = await service
+        .schema('sales-pipe')
+        .from('profiles')
+        .select('id, full_name, role, is_active')
+        .eq('id', userId)
+        .maybeSingle()
+
+      if (profErr) {
+        console.warn('[AuthService] Direct sales profile check error:', profErr.message)
+      }
+
+      if (!salesProfile) {
+        return { ok: false, error: NO_ACCESS }
+      }
+
+      if (!salesProfile.is_active) {
+        return {
+          ok: false,
+          error: 'Your account is pending activation or has been deactivated. Please contact an administrator.',
+        }
+      }
+
+      // Keep public.users in sync for RLS and helpers
+      try {
+        await service
+          .schema('public')
+          .from('users')
+          .upsert({
+            user_id: userId,
+            email: email.toLowerCase(),
+            full_name: salesProfile.full_name || email.split('@')[0],
+            role_id: null,
+            is_active: true,
+          }, { onConflict: 'email' })
+      } catch (pubSyncErr) {
+        console.warn('[AuthService] Non-fatal public.users sync warning (direct user):', pubSyncErr)
+      }
+
+      try {
+        await service
+          .schema('shared')
+          .from('user_activity_logs')
+          .insert({
+            employee_id: null,
+            action: 'login',
+            entity: 'sales_pipeline',
+            ip_address: ipAddress.split(',')[0].trim(),
+            user_agent: userAgent,
+            meta: {
+              email,
+              role_id: null,
+              sales_role: salesProfile.role,
+              product: 'sales_pipeline',
+              source: 'sales_direct',
+            },
+          })
+      } catch (logErr) {
+        console.warn('[AuthService] Failed to write direct user to shared.user_activity_logs:', logErr)
+      }
+
+      return {
+        ok: true,
+        employee: null,
+        profile: salesProfile,
+      }
     }
     // Same rule as the Admin Panel's sign-in
     if (employee.status === 'terminated') {

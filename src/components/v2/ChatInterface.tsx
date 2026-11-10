@@ -357,8 +357,8 @@ export function ChatInterface({
       )}
       {emailBlock && (
         <Modal open={unblockOpen} onClose={() => { setUnblockOpen(false); unblock.setError(null) }} locked={unblock.pending} title="Allow emails again?">
-          <p className="text-sm">
-            {b.business_name} comes off the do-not-contact list and can be emailed again. Only do this if they asked to hear from us. The change is logged.
+          <p className="text-sm text-slate-600">
+            Remove {b.business_name} from the do-not-contact list?
           </p>
           {emailBlock.source === 'bounce' && <p className="mt-2 text-sm text-amber-800">This address bounced. Check it is correct first, or the next email will bounce too.</p>}
           <ErrorNote error={unblock.error} />

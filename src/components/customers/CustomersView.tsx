@@ -13,7 +13,7 @@ import {
   checkPhone, missingFor, COUNTRIES, PHONE_TYPE_LABEL,
   type Country, type CustomerInput, type CustomerLead, type PhoneType,
 } from '@/lib/customerLeads'
-import { EmptyState, ErrorNote, Modal, Pagination, Spinner, useAction } from '@/components/ui'
+import { EmptyState, ErrorNote, Modal, ConfirmModal, Pagination, Spinner, useAction } from '@/components/ui'
 import { formatDate } from '@/lib/format'
 import { PageHeader } from '@/components/customers/ClientsView'
 import { CustomerImportModal } from '@/components/customers/CustomerImportModal'
@@ -77,6 +77,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
   ]
   const allOnPage = customers.length > 0 && customers.every(c => selected.includes(c.id))
   const filtered = !!(filters.q || filters.phone || filters.country)
+  const [undoImportTarget, setUndoImportTarget] = useState<PendingImport | null>(null)
   const closeConfirm = () => { setConfirm(null); setReason(''); bulk.setError(null) }
 
   return (
@@ -110,11 +111,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
           </span>
           <span className="flex gap-2">
             {(isAdmin || b.created_by === meId) && (
-              <button className="btn btn-ghost btn-sm" disabled={imports.pending} onClick={() => {
-                if (window.confirm(`Undo this import? The ${b.created_count} customers it added are removed. Customers it only updated stay.`)) {
-                  imports.run(() => undoCustomerImport(business.id, b.id), undefined, { success: n => `Import undone: ${n} customers removed.`, key: `undo-${b.id}` })
-                }
-              }}>
+              <button className="btn btn-ghost btn-sm" disabled={imports.pending} onClick={() => setUndoImportTarget(b)}>
                 {imports.isPending(`undo-${b.id}`) ? <Spinner size={14} /> : <Undo2 size={14} />} Undo import
               </button>
             )}
@@ -276,7 +273,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
       <CustomerImportModal open={importing} onClose={() => setImporting(false)} businessId={business.id} businessName={business.business_name} />
 
       <Modal open={confirm === 'dnc'} onClose={closeConfirm} locked={bulk.pending} title={`Stop contacting ${selected.length} customer${selected.length === 1 ? '' : 's'}?`}>
-        <p className="text-sm text-slate-600">They move to &ldquo;Do not contact&rdquo; and won&apos;t be included in marketing. You can undo this later.</p>
+        <p className="text-sm text-slate-600">Move selected customers to &ldquo;Do not contact&rdquo;?</p>
         <label className="label mt-3">Reason</label>
         <input className="input" placeholder="For example: asked the client to stop" value={reason} onChange={e => setReason(e.target.value)} />
         <ErrorNote error={bulk.error} />
@@ -289,8 +286,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
       </Modal>
       <Modal open={deletingAll} onClose={() => { setDeletingAll(false); setConfirmName(''); bulk.setError(null) }} locked={bulk.pending} title="Delete all customers?">
         <p className="text-sm text-slate-600">
-          All {counts.total.toLocaleString('en-GB')} customers of {business.business_name} are removed for good, for example when the client leaves or asks us to.
-          Campaign reports keep their numbers. This is logged.
+          Permanently delete all {counts.total.toLocaleString('en-GB')} customers for {business.business_name}?
         </p>
         <label className="label mt-3">Type <b>{business.business_name}</b> to confirm</label>
         <input className="input" value={confirmName} onChange={e => setConfirmName(e.target.value)} />
@@ -304,7 +300,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
         </div>
       </Modal>
       <Modal open={confirm === 'delete'} onClose={closeConfirm} locked={bulk.pending} title={`Delete ${selected.length} customer${selected.length === 1 ? '' : 's'}?`}>
-        <p className="text-sm text-slate-600">They are removed for good. To stop marketing to someone but keep their record, use &ldquo;Do not contact&rdquo; instead.</p>
+        <p className="text-sm text-slate-600">This action cannot be undone.</p>
         <ErrorNote error={bulk.error} />
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn btn-secondary" disabled={bulk.pending} onClick={closeConfirm}>Cancel</button>
@@ -313,6 +309,26 @@ export function CustomersView({ business, customers, total, counts, filters, pag
           </button>
         </div>
       </Modal>
+      {undoImportTarget && (
+        <ConfirmModal
+          open={!!undoImportTarget}
+          onClose={() => setUndoImportTarget(null)}
+          onConfirm={() => {
+            const b = undoImportTarget
+            setUndoImportTarget(null)
+            imports.run(() => undoCustomerImport(business.id, b.id), undefined, { success: n => `Import undone: ${n} customers removed.`, key: `undo-${b.id}` })
+          }}
+          isPending={imports.pending}
+          variant="danger"
+          title="Undo Import?"
+          message={
+            <span>
+              Undo this import and remove <b>{undoImportTarget.created_count} customers</b>?
+            </span>
+          }
+          confirmText="Undo"
+        />
+      )}
     </div>
   )
 }
@@ -367,25 +383,66 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
   })
   const [country, setCountry] = useState<Country>(customer?.country ?? 'UK')
   const [consent, setConsent] = useState(customer?.consent_confirmed ?? false)
+  const [formErrors, setFormErrors] = useState<{ firstName?: string; contact?: string; email?: string; phone?: string; consent?: string }>({})
   const { run, pending, error } = useAction()
-  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value })
+  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setV({ ...v, [k]: e.target.value })
+    if (k === 'first_name') setFormErrors(prev => ({ ...prev, firstName: undefined }))
+    if (k === 'email') setFormErrors(prev => ({ ...prev, email: undefined, contact: undefined }))
+    if (k === 'phone' || k === 'phone2') setFormErrors(prev => ({ ...prev, phone: undefined, contact: undefined }))
+  }
   const p1 = useMemo(() => checkPhone(v.phone, country), [v.phone, country])
   const p2 = useMemo(() => checkPhone(v.phone2, country), [v.phone2, country])
-  const empty = !v.first_name?.trim() && !v.email?.trim() && !v.phone?.trim() && !v.phone2?.trim()
 
-  const save = () => run(
-    () => saveCustomerLead(businessId, customer?.id ?? null, v, { country, consent }),
-    onClose,
-    { success: customer ? 'Customer saved.' : 'Customer added.' },
-  )
+  const validate = () => {
+    const errs: { firstName?: string; contact?: string; email?: string; phone?: string; consent?: string } = {}
+    if (!v.first_name?.trim()) {
+      errs.firstName = 'First name is required.'
+    }
+    const hasContact = Boolean(v.email?.trim() || v.phone?.trim() || v.phone2?.trim())
+    if (!hasContact) {
+      errs.contact = 'Provide at least an email or phone number.'
+    }
+    if (v.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim())) {
+      errs.email = 'Please enter a valid email address.'
+    }
+    if (v.phone?.trim() && p1?.type === 'invalid') {
+      errs.phone = 'Please enter a valid phone number.'
+    }
+    if (!consent) {
+      errs.consent = 'Marketing consent confirmation is required.'
+    }
+    setFormErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  const save = () => {
+    if (!validate()) return
+    run(
+      () => saveCustomerLead(businessId, customer?.id ?? null, v, { country, consent }),
+      onClose,
+      { success: customer ? 'Customer saved.' : 'Customer added.' },
+    )
+  }
 
   return (
     <Modal open onClose={onClose} locked={pending} wide title={customer ? 'Edit customer' : 'Add customer'}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="First name" required><input className="input" autoFocus value={v.first_name ?? ''} onChange={set('first_name')} /></Field>
+        <Field label="First name" required error={formErrors.firstName}>
+          <input className={`input ${formErrors.firstName ? '!border-rose-400' : ''}`} autoFocus value={v.first_name ?? ''} onChange={set('first_name')} />
+        </Field>
         <Field label="Last name"><input className="input" value={v.last_name ?? ''} onChange={set('last_name')} /></Field>
-        <Field label="Email" span hint={<span className="text-xs text-slate-500">Provide at least one contact method (email or phone) <span className="text-red-500 font-bold ml-0.5">*</span></span>}><input className="input" type="email" value={v.email ?? ''} onChange={set('email')} /></Field>
-        <Field label="Phone / mobile" hint={<PhoneHint check={p1} />}><input className="input" inputMode="tel" placeholder={country === 'UK' ? '07911 123456' : '98765 43210'} value={v.phone ?? ''} onChange={set('phone')} /></Field>
+        <Field
+          label="Email"
+          span
+          error={formErrors.email || formErrors.contact}
+          hint={<span className="text-xs text-slate-500">Provide at least one contact method (email or phone) <span className="text-rose-500 font-bold ml-0.5">*</span></span>}
+        >
+          <input className={`input ${formErrors.email || formErrors.contact ? '!border-rose-400' : ''}`} type="email" value={v.email ?? ''} onChange={set('email')} />
+        </Field>
+        <Field label="Phone / mobile" error={formErrors.phone} hint={<PhoneHint check={p1} />}>
+          <input className={`input ${formErrors.phone ? '!border-rose-400' : ''}`} inputMode="tel" placeholder={country === 'UK' ? '07911 123456' : '98765 43210'} value={v.phone ?? ''} onChange={set('phone')} />
+        </Field>
         <Field label="Second phone" hint={<PhoneHint check={p2} />}><input className="input" inputMode="tel" placeholder="Landline or other" value={v.phone2 ?? ''} onChange={set('phone2')} /></Field>
         <Field label="Country" required>
           <select className="input" value={country} onChange={e => setCountry(e.target.value as Country)}>
@@ -405,17 +462,27 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
         <Field label="Tags" span hint={<span className="text-xs text-slate-500">Separate with commas, e.g. VIP, regular</span>}><input className="input" value={v.tags} onChange={set('tags')} /></Field>
         <Field label="Notes" span><textarea className="input min-h-20" value={v.notes ?? ''} onChange={set('notes')} /></Field>
       </div>
-      <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-        <input type="checkbox" className="mt-1" checked={consent} onChange={e => setConsent(e.target.checked)} />
-        <span>
-          The client confirmed this customer agreed to marketing <span className="text-red-500 font-bold ml-0.5">*</span>. Without this, the customer stays in &ldquo;Missing data&rdquo;.
-        </span>
-      </label>
+      <div>
+        <label className={`mt-4 flex items-start gap-2 rounded-lg border p-3 text-sm transition-colors ${formErrors.consent ? 'border-rose-300 bg-rose-50 text-rose-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={consent}
+            onChange={e => {
+              setConsent(e.target.checked)
+              if (e.target.checked) setFormErrors(prev => ({ ...prev, consent: undefined }))
+            }}
+          />
+          <span>
+            The client confirmed this customer agreed to marketing <span className="text-rose-500 font-bold ml-0.5">*</span>. Without this, the customer stays in &ldquo;Missing data&rdquo;.
+          </span>
+        </label>
+        {formErrors.consent && <p className="mt-1 text-xs text-rose-600 font-medium">{formErrors.consent}</p>}
+      </div>
       <ErrorNote error={error} />
       <div className="mt-4 flex items-center justify-end gap-2">
-        {empty && <span className="mr-auto text-xs text-slate-500">Add a name, an email or a phone number.</span>}
         <button className="btn btn-secondary" disabled={pending} onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={pending || empty} onClick={save}>{pending && <Spinner />} {customer ? 'Save' : 'Add customer'}</button>
+        <button className="btn btn-primary" disabled={pending} onClick={save}>{pending && <Spinner />} {customer ? 'Save' : 'Add customer'}</button>
       </div>
       {customer && (
         <p className="mt-3 text-xs text-slate-400">
@@ -427,15 +494,16 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
   )
 }
 
-function Field({ label, hint, span, required, children }: { label: string; hint?: React.ReactNode; span?: boolean; required?: boolean; children: React.ReactNode }) {
+function Field({ label, hint, span, required, error, children }: { label: string; hint?: React.ReactNode; span?: boolean; required?: boolean; error?: string; children: React.ReactNode }) {
   return (
     <div className={span ? 'sm:col-span-2' : ''}>
       <label className="label">
         {label}
-        {required && <span className="text-red-500 font-bold ml-0.5">*</span>}
+        {required && <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>}
       </label>
       {children}
-      {hint && <div className="mt-1">{hint}</div>}
+      {error && <p className="mt-1 text-xs text-rose-600 font-medium">{error}</p>}
+      {hint && !error && <div className="mt-1">{hint}</div>}
     </div>
   )
 }

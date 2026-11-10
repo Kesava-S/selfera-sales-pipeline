@@ -320,6 +320,249 @@ export async function sendEmail({
   return { messageId: info.messageId, provider: 'smtp' }
 }
 
+export async function sendRawEmail({
+  to,
+  subject,
+  html,
+  text,
+  replyTo,
+}: {
+  to: string
+  subject: string
+  html: string
+  text: string
+  replyTo?: string | null
+}): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
+  if (isResendConfigured()) {
+    const fromName = process.env.EMAIL_FROM_NAME || 'Selfera'
+    const fromAddress = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
+    const finalReplyTo = replyTo || process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${fromName} <${fromAddress}>`,
+        to: [to],
+        subject,
+        text,
+        html,
+        ...(finalReplyTo ? { reply_to: finalReplyTo } : {}),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const message = `Resend: ${json?.message || `HTTP ${res.status}`}`
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) throw new PermanentEmailError(message)
+      throw new Error(message)
+    }
+    return { messageId: String(json.id), provider: 'resend' as const }
+  }
+
+  const user = process.env.SMTP_USER || 'support@selfera.co.uk'
+  const pass = process.env.SMTP_PASS
+
+  if (!pass) {
+    throw new Error('SMTP_PASS is not set in .env. Please add your Google App Password for ' + user)
+  }
+
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com'
+  const port = parseInt(process.env.SMTP_PORT || '465', 10)
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: {
+      user,
+      pass,
+    },
+  })
+
+  const info = await transporter.sendMail({
+    from: getFromEmail(),
+    ...(replyTo ? { replyTo } : {}),
+    to,
+    subject,
+    text,
+    html,
+  })
+
+  return { messageId: info.messageId, provider: 'smtp' }
+}
+
+export async function sendTeamInviteEmail({
+  to,
+  fullName,
+  role,
+  actionLink,
+  inviterName = 'The Selfera Team',
+}: {
+  to: string
+  fullName: string
+  role: string
+  actionLink: string
+  inviterName?: string
+}): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
+  const roleLabels: Record<string, string> = {
+    sales: 'Sales Representative',
+    consultant: 'Consultant',
+    admin: 'Administrator',
+  }
+  const roleLabel = roleLabels[role] || role || 'Team Member'
+  const subject = `You've been invited to join the Selfera Sales team`
+
+  const text = `Hi ${fullName},
+
+${inviterName} has invited you to join the Selfera Sales Dashboard as a ${roleLabel}.
+
+To activate your account and choose your password, click the link below:
+${actionLink}
+
+This invitation link expires in 24 hours.
+
+If you weren't expecting this invitation, you can safely ignore this email.
+
+--
+Selfera | Automation, with an associate
+support@selfera.co.uk
+https://sales.selfera.co.uk`
+
+  const html = `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>${escapeHtml(subject)}</title>
+<style>
+  :root { color-scheme: light only; supported-color-schemes: light only; }
+  body { margin:0; padding:0; width:100% !important; background-color:#ffffff; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  @media screen and (max-width: 600px) {
+    .fluid-padding { padding-left: 20px !important; padding-right: 20px !important; }
+    .btn-mobile { width: 100% !important; text-align: center !important; }
+  }
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:#ffffff;">
+<div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#ffffff;">
+  You've been invited to join the Selfera Sales team as a ${escapeHtml(roleLabel)}. Set your password to get started.
+</div>
+
+<center style="width:100%; background-color:#ffffff; padding:0 0 40px 0;">
+<div style="max-width:600px; margin:0 auto;" class="email-container">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; margin:0 auto; background-color:#ffffff; border:0;">
+
+    <!-- BRAND HEADER -->
+    <tr>
+      <td class="fluid-padding" style="background-color:#edf5f2; padding:32px 24px 28px 24px; border-bottom:2.5px solid #002921; text-align:center;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="center" style="text-align:center;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+                <tr>
+                  <td align="center" style="text-align:center;">
+                    <img src="https://www.selfera.co.uk/logo.png" width="96" height="64" alt="Selfera" style="display:block; width:96px; height:auto; border:0; outline:none; text-decoration:none; margin:0 auto;">
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="text-align:center; padding-top:12px;">
+                    <div style="font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:26px; font-weight:700; line-height:1; color:#1d1d1f; letter-spacing:-0.04em;">
+                      Selfera<span style="color:#0071e3;">.</span>
+                    </div>
+                    <div style="font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:11.5px; font-weight:600; line-height:1.2; color:#0071e3; letter-spacing:0.025em; margin-top:4px;">
+                      Automation, with an associate
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- BODY -->
+    <tr>
+      <td class="fluid-padding" style="background-color:#ffffff; padding:38px 32px 28px 32px; text-align:left;">
+        <h1 style="margin:0 0 16px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:21px; font-weight:700; line-height:1.3; color:#111827; letter-spacing:-0.02em;">
+          You've been invited to join the team
+        </h1>
+
+        <p style="margin:0 0 16px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:15px; line-height:1.65; color:#374151;">
+          Hi ${escapeHtml(fullName)},
+        </p>
+
+        <p style="margin:0 0 20px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:15px; line-height:1.65; color:#374151;">
+          <strong>${escapeHtml(inviterName)}</strong> has invited you to join the Selfera Sales Dashboard as a <strong>${escapeHtml(roleLabel)}</strong>.
+        </p>
+
+        <p style="margin:0 0 26px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:15px; line-height:1.65; color:#374151;">
+          To activate your account and choose your personal password, click the button below:
+        </p>
+
+        <!-- CTA BUTTON -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 28px auto;">
+          <tr>
+            <td align="center" style="border-radius:12px; background-color:#0071e3;">
+              <a href="${actionLink}" target="_blank" class="btn-mobile" style="display:inline-block; padding:13px 28px; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:14.5px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:12px; letter-spacing:-0.01em; text-align:center;">
+                Activate Account &amp; Set Password
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <!-- SECURITY NOTICE -->
+        <p style="margin:0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:11.5px; line-height:1.5; color:#9ca3af; border-top:1px solid #f3f4f6; padding-top:18px;">
+          This invitation was generated for ${escapeHtml(to)} and expires in 24 hours. If you were not expecting this invitation, you can safely ignore this email.
+        </p>
+      </td>
+    </tr>
+
+    <!-- FOOTER CARD -->
+    <tr>
+      <td class="fluid-padding" style="padding:10px 32px 36px 32px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#002921; border-radius:16px; overflow:hidden; box-shadow:0 6px 20px rgba(0,41,33,0.14);">
+          <tr>
+            <td style="padding:28px 26px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="vertical-align:top; text-align:left;">
+                    <p style="margin:0 0 6px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:17px; font-weight:700; color:#ffffff; letter-spacing:-0.2px;">
+                      Selfera<span style="color:#00f5c0;">.</span>
+                    </p>
+                    <p style="margin:0 0 10px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:12px; color:#a2bdb6;">
+                      Automation, with an associate
+                    </p>
+                    <p style="margin:0 0 4px 0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:12px;">
+                      <a href="mailto:support@selfera.co.uk" style="color:#00f5c0; text-decoration:none; font-weight:600;">support@selfera.co.uk</a>
+                    </p>
+                    <p style="margin:0; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:11px; color:#68867e;">
+                      Selfera &copy; 2026. All rights reserved.
+                    </p>
+                  </td>
+                  <td width="80" style="vertical-align:top; text-align:right; padding-top:2px;">
+                    <img src="https://www.selfera.co.uk/logo.png" width="76" height="51" alt="Selfera" style="display:block; width:76px; height:auto; border:0; outline:none; text-decoration:none; margin-left:auto;">
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+  </table>
+</div>
+</center>
+</body>
+</html>`
+
+  return sendRawEmail({ to, subject, html, text })
+}
+
 async function sendWithResend({ to, subject, body, brand }: { to: string; subject: string; body: string; brand?: EmailBrand | null }) {
   // The From address must be on a domain verified in Resend. Replies go to the
   // mailbox the IMAP sync reads, so reply matching keeps working.

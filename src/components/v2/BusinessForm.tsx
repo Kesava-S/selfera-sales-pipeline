@@ -197,7 +197,7 @@ export function BusinessForm({
     if (label.endsWith(' *')) {
       return (
         <>
-          {label.slice(0, -2)} <span className="text-red-500 font-bold ml-0.5">*</span>
+          {label.slice(0, -2)} <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
         </>
       )
     }
@@ -244,7 +244,7 @@ export function BusinessForm({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
               {field('business_name', 'Business name *', { autoFocus: true, placeholder: 'e.g. The Grand Hotel' })}
               <div>
-                <label className="label">Category <span className="text-red-500 font-bold ml-0.5">*</span></label>
+                <label className="label">Category <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span></label>
                 <select
                   className={`input ${errors.business_type ? '!border-red-400' : ''}`}
                   value={(v.business_type as string) ?? ''}
@@ -276,7 +276,7 @@ export function BusinessForm({
 
             {mode === 'add' && (
               <div>
-                <label className="label">Service to pitch <span className="text-red-500 font-bold ml-0.5">*</span></label>
+                <label className="label">Service to pitch <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span></label>
                 <ChipSelect options={lists.services} value={services} onChange={setServices} />
                 {errors.services && <p className="mt-1 text-xs text-red-600">{errors.services}</p>}
               </div>
@@ -286,7 +286,7 @@ export function BusinessForm({
           {/* Contact Details Section (At least 1 required) */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contact Details <span className="text-red-500 font-bold ml-0.5">*</span></p>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Contact Details <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span></p>
               <span className="text-xs text-slate-500">Provide at least one: Email, WhatsApp, Instagram, or Facebook</span>
             </div>
 

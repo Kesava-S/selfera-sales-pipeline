@@ -274,6 +274,16 @@ export async function setCadence(stepName: string, days: number) {
 
 // Admin only (checked in the database). Who is on the team, their role and
 // whether they can log in are set in the Admin Panel's Access page.
+export async function markNotificationRead(id: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+  const { error } = await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('id', id)
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/notifications')
+  return { ok: true }
+}
+
 export async function markNotificationsRead(ids: string[] | 'all') {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -282,6 +292,7 @@ export async function markNotificationsRead(ids: string[] | 'all') {
   if (ids !== 'all') q = q.in('id', ids)
   const { error } = await q
   if (error) return { ok: false, error: friendly(error.message) } as ActionResult
+  revalidatePath('/dashboard/notifications')
   return { ok: true } as ActionResult
 }
 
@@ -758,4 +769,317 @@ export async function deleteLeads(businessIds: string[]): Promise<ActionResult<n
     revalidatePath('/dashboard/leads')
   }
   return res
+}
+
+// ---------- Team Member & Invite Management ----------
+async function getAppBaseUrl(): Promise<string> {
+  try {
+    const { headers } = await import('next/headers')
+    const headerList = await headers()
+    const host = headerList.get('x-forwarded-host') || headerList.get('host')
+    const proto = headerList.get('x-forwarded-proto') || (host?.includes('localhost') ? 'http' : 'https')
+    if (host) {
+      return `${proto}://${host}`
+    }
+    const origin = headerList.get('origin')
+    if (origin) return origin.replace(/\/$/, '')
+  } catch {
+    // fallback if headers() not available in context
+  }
+  const envUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sales.selfera.co.uk'
+  return envUrl.replace(/\/$/, '')
+}
+
+export async function inviteTeamMember(input: {
+  fullName: string
+  email: string
+  role: 'sales' | 'consultant' | 'admin'
+}): Promise<ActionResult<{ id: string; actionLink?: string }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can invite team members.' }
+  }
+
+  const fullName = input.fullName?.trim()
+  const email = input.email?.trim().toLowerCase()
+  const role = input.role || 'sales'
+
+  if (!fullName) return { ok: false, error: 'Please enter a full name.' }
+  if (!email || !email.includes('@')) return { ok: false, error: 'Please enter a valid work email.' }
+
+  const siteUrl = await getAppBaseUrl()
+  const redirectTo = `${siteUrl}/auth/set-password`
+
+  const service = createServiceClient()
+
+  // 1. Generate the invite link (creates user in auth.users + provides action_link & hashed_token)
+  let linkType: 'invite' | 'recovery' = 'invite'
+  let { data: linkData, error: linkErr } = await service.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      redirectTo,
+      data: { full_name: fullName, role, password_set: false },
+    },
+  })
+
+  // If already registered in auth.users (e.g. from an uncompleted invite), check if active or pending:
+  if (linkErr && (linkErr.message.includes('already been registered') || linkErr.message.includes('already registered'))) {
+    const recResult = await service.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo },
+    })
+    if (!recResult.error && recResult.data?.user) {
+      const { data: existingProf } = await service
+        .from('profiles')
+        .select('is_active')
+        .eq('id', recResult.data.user.id)
+        .maybeSingle()
+
+      if (existingProf?.is_active) {
+        return { ok: false, error: 'A team member with this email address is already active.' }
+      }
+
+      linkType = 'recovery'
+      linkData = recResult.data
+      linkErr = null
+    } else {
+      return { ok: false, error: friendly(linkErr.message) }
+    }
+  }
+
+  if (linkErr || !linkData) {
+    return { ok: false, error: friendly(linkErr?.message || 'Failed to create invitation.') }
+  }
+
+  const invitedUser = linkData?.user
+  const hashedToken = linkData?.properties?.hashed_token
+  // Create direct branded activation link (routes directly to our Next.js /auth/confirm handler)
+  const directActionLink = hashedToken
+    ? `${siteUrl}/auth/confirm?token_hash=${hashedToken}&type=${linkType}&next=/auth/set-password`
+    : (linkData?.properties?.action_link || `${siteUrl}/auth/set-password`)
+
+  if (!invitedUser?.id) {
+    return { ok: false, error: 'Failed to create invitation.' }
+  }
+
+  // 2. Send our customized Selfera invitation email
+  if (directActionLink) {
+    try {
+      const { sendTeamInviteEmail } = await import('@/lib/mailer')
+      await sendTeamInviteEmail({
+        to: email,
+        fullName,
+        role,
+        actionLink: directActionLink,
+        inviterName: myProfile?.full_name || 'Admin',
+      })
+    } catch (emailErr) {
+      console.warn('[inviteTeamMember] custom invite email send warning:', emailErr)
+    }
+  }
+
+  // 3. Upsert profile into "sales-pipe".profiles with pending status (is_active: false until password is set)
+  const { error: profErr } = await service
+    .from('profiles')
+    .upsert({
+      id: invitedUser.id,
+      full_name: fullName,
+      role,
+      is_active: false,
+    })
+
+  if (profErr) {
+    console.error('[inviteTeamMember] profile upsert error:', profErr)
+    return { ok: false, error: friendly(profErr.message) }
+  }
+
+  revalidatePath('/dashboard/settings')
+  return { ok: true, data: { id: invitedUser.id, actionLink: directActionLink } }
+}
+
+export async function completePasswordSetup(): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'User session not found. Please click the invitation link again.' }
+
+  const service = createServiceClient()
+
+  // 1. Activate the user in profiles table
+  const { error: profErr } = await service
+    .from('profiles')
+    .update({
+      is_active: true,
+    })
+    .eq('id', user.id)
+
+  if (profErr) {
+    console.error('[completePasswordSetup] error activating profile:', profErr)
+    return { ok: false, error: friendly(profErr.message) }
+  }
+
+  // 2. Mark password_set as true in auth.users user_metadata
+  try {
+    await service.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        ...(user.user_metadata || {}),
+        password_set: true,
+        password_set_at: new Date().toISOString(),
+      },
+    })
+  } catch (authMetaErr) {
+    console.warn('[completePasswordSetup] auth metadata update warning:', authMetaErr)
+  }
+
+  revalidatePath('/dashboard/settings')
+  return { ok: true }
+}
+
+export async function resendTeamInvite(email: string): Promise<ActionResult<{ actionLink?: string }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can manage invites.' }
+  }
+
+  const cleanEmail = email.trim().toLowerCase()
+  const siteUrl = await getAppBaseUrl()
+  const redirectTo = `${siteUrl}/auth/set-password`
+
+  const service = createServiceClient()
+
+  // First try 'invite'. If the user's email was already confirmed or exists,
+  // Supabase returns 'A user with this email address has already been registered'.
+  // Seamlessly fall back to 'recovery' password setup link.
+  let linkType: 'invite' | 'recovery' = 'invite'
+  let { data: linkData, error: linkErr } = await service.auth.admin.generateLink({
+    type: 'invite',
+    email: cleanEmail,
+    options: { redirectTo },
+  })
+
+  if (linkErr && (linkErr.message.includes('already been registered') || linkErr.message.includes('already registered'))) {
+    linkType = 'recovery'
+    const recResult = await service.auth.admin.generateLink({
+      type: 'recovery',
+      email: cleanEmail,
+      options: { redirectTo },
+    })
+    linkData = recResult.data
+    linkErr = recResult.error
+  }
+
+  if (linkErr || !linkData) return { ok: false, error: friendly(linkErr?.message || 'Could not generate invite link.') }
+
+  const hashedToken = linkData?.properties?.hashed_token
+  const directActionLink = hashedToken
+    ? `${siteUrl}/auth/confirm?token_hash=${hashedToken}&type=${linkType}&next=/auth/set-password`
+    : (linkData?.properties?.action_link || `${siteUrl}/auth/set-password`)
+
+  if (directActionLink && linkData?.user) {
+    try {
+      const { sendTeamInviteEmail } = await import('@/lib/mailer')
+      const { data: targetProfile } = await service.from('profiles').select('full_name, role').eq('id', linkData.user.id).maybeSingle()
+      await sendTeamInviteEmail({
+        to: cleanEmail,
+        fullName: targetProfile?.full_name || (linkData.user.user_metadata?.full_name as string) || cleanEmail.split('@')[0],
+        role: targetProfile?.role || 'sales',
+        actionLink: directActionLink,
+        inviterName: myProfile?.full_name || 'Admin',
+      })
+    } catch (emailErr) {
+      console.warn('[resendTeamInvite] custom invite email send warning:', emailErr)
+    }
+  }
+
+  revalidatePath('/dashboard/settings')
+  return { ok: true, data: { actionLink: directActionLink } }
+}
+
+export async function revokeTeamInvite(userId: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  if (user.id === userId) return { ok: false, error: 'You cannot revoke your own account.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can revoke invites.' }
+  }
+
+  const service = createServiceClient()
+  await service.from('profiles').delete().eq('id', userId)
+
+  const { error: authErr } = await service.auth.admin.deleteUser(userId)
+  if (authErr) return { ok: false, error: friendly(authErr.message) }
+
+  revalidatePath('/dashboard/settings')
+  return { ok: true }
+}
+
+export async function updateTeamMember(
+  userId: string,
+  patch: { role?: 'sales' | 'consultant' | 'admin'; is_active?: boolean }
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  if (patch.is_active === false && user.id === userId) {
+    return { ok: false, error: 'You cannot deactivate your own account.' }
+  }
+
+  const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can update team members.' }
+  }
+
+  const service = createServiceClient()
+  const { error } = await service.from('profiles').update(patch).eq('id', userId)
+  if (error) return { ok: false, error: friendly(error.message) }
+
+  revalidatePath('/dashboard/settings')
+  return { ok: true }
+}
+
+export async function deleteTeamMember(userId: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  if (user.id === userId) return { ok: false, error: 'You cannot delete your own active account.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can delete team members.' }
+  }
+
+  const service = createServiceClient()
+
+  try {
+    // Unassign opportunities to preserve pipeline data and prevent FK constraint violations
+    await service.from('opportunities').update({ assigned_sales_id: null }).eq('assigned_sales_id', userId)
+    await service.from('opportunities').update({ assigned_consultant_id: null }).eq('assigned_consultant_id', userId)
+
+    // Remove profile from sales-pipe.profiles
+    await service.from('profiles').delete().eq('id', userId)
+
+    // Remove user from Supabase Auth
+    await service.auth.admin.deleteUser(userId).catch(() => null)
+
+    revalidatePath('/dashboard/settings')
+    return { ok: true }
+  } catch (err: any) {
+    console.error('[deleteTeamMember] Error deleting team member:', err)
+    return { ok: false, error: friendly(err?.message || 'Failed to delete team member.') }
+  }
 }

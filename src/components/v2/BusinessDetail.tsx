@@ -136,8 +136,8 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
       )}
       {emailBlock && (
         <Modal open={modal === 'unblock'} onClose={close} locked={pending} title="Allow emails again?">
-          <p className="text-sm">
-            {b.business_name} comes off the do-not-contact list and can be emailed again. Only do this if they asked to hear from us. The change is logged.
+          <p className="text-sm text-slate-600">
+            Remove {b.business_name} from the do-not-contact list?
           </p>
           <Footer
             onClose={close} pending={pending} label="Allow emails" error={error}
@@ -349,7 +349,9 @@ function StageModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   const options = CONFIG.STAGES.filter(s => !['Needs review', 'Won', 'Consultation', opp.stage].includes(s) && (!inReview || !OPEN_STAGES.includes(s)))
   return (
     <Modal open onClose={onClose} locked={pending} title="Change stage">
-      <label className="label">New stage</label>
+      <label className="label">
+        New stage <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </label>
       <select className="input" value={stage} onChange={e => setStage(e.target.value)}>
         <option value="">Choose…</option>
         {options.map(s => <option key={s}>{s}</option>)}
@@ -374,7 +376,9 @@ function HandOverModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   return (
     <Modal open onClose={onClose} locked={pending} title="Hand over to a consultant">
       <p className="mb-3 text-sm text-slate-600">Moves this pitch to Consultation and asks an admin to assign a consultant. Follow-ups stop.</p>
-      <label className="label">Consultation date and time</label>
+      <label className="label">
+        Consultation date and time <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </label>
       <input type="datetime-local" className="input" value={when} onChange={e => setWhen(e.target.value)} />
       <Footer onClose={onClose} pending={pending} disabled={!when} label="Hand over" error={error} onConfirm={() => run(() => handOver(opp.id, new Date(when).toISOString()), onClose, { success: 'Handed over. An admin will assign a consultant.' })} />
     </Modal>
@@ -393,10 +397,14 @@ function WinModal({ opp, onClose }: { opp: any; onClose: () => void }) {
         : won.every(s => pitched.includes(s)) ? 'Narrowed' : 'Switched'
   return (
     <Modal open onClose={onClose} locked={pending} title="Record win">
-      <label className="label">Services won</label>
+      <label className="label">
+        Services won <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </label>
       <ChipSelect options={lists.services} value={won} onChange={setWon} />
       {type && <p className="mt-2 text-xs text-slate-500">Pitched {pitched.join(', ')}. This is recorded as <b>{type}</b>.</p>}
-      <label className="label mt-4">How was it won?</label>
+      <label className="label mt-4">
+        How was it won? <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </label>
       <select className="input" value={via} onChange={e => setVia(e.target.value)}>
         <option value="">Choose…</option>
         {CONFIG.CONVERTED_THROUGH.map(c => <option key={c}>{c}</option>)}
@@ -411,6 +419,9 @@ function NoteModal({ oppId, onClose }: { oppId: string; onClose: () => void }) {
   const [text, setText] = useState('')
   return (
     <Modal open onClose={onClose} locked={pending} title="Add note">
+      <label className="label mb-2">
+        Note <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </label>
       <textarea className="input min-h-28" value={text} onChange={e => setText(e.target.value)} autoFocus placeholder="What happened, what they said, next step…" />
       <Footer onClose={onClose} pending={pending} disabled={!text.trim()} label="Save note" error={error} onConfirm={() => run(() => addNote(oppId, text), onClose, { success: 'Note saved.' })} />
     </Modal>
@@ -425,6 +436,9 @@ function PitchModal({ opp, onClose }: { opp: any; onClose: () => void }) {
   return (
     <Modal open onClose={onClose} locked={pending} title="New pitch to this business">
       <p className="mb-3 text-sm text-slate-600">Starts a separate pitch (for example an upsell). It goes to the review queue first.</p>
+      <p className="mb-2 text-xs font-bold text-slate-700">
+        Services to pitch <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+      </p>
       <ChipSelect options={lists.services} value={services} onChange={setServices} />
       <Footer
         onClose={onClose} pending={pending} disabled={!services.length} label="Create pitch" error={error}
@@ -443,10 +457,15 @@ function ConsultantModal({ opp, people, onClose }: { opp: any; people: Person[];
       {consultants.length === 0 ? (
         <p className="text-sm text-slate-600">There are no consultants yet. Set someone&apos;s role to consultant first (see docs/admin-setup.md).</p>
       ) : (
-        <select className="input" value={who} onChange={e => setWho(e.target.value)}>
-          <option value="">Choose…</option>
-          {consultants.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-        </select>
+        <div>
+          <label className="label">
+            Consultant <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+          </label>
+          <select className="input" value={who} onChange={e => setWho(e.target.value)}>
+            <option value="">Choose…</option>
+            {consultants.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+          </select>
+        </div>
       )}
       <Footer onClose={onClose} pending={pending} disabled={!who} label="Assign" error={error} onConfirm={() => run(() => assignConsultant(opp.id, who), onClose, { success: 'Consultant assigned.' })} />
     </Modal>

@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
 export { toast, ToastContainer } from '@/components/v2/Toast'
 import { toast } from '@/components/v2/Toast'
-import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers, Check } from 'lucide-react'
+import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers, Check, AlertTriangle } from 'lucide-react'
 import { STAGE_STYLE, STATUS_STYLE } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
 import { usePresence } from '@/components/usePresence'
@@ -141,6 +141,113 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
             </button>
           </div>
           <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- Confirm Modal ----------
+export function ConfirmModal({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  variant = 'danger',
+  isPending = false,
+}: {
+  open: boolean
+  onClose: () => void
+  onConfirm: () => void | Promise<void>
+  title: string
+  message: React.ReactNode
+  confirmText?: string
+  cancelText?: string
+  variant?: 'danger' | 'warning' | 'primary'
+  isPending?: boolean
+}) {
+  const { mounted, closing } = usePresence(open, MODAL_EXIT_MS)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !isPending && onClose()
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, isPending, onClose])
+
+  if (!mounted) return null
+
+  const variantStyles = {
+    danger: {
+      btn: 'bg-rose-600 hover:bg-rose-700 text-white',
+      badge: 'bg-rose-50 text-rose-600 ring-8 ring-rose-50/50',
+    },
+    warning: {
+      btn: 'bg-amber-600 hover:bg-amber-700 text-white',
+      badge: 'bg-amber-50 text-amber-600 ring-8 ring-amber-50/50',
+    },
+    primary: {
+      btn: 'bg-primary hover:bg-primary-hover text-white',
+      badge: 'bg-primary/10 text-primary ring-8 ring-primary/5',
+    },
+  }[variant]
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs ${closing ? 'motion-backdrop-out' : 'motion-backdrop-in'}`}
+      onMouseDown={isPending ? undefined : onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={`relative w-full max-w-sm rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-2xl ${closing ? 'motion-panel-out' : 'motion-panel-in'}`}
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          disabled={isPending}
+          className="absolute right-4 top-4 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors disabled:opacity-50"
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+
+        <div className="flex flex-col items-center text-center">
+          <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${variantStyles.badge}`}>
+            <AlertTriangle size={24} />
+          </div>
+
+          <h3 className="text-base font-bold text-slate-900">
+            {title}
+          </h3>
+
+          <div className="mt-2 text-xs leading-relaxed text-slate-500">
+            {message}
+          </div>
+
+          <div className="mt-6 grid w-full grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isPending}
+              className="flex h-10 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              {cancelText}
+            </button>
+
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isPending}
+              className={`flex h-10 w-full items-center justify-center gap-1.5 rounded-xl px-4 text-xs font-semibold shadow-xs active:scale-[0.98] transition-all disabled:opacity-50 ${variantStyles.btn}`}
+            >
+              {isPending && <Spinner size={13} />}
+              <span>{confirmText}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

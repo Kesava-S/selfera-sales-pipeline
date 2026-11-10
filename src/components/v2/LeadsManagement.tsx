@@ -685,11 +685,16 @@ export function LeadsManagement({
       )}
       <Modal open={bulk === 'assign'} onClose={() => setBulk(null)} locked={pending} title={`Assign ${selected.length} pitch(es)`}>
         <div className="space-y-4">
-          <select className="input" value={bulkValue} onChange={e => setBulkValue(e.target.value)}>
-            <option value="">Choose a salesperson…</option>
-            <option value="__none">Nobody (unassign)</option>
-            {staff.map(s => <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>)}
-          </select>
+          <div>
+            <label className="label">
+              Salesperson <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+            </label>
+            <select className="input" value={bulkValue} onChange={e => setBulkValue(e.target.value)}>
+              <option value="">Choose a salesperson…</option>
+              <option value="__none">Nobody (unassign)</option>
+              {staff.map(s => <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>)}
+            </select>
+          </div>
           <ErrorNote error={error} />
           <div className="flex justify-end gap-2">
             <button className="btn btn-secondary" onClick={() => setBulk(null)} disabled={pending}>Cancel</button>
@@ -712,7 +717,12 @@ export function LeadsManagement({
       </Modal>
       <Modal open={bulk === 'services'} onClose={() => { setBulk(null); setError(null) }} locked={pending} title={`Change services for ${selected.length} pitch(es)`}>
         <div className="space-y-4">
-          <ChipSelect options={lists.services} value={bulkServicesValue} onChange={setBulkServicesValue} />
+          <div>
+            <label className="label mb-2">
+              Services to pitch <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+            </label>
+            <ChipSelect options={lists.services} value={bulkServicesValue} onChange={setBulkServicesValue} />
+          </div>
           <p className="text-xs text-slate-500">Replaces the services pitched. The change is kept in each pitch&apos;s history.</p>
           <ErrorNote error={error} />
           <div className="flex justify-end gap-2">

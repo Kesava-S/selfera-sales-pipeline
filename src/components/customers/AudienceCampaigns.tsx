@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, CircleSlash, Mail, MessageCircle, Pencil, Plus, Send, ShieldCheck } from 'lucide-react'
 import { launchAudienceCampaign, previewAudience, saveAudienceClient, type AudienceFilter, type AudiencePreview } from '@/app/dashboard/audience/actions'
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
-import { EmptyState, ErrorNote, Modal, Spinner, useAction } from '@/components/ui'
+import { EmptyState, ErrorNote, Modal, ConfirmModal, Spinner, useAction } from '@/components/ui'
 import { formatDate } from '@/lib/format'
 
 export type AudienceCampaignRow = {
@@ -110,7 +110,18 @@ function ClientSettings({ business, settings, onClose }: { business: Business; s
   const [dpa, setDpa] = useState(settings.dpaSignedOn ?? '')
   const [senderName, setSenderName] = useState(settings.senderName)
   const [replyTo, setReplyTo] = useState(settings.replyTo)
+  const [valError, setValError] = useState<string | null>(null)
   const { run, pending, error } = useAction()
+
+  const handleSave = () => {
+    setValError(null)
+    if (replyTo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo.trim())) {
+      setValError('Please enter a valid email address for replies.')
+      return
+    }
+    run(() => saveAudienceClient(business.id, { dpaSignedOn: dpa || null, senderName: senderName.trim(), replyTo: replyTo.trim() }), onClose, { success: 'Client settings saved.' })
+  }
+
   return (
     <Modal open onClose={onClose} locked={pending} title="Client settings">
       <div className="space-y-3">
@@ -125,14 +136,24 @@ function ClientSettings({ business, settings, onClose }: { business: Business; s
         </div>
         <div>
           <label className="label">Replies go to</label>
-          <input className="input" type="email" placeholder={business.email || 'client@example.com'} value={replyTo} onChange={e => setReplyTo(e.target.value)} />
+          <input
+            className={`input ${valError ? '!border-rose-400' : ''}`}
+            type="email"
+            placeholder={business.email || 'client@example.com'}
+            value={replyTo}
+            onChange={e => {
+              setReplyTo(e.target.value)
+              if (valError) setValError(null)
+            }}
+          />
+          {valError && <p className="mt-1 text-xs text-rose-600 font-medium">{valError}</p>}
           <p className="mt-1 text-xs text-slate-500">Usually the client&apos;s own email. Empty uses the business email from Lead Management.</p>
         </div>
       </div>
       <ErrorNote error={error} />
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn btn-secondary" disabled={pending} onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={pending} onClick={() => run(() => saveAudienceClient(business.id, { dpaSignedOn: dpa || null, senderName, replyTo }), onClose, { success: 'Client settings saved.' })}>
+        <button className="btn btn-primary" disabled={pending} onClick={handleSave}>
           {pending && <Spinner />} Save
         </button>
       </div>
@@ -183,9 +204,31 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
   }, [business.id, channel, key])
 
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter(x => x !== v) : [...list, v])
-  const ready = name.trim() && (channel === 'email' ? subject.trim() && body.trim() : message.trim())
+  const [confirmSend, setConfirmSend] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; subject?: string; body?: string; templateName?: string; message?: string }>({})
+
+  const validate = () => {
+    const errs: { name?: string; subject?: string; body?: string; templateName?: string; message?: string } = {}
+    if (!name.trim()) errs.name = 'Campaign name is required.'
+    if (channel === 'email') {
+      if (!subject.trim()) errs.subject = 'Subject line is required.'
+      if (!body.trim()) errs.body = 'Message body is required.'
+    } else {
+      if (!templateName.trim()) errs.templateName = 'WhatsApp template name is required.'
+      if (!message.trim()) errs.message = 'Message text is required.'
+    }
+    setFieldErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  const handleStartCampaign = () => {
+    if (!validate()) return
+    if (!preview?.send) return
+    setConfirmSend(true)
+  }
+
   const send = () => run(
-    () => launchAudienceCampaign(business.id, { channel, name, subject, body, message, templateName, filter }),
+    () => launchAudienceCampaign(business.id, { channel, name: name.trim(), subject: subject.trim(), body: body.trim(), message: message.trim(), templateName: templateName.trim(), filter }),
     () => { onClose(); router.refresh() },
     { success: d => `Campaign started: ${d?.queued ?? 0} queued${d?.skipped ? `, ${d.skipped} skipped` : ''}.` },
   )
@@ -195,38 +238,90 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           {(['email', 'whatsapp'] as const).map(c => (
-            <button key={c} type="button" className={`chip ${channel === c ? 'active' : ''}`} onClick={() => setChannel(c)}>
+            <button key={c} type="button" className={`chip ${channel === c ? 'active' : ''}`} onClick={() => { setChannel(c); setFieldErrors({}) }}>
               {c === 'email' ? <Mail size={14} /> : <MessageCircle size={14} />} {c === 'email' ? 'Email' : 'WhatsApp'}
             </button>
           ))}
         </div>
         <div>
-          <label className="label">Campaign name (only we see this) <span className="text-red-500 font-bold ml-0.5">*</span></label>
-          <input className="input" placeholder="e.g. Spring offer" value={name} onChange={e => setName(e.target.value)} />
+          <label className="label">
+            Campaign name (only we see this) <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+          </label>
+          <input
+            className={`input ${fieldErrors.name ? '!border-rose-400' : ''}`}
+            placeholder="e.g. Spring offer"
+            value={name}
+            onChange={e => {
+              setName(e.target.value)
+              if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: undefined }))
+            }}
+          />
+          {fieldErrors.name && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.name}</p>}
         </div>
 
         {channel === 'email' ? (
           <>
             <div>
-              <label className="label">Subject <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <input className="input" value={subject} onChange={e => setSubject(e.target.value)} />
+              <label className="label">
+                Subject <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
+              <input
+                className={`input ${fieldErrors.subject ? '!border-rose-400' : ''}`}
+                value={subject}
+                onChange={e => {
+                  setSubject(e.target.value)
+                  if (fieldErrors.subject) setFieldErrors(prev => ({ ...prev, subject: undefined }))
+                }}
+              />
+              {fieldErrors.subject && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.subject}</p>}
             </div>
             <div>
-              <label className="label">Message <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <textarea className="input min-h-40" value={body} onChange={e => setBody(e.target.value)} />
+              <label className="label">
+                Message <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
+              <textarea
+                className={`input min-h-40 ${fieldErrors.body ? '!border-rose-400' : ''}`}
+                value={body}
+                onChange={e => {
+                  setBody(e.target.value)
+                  if (fieldErrors.body) setFieldErrors(prev => ({ ...prev, body: undefined }))
+                }}
+              />
+              {fieldErrors.body && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.body}</p>}
               <p className="mt-1 text-xs text-slate-500">Use {'{first_name}'} and {'{client_name}'}. An opt-out link is added at the bottom.</p>
             </div>
           </>
         ) : (
           <>
             <div>
-              <label className="label">WhatsApp template name <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <input className="input" placeholder="approved_marketing_template" value={templateName} onChange={e => setTemplateName(e.target.value)} />
+              <label className="label">
+                WhatsApp template name <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
+              <input
+                className={`input ${fieldErrors.templateName ? '!border-rose-400' : ''}`}
+                placeholder="approved_marketing_template"
+                value={templateName}
+                onChange={e => {
+                  setTemplateName(e.target.value)
+                  if (fieldErrors.templateName) setFieldErrors(prev => ({ ...prev, templateName: undefined }))
+                }}
+              />
+              {fieldErrors.templateName && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.templateName}</p>}
               <p className="mt-1 text-xs text-slate-500">WhatsApp only allows marketing messages through a template Meta has approved. The message below fills the template&apos;s text.</p>
             </div>
             <div>
-              <label className="label">Message <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <textarea className="input min-h-28" value={message} onChange={e => setMessage(e.target.value)} />
+              <label className="label">
+                Message <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+              </label>
+              <textarea
+                className={`input min-h-28 ${fieldErrors.message ? '!border-rose-400' : ''}`}
+                value={message}
+                onChange={e => {
+                  setMessage(e.target.value)
+                  if (fieldErrors.message) setFieldErrors(prev => ({ ...prev, message: undefined }))
+                }}
+              />
+              {fieldErrors.message && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.message}</p>}
               <p className="mt-1 text-xs text-slate-500">Use {'{first_name}'} and {'{client_name}'}. Replies of STOP or OPT OUT stop messages from this client.</p>
             </div>
           </>
@@ -281,12 +376,30 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
       <ErrorNote error={error} />
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn btn-secondary" disabled={pending} onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={pending || !ready || !preview?.send} onClick={() => {
-          if (window.confirm(`Send "${name}" to ${preview?.send} customers of ${business.business_name} now?`)) send()
-        }}>
+        <button className="btn btn-primary" disabled={pending || (preview !== null && !preview.send)} onClick={handleStartCampaign}>
           {pending ? <Spinner /> : <Send size={16} />} Send to {preview?.send?.toLocaleString('en-GB') ?? '…'}
         </button>
       </div>
+
+      {confirmSend && (
+        <ConfirmModal
+          open={confirmSend}
+          onClose={() => setConfirmSend(false)}
+          onConfirm={() => {
+            setConfirmSend(false)
+            send()
+          }}
+          isPending={pending}
+          variant="primary"
+          title="Send Campaign?"
+          message={
+            <span>
+              Send to <strong className="text-slate-900">{preview?.send?.toLocaleString('en-GB')}</strong> customers?
+            </span>
+          }
+          confirmText="Send"
+        />
+      )}
     </Modal>
   )
 }
