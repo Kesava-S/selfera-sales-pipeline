@@ -29,14 +29,16 @@ import { approveLeads, bulkArchive, bulkAssign, bulkServices } from '@/app/dashb
 import { ChipSelect, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction, toast } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { CsvImportModal } from '@/components/v2/CsvImportModal'
+import { LeadExportModal } from '@/components/v2/LeadExportModal'
 import { MissingDataTab, type MissingRow, type BatchItem } from '@/components/v2/MissingDataTab'
 import { startNavigation } from '@/components/NavigationProgress'
 import { useLists } from '@/components/ListsContext'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { ColumnPicker, useColumns, type ColumnDef } from '@/components/ColumnPicker'
+import { EmailBadge, type EmailCheckFields } from '@/components/EmailCheck'
 
 
-export type PitchRow = {
+export type PitchRow = EmailCheckFields & {
   opportunity_id: string
   business_id: string
   business_name: string
@@ -48,6 +50,7 @@ export type PitchRow = {
   linkedin: string | null
   email: string | null
   whatsapp_number: string | null
+  phone?: string | null
   instagram: string | null
   facebook: string | null
   company_type: string | null
@@ -146,6 +149,7 @@ export function LeadsManagement({
   const cols = useColumns('leads-all-columns', LEAD_COLUMNS)
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const [editRow, setEditRow] = useState<PitchRow | null>(null)
   const [bulk, setBulk] = useState<null | 'assign' | 'services'>(null)
   const [bulkValue, setBulkValue] = useState('')
@@ -195,7 +199,13 @@ export function LeadsManagement({
         {canIntake && (
           <div className="flex flex-wrap gap-2">
             {isAdmin && (
-              <a href={exportHref} className="btn btn-secondary"><Download size={16} /> Export CSV{selected.length ? ` (${selected.length})` : ''}</a>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowExport(true)}
+              >
+                <Download size={16} /> Export CSV{selected.length ? ` (${selected.length})` : ''}
+              </button>
             )}
             <button className="btn btn-secondary" onClick={() => setShowImport(true)}><Upload size={16} /> Import CSV</button>
             <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add business</button>
@@ -554,6 +564,7 @@ export function LeadsManagement({
                             </td>
                             <td className="text-xs text-slate-600">
                               {[r.email, r.instagram && `@${r.instagram}`, r.facebook && 'Facebook', r.linkedin && 'LinkedIn'].filter(Boolean).join(' · ') || <span className="text-slate-400">None</span>}
+                              {r.email && <div className="mt-0.5"><EmailBadge c={r} /></div>}
                             </td>
                             <td className="text-xs">
                               {ready ? <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle size={14} /> {ready}</span>
@@ -579,7 +590,7 @@ export function LeadsManagement({
                             {cols.has('services') && <td>{r.services_pitched.join(', ')}</td>}
                             {cols.has('assigned') && <td className="text-sm">{r.assigned_sales_name || <Unassigned stage={r.stage} />}</td>}
                             {cols.has('area') && <td className="text-sm">{r.area || '-'}</td>}
-                            {cols.has('email') && <td className="max-w-56 truncate text-sm">{r.email || '-'}</td>}
+                            {cols.has('email') && <td className="max-w-64 text-sm">{r.email ? <><div className="truncate">{r.email}</div><EmailBadge c={r} /></> : '-'}</td>}
                             {cols.has('whatsapp') && <td className="whitespace-nowrap text-sm">{r.whatsapp_number || '-'}</td>}
                             {cols.has('added') && <td className="whitespace-nowrap text-sm text-slate-500">{formatDate(r.created_at)}</td>}
                           </>
@@ -623,7 +634,7 @@ export function LeadsManagement({
                                   )
                                 })()}
                               </Detail>
-                              <Detail label="Email">{r.email || '-'}</Detail>
+                              <Detail label="Email">{r.email ? <span className="inline-flex flex-wrap items-center gap-1.5">{r.email} <EmailBadge c={r} />{r.email_suggestion && <span className="text-[11px] text-amber-700">Did you mean {r.email_suggestion}?</span>}</span> : '-'}</Detail>
                               <Detail label="Instagram">{r.instagram ? `@${r.instagram}` : '-'}</Detail>
                               <Detail label="LinkedIn">{r.linkedin || '-'}</Detail>
                               <Detail label="Owner name">{r.contact_name || '-'}</Detail>
@@ -652,6 +663,17 @@ export function LeadsManagement({
       {/* Modals */}
       {showAdd && <BusinessForm open mode="add" onClose={() => setShowAdd(false)} />}
       {showImport && <CsvImportModal open onClose={() => setShowImport(false)} />}
+      {showExport && (
+        <LeadExportModal
+          open={showExport}
+          onClose={() => setShowExport(false)}
+          totalMatching={total}
+          selectedIds={selected}
+          rows={rows}
+          params={params}
+          tab={tab}
+        />
+      )}
       {editRow && (
         <BusinessForm
           open

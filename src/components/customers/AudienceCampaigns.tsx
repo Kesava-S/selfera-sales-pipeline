@@ -11,6 +11,7 @@ import { launchAudienceCampaign, previewAudience, saveAudienceClient, type Audie
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
 import { EmptyState, ErrorNote, Modal, ConfirmModal, Spinner, useAction } from '@/components/ui'
 import { formatDate } from '@/lib/format'
+import { MetaTemplatePicker } from '@/components/whatsapp/MetaTemplatePicker'
 
 export type AudienceCampaignRow = {
   id: string; channel: 'email' | 'whatsapp'; name: string; subject: string | null
@@ -214,7 +215,7 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
       if (!subject.trim()) errs.subject = 'Subject line is required.'
       if (!body.trim()) errs.body = 'Message body is required.'
     } else {
-      if (!templateName.trim()) errs.templateName = 'WhatsApp template name is required.'
+      if (!templateName.trim()) errs.templateName = 'Choose an approved Meta template.'
       if (!message.trim()) errs.message = 'Message text is required.'
     }
     setFieldErrors(errs)
@@ -295,19 +296,19 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
           <>
             <div>
               <label className="label">
-                WhatsApp template name <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
+                Meta template <span className="text-rose-500 font-bold ml-0.5" aria-hidden="true">*</span>
               </label>
-              <input
-                className={`input ${fieldErrors.templateName ? '!border-rose-400' : ''}`}
-                placeholder="approved_marketing_template"
+              <MetaTemplatePicker
+                allowNone={false}
+                className={fieldErrors.templateName ? '!border-rose-400' : ''}
                 value={templateName}
-                onChange={e => {
-                  setTemplateName(e.target.value)
+                onChange={name => {
+                  setTemplateName(name)
                   if (fieldErrors.templateName) setFieldErrors(prev => ({ ...prev, templateName: undefined }))
                 }}
               />
               {fieldErrors.templateName && <p className="mt-1 text-xs text-rose-600 font-medium">{fieldErrors.templateName}</p>}
-              <p className="mt-1 text-xs text-slate-500">WhatsApp only allows marketing messages through a template Meta has approved. The message below fills the template&apos;s text.</p>
+              <p className="mt-1 text-xs text-slate-500">WhatsApp only allows marketing messages through a template Meta has approved. Each customer&apos;s details fill the template&apos;s variables, as set in Templates → WhatsApp.</p>
             </div>
             <div>
               <label className="label">

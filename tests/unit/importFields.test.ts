@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   autoMap,
+  buildRow,
   clean,
   guessTier,
   isValidUkPostcode,
@@ -9,6 +10,7 @@ import {
   parseRating,
   parseServices,
 } from '@/lib/importFields';
+import { DEFAULT_LISTS } from '@/lib/lists';
 
 describe('CSV lead import field parsers and validators (src/lib/importFields.ts)', () => {
   describe('autoMap', () => {
@@ -150,6 +152,95 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
       const result = parseServices('', fallback, ['Web Design']);
       expect(result.services).toEqual(fallback);
       expect(result.unknown).toEqual([]);
+    });
+  });
+
+  describe('buildRow Contact & Clean Data detection', () => {
+    const baseMap = {
+      business_name: 'Name',
+      business_type: 'Category',
+      services: 'Services',
+    };
+
+    it('detects valid business email and flags as clean data', () => {
+      const raw = {
+        Name: 'The Ivy Cafe',
+        Category: 'Restaurants & Cafes',
+        Services: 'SEO',
+        Email: 'info@theivycafe.com',
+      };
+      const map = { ...baseMap, business_email: 'Email' };
+      const row = buildRow(raw, map, {}, ['SEO'], 0, DEFAULT_LISTS);
+
+      expect(row.emailInfo.hasEmail).toBe(true);
+      expect(row.emailInfo.isValid).toBe(true);
+      expect(row.emailInfo.email).toBe('info@theivycafe.com');
+      expect(row.isCleanData).toBe(true);
+    });
+
+    it('detects valid WhatsApp mobile and flags as clean data', () => {
+      const raw = {
+        Name: 'Mayfair Boutique',
+        Category: 'Retail',
+        Services: 'Web Design',
+        Phone: '07123456789',
+      };
+      const map = { ...baseMap, business_whatsapp: 'Phone' };
+      const row = buildRow(raw, map, {}, ['Web Design'], 0, DEFAULT_LISTS);
+
+      expect(row.phoneInfo.isWhatsApp).toBe(true);
+      expect(row.emailInfo.hasEmail).toBe(false);
+      expect(row.isCleanData).toBe(true);
+    });
+
+    it('flags lead as clean data when both WhatsApp and email are valid', () => {
+      const raw = {
+        Name: 'Grand Hotel',
+        Category: 'Hotels',
+        Services: 'Web Design',
+        Phone: '+44 7987 654321',
+        Email: 'reservations@grandhotel.co.uk',
+      };
+      const map = { ...baseMap, business_whatsapp: 'Phone', business_email: 'Email' };
+      const row = buildRow(raw, map, {}, ['Web Design'], 0, DEFAULT_LISTS);
+
+      expect(row.phoneInfo.isWhatsApp).toBe(true);
+      expect(row.emailInfo.isValid).toBe(true);
+      expect(row.isCleanData).toBe(true);
+    });
+
+    it('rejects invalid email format and does not count as clean data if no WhatsApp', () => {
+      const raw = {
+        Name: 'Corner Shop',
+        Category: 'Retail',
+        Services: 'Web Design',
+        Email: 'not-an-email',
+        Instagram: '@cornershop',
+      };
+      const map = { ...baseMap, business_email: 'Email', instagram: 'Instagram' };
+      const row = buildRow(raw, map, {}, ['Web Design'], 0, DEFAULT_LISTS);
+
+      expect(row.emailInfo.hasEmail).toBe(true);
+      expect(row.emailInfo.isValid).toBe(false);
+      expect(row.phoneInfo.isWhatsApp).toBe(false);
+      expect(row.isCleanData).toBe(false);
+    });
+
+    it('marks lead as not clean data when only landline phone or social media exists', () => {
+      const raw = {
+        Name: 'City Accountants',
+        Category: 'Services',
+        Services: 'SEO',
+        Phone: '020 7946 0991', // UK landline
+        Facebook: 'facebook.com/cityaccountants',
+      };
+      const map = { ...baseMap, business_whatsapp: 'Phone', facebook: 'Facebook' };
+      const row = buildRow(raw, map, {}, ['SEO'], 0, DEFAULT_LISTS);
+
+      expect(row.phoneInfo.isWhatsApp).toBe(false);
+      expect(row.phoneInfo.type).toBe('landline');
+      expect(row.emailInfo.hasEmail).toBe(false);
+      expect(row.isCleanData).toBe(false);
     });
   });
 });

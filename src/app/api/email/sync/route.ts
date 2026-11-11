@@ -29,9 +29,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!isImapConfigured()) {
+  const imapReady = await isImapConfigured()
+  if (!imapReady) {
     return NextResponse.json(
-      { error: 'Email sync is not configured. Set SMTP_PASS or IMAP_PASS in .env' },
+      { error: 'Email sync is not configured. Set SMTP_PASS or IMAP_PASS in Integrations or .env' },
       { status: 503 }
     )
   }
@@ -64,9 +65,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!isImapConfigured()) {
+  const imapReady = await isImapConfigured()
+  if (!imapReady) {
     return NextResponse.json(
-      { error: 'Email sync is not configured. Set SMTP_PASS or IMAP_PASS in .env' },
+      { error: 'Email sync is not configured. Set SMTP_PASS or IMAP_PASS in Integrations or .env' },
       { status: 503 }
     )
   }

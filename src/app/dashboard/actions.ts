@@ -203,11 +203,13 @@ export async function saveTemplate(t: {
   platform: string
   subject: string
   body: string
+  whatsapp_template_name?: string | null
 }): Promise<ActionResult<string>> {
   const supabase = createServiceClient()
   const businessTypes = t.businessType && t.businessType !== 'General' ? [t.businessType] : []
   const name = `${t.businessType || 'General'} · ${t.platform === 'All' ? 'All platforms' : t.platform} · ${t.step}`
   const subject = (t.platform === 'Email' || t.platform === 'All') ? (t.subject.trim() || null) : null
+  const whatsappTemplateName = t.platform === 'WhatsApp' ? (t.whatsapp_template_name?.trim() || null) : null
 
   if (t.id) {
     const { error } = await supabase
@@ -217,6 +219,7 @@ export async function saveTemplate(t: {
         body: t.body,
         name,
         business_types: businessTypes,
+        whatsapp_template_name: whatsappTemplateName,
         updated_at: new Date().toISOString(),
       })
       .eq('id', t.id)
@@ -235,6 +238,7 @@ export async function saveTemplate(t: {
       business_types: businessTypes,
       subject,
       body: t.body,
+      whatsapp_template_name: whatsappTemplateName,
       is_active: true,
     })
     .select('id')
@@ -254,6 +258,69 @@ export async function setTemplateActive(id: string, active: boolean): Promise<Ac
   if (error) return { ok: false, error: friendly(error.message) }
   revalidatePath('/dashboard/templates')
   return { ok: true }
+}
+
+export async function revertTemplate(id: string): Promise<ActionResult> {
+  const supabase = createServiceClient()
+  // Safety guard: ensure it is a customized category template and not a General baseline template
+  const { data: t, error: fetchErr } = await supabase
+    .from('templates')
+    .select('id, business_types')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr || !t) return { ok: false, error: 'Template not found.' }
+  if (!t.business_types || t.business_types.length === 0) {
+    return { ok: false, error: 'Cannot delete baseline General template.' }
+  }
+
+  const { error } = await supabase
+    .from('templates')
+    .delete()
+    .eq('id', id)
+
+  if (error) return { ok: false, error: friendly(error.message) }
+  revalidatePath('/dashboard/templates')
+  return { ok: true }
+}
+
+export async function createBusinessCategory(data: {
+  name: string
+  description?: string
+  icon_name?: string
+}): Promise<ActionResult<string>> {
+  const supabase = createServiceClient()
+  const name = data.name.trim()
+  if (!name) return { ok: false, error: 'Category name is required.' }
+
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+  const { data: inserted, error } = await supabase
+    .from('business_categories')
+    .insert({
+      name,
+      slug,
+      description: data.description?.trim() || null,
+      icon_name: data.icon_name?.trim() || 'Building2',
+      synonyms: [name.toLowerCase()],
+      is_active: true,
+      sort_order: 10,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, error: 'A category with this name or slug already exists.' }
+    }
+    return { ok: false, error: friendly(error.message) }
+  }
+
+  revalidatePath('/dashboard/templates')
+  return { ok: true, data: inserted?.id }
 }
 
 // ---------- Settings ----------
@@ -593,10 +660,21 @@ export async function sendTestWhatsAppCampaign({
         error: 'WhatsApp is not configured. Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN in .env.local.',
       }
     }
+    let finalTemplate = templateName || null
+    if (!finalTemplate) {
+      try {
+        const { getWhatsAppConfig } = await import('@/lib/integrations')
+        const cfg = await getWhatsAppConfig()
+        finalTemplate = cfg.default_template_name || process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+      } catch {
+        finalTemplate = process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+      }
+    }
+
     const res = await sendWhatsAppMessage({
       to,
       body: `[TEST CAMPAIGN]\n${message}`,
-      templateName: templateName || null,
+      templateName: finalTemplate,
     })
     if (!res.success) {
       return { ok: false, error: res.error || 'WhatsApp message send failed.' }
@@ -1083,3 +1161,156 @@ export async function deleteTeamMember(userId: string): Promise<ActionResult> {
     return { ok: false, error: friendly(err?.message || 'Failed to delete team member.') }
   }
 }
+
+// ---------- Dynamic Channel Integrations ----------
+
+export async function saveIntegrationAction(
+  channelId: string,
+  config: Record<string, any>,
+  status: 'connected' | 'disconnected' = 'connected'
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can update integrations.' }
+  }
+
+  const { saveChannelIntegrationDb } = await import('@/lib/integrations')
+  const res = await saveChannelIntegrationDb(channelId as any, config, status, user.id)
+  if (!res.ok) return { ok: false, error: res.error || 'Failed to save integration.' }
+
+  revalidatePath('/dashboard/integrations')
+  return { ok: true }
+}
+
+export async function toggleIntegrationAction(
+  channelId: string
+): Promise<ActionResult<{ status: 'connected' | 'disconnected' }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  if (myProfile?.role !== 'admin') {
+    return { ok: false, error: 'Only administrators can toggle integrations.' }
+  }
+
+  const { toggleChannelIntegrationDb } = await import('@/lib/integrations')
+  const res = await toggleChannelIntegrationDb(channelId as any, user.id)
+  if (!res.ok) return { ok: false, error: res.error || 'Failed to toggle integration.' }
+
+  revalidatePath('/dashboard/integrations')
+  return { ok: true, data: { status: res.status! } }
+}
+
+export async function testIntegrationAction(
+  channelId: string,
+  testInput?: string,
+  environment: 'realtime' | 'sandbox' = 'realtime'
+): Promise<ActionResult<{ latencyMs: number; message: string }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  const { testChannelIntegration } = await import('@/lib/integrations')
+  const res = await testChannelIntegration(channelId as any, testInput, environment)
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: res.error || res.message,
+    }
+  }
+
+  return {
+    ok: true,
+    data: { latencyMs: res.latencyMs, message: res.message },
+  }
+}
+
+export async function sendLiveTestChannelAction({
+  channelId,
+  environment,
+  recipient,
+  message,
+  templateName,
+}: {
+  channelId: string
+  environment: 'realtime' | 'sandbox'
+  recipient: string
+  message: string
+  templateName?: string
+}): Promise<ActionResult<{ messageId?: string | null; latencyMs: number; details?: any }>> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Please log in again.' }
+
+  if (!recipient.trim()) {
+    return { ok: false, error: 'Recipient is required.' }
+  }
+
+  const start = Date.now()
+
+  if (channelId === 'whatsapp') {
+    const { sendWhatsAppMessage } = await import('@/lib/whatsapp')
+    const { getWhatsAppConfig } = await import('@/lib/integrations')
+    const cfg = await getWhatsAppConfig()
+
+    const phoneId = environment === 'sandbox' && (cfg as any).sandbox_phone_number_id
+      ? (cfg as any).sandbox_phone_number_id
+      : cfg.phone_number_id
+
+    const token = environment === 'sandbox' && (cfg as any).sandbox_access_token
+      ? (cfg as any).sandbox_access_token
+      : cfg.access_token
+
+    const tpl = templateName || cfg.default_template_name || process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+    const bodyText = environment === 'sandbox' ? `[SANDBOX TEST]\n${message}` : message
+
+    try {
+      const res = await sendWhatsAppMessage({
+        to: recipient,
+        body: bodyText,
+        templateName: tpl,
+        phoneId: phoneId || undefined,
+        accessToken: token || undefined,
+      })
+
+      const latencyMs = Date.now() - start
+      if (!res.success) {
+        return { ok: false, error: res.error || 'WhatsApp message test failed.' }
+      }
+      return { ok: true, data: { messageId: res.messageId, latencyMs } }
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Failed to send WhatsApp test message.' }
+    }
+  }
+
+  if (channelId === 'email') {
+    const { sendEmail } = await import('@/lib/mailer')
+    try {
+      const res = await sendEmail({
+        to: recipient,
+        subject: `[${environment === 'sandbox' ? 'SANDBOX ' : ''}TEST] Selfera Integration Health Check`,
+        body: message,
+      })
+      const latencyMs = Date.now() - start
+      return { ok: true, data: { messageId: res.messageId, latencyMs } }
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Failed to send test email.' }
+    }
+  }
+
+  // Social channels (Instagram, Facebook, LinkedIn) test handshake
+  const { testChannelIntegration } = await import('@/lib/integrations')
+  const res = await testChannelIntegration(channelId as any, recipient, environment)
+  const latencyMs = Date.now() - start
+  if (!res.ok) {
+    return { ok: false, error: res.error || res.message }
+  }
+  return { ok: true, data: { latencyMs, details: res.message } }
+}
+

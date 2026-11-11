@@ -17,8 +17,9 @@ import { updateLeadField, updateLeadAddressAndPostcode, bulkSetField, deleteLead
 import { EmptyState, Modal, Pagination, Spinner, ButtonSpinner, toast } from '@/components/ui'
 import { useLists } from '@/components/ListsContext'
 import { CategoryIcon } from '@/components/CategoryIcon'
+import { EmailBadge, type EmailCheckFields } from '@/components/EmailCheck'
 
-export type MissingRow = {
+export type MissingRow = EmailCheckFields & {
   opportunity_id: string
   business_id: string
   business_name: string
@@ -1148,7 +1149,7 @@ export function MissingDataTab({
                                   {row.email || row.whatsapp_number}
                                 </span>
                               ) : (
-                                row.email || row.whatsapp_number || row.instagram || row.facebook || (
+                                (row.email && <span className="inline-flex flex-wrap items-center gap-1">{row.email} <EmailBadge c={row} /></span>) || row.whatsapp_number || row.instagram || row.facebook || (
                                   <i className="text-slate-400">Missing</i>
                                 )
                               )}

@@ -7,6 +7,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import type { ActionResult } from '@/app/dashboard/actions'
 import { cleanCustomer, type CleanCustomer, type Country, type CustomerInput, COUNTRIES } from '@/lib/customerLeads'
+import type { EmailCheck, EmailStatus } from '@/lib/emailCheck'
+
+const EMAIL_STATUSES: EmailStatus[] = ['valid', 'risky', 'invalid', 'disposable', 'unknown']
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 
@@ -106,7 +109,7 @@ export type ImportChunkResult = { batchId: string; created: number; updated: num
 export async function importCustomerLeads(
   businessId: string,
   rows: { row: number; input: CustomerInput }[],
-  opts: { country: Country; consent: boolean; duplicates: 'skip' | 'update'; fileName: string; batchId: string | null },
+  opts: { country: Country; consent: boolean; duplicates: 'skip' | 'update'; fileName: string; batchId: string | null; emailChecks?: Record<string, EmailCheck> },
 ): Promise<ActionResult<ImportChunkResult>> {
   const s = await staff()
   if ('error' in s) return { ok: false, error: s.error }
@@ -150,6 +153,16 @@ export async function importCustomerLeads(
   const byPhone = new Map(existing.filter(x => x.phone_e164).map(x => [x.phone_e164 as string, x]))
 
   const consent = { consent_confirmed: true, consent_confirmed_by: s.userId, consent_confirmed_at: new Date().toISOString() }
+  // Email check results from the import's check step
+  const checkedAt = new Date().toISOString()
+  const emailFields = (email: string | null) => {
+    const c = email ? opts.emailChecks?.[email.trim().toLowerCase()] : undefined
+    if (!c || !EMAIL_STATUSES.includes(c.status as EmailStatus)) return {}
+    return {
+      email_status: c.status, email_reason: c.reason ? String(c.reason).slice(0, 200) : null,
+      email_suggestion: c.suggestion ? String(c.suggestion).slice(0, 254) : null, email_role: c.role === true, email_checked_at: checkedAt,
+    }
+  }
   const inserts: Record<string, unknown>[] = []
   const insertRows: number[] = []
   const seenEmail = new Set<string>()
@@ -161,7 +174,7 @@ export async function importCustomerLeads(
     if (match) {
       if (opts.duplicates === 'skip') { skipped++; continue }
       // Update: new values win, blanks keep what is saved, tags are added
-      const patch: Record<string, unknown> = { ...consent }
+      const patch: Record<string, unknown> = { ...consent, ...emailFields(data.email) }
       for (const [k, v] of Object.entries(data)) {
         if (k === 'tags') patch.tags = [...new Set([...(match.tags || []), ...data.tags])]
         else if (k === 'whatsapp_status') { if (data.phone || data.phone2) patch[k] = v }
@@ -176,7 +189,7 @@ export async function importCustomerLeads(
     if ((data.email && seenEmail.has(data.email)) || (data.phone_e164 && seenPhone.has(data.phone_e164))) { skipped++; continue }
     if (data.email) seenEmail.add(data.email)
     if (data.phone_e164) seenPhone.add(data.phone_e164)
-    inserts.push({ ...data, ...consent, business_id: businessId, source: 'csv', import_batch_id: batchId })
+    inserts.push({ ...data, ...consent, ...emailFields(data.email), business_id: businessId, source: 'csv', import_batch_id: batchId })
     insertRows.push(row)
   }
 

@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
 export { toast, ToastContainer } from '@/components/v2/Toast'
 import { toast } from '@/components/v2/Toast'
-import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers, Check, AlertTriangle } from 'lucide-react'
+import { MessageCircle, Camera, ThumbsUp, Mail, X, Loader2, ChevronLeft, ChevronRight, Layers, Check, AlertTriangle, Info } from 'lucide-react'
 import { STAGE_STYLE, STATUS_STYLE } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
 import { usePresence } from '@/components/usePresence'
@@ -34,12 +34,12 @@ function LinkedinIcon({ size = 16, className = '' }: { size?: number; className?
 
 // ---------- Platform icon ----------
 const PLATFORM_ICON: Record<string, { Icon: any; color: string }> = {
-  WhatsApp: { Icon: MessageCircle, color: 'text-green-600' },
+  WhatsApp: { Icon: MessageCircle, color: 'text-emerald-600' },
   Instagram: { Icon: Camera, color: 'text-pink-600' },
   Facebook: { Icon: ThumbsUp, color: 'text-blue-600' },
-  Email: { Icon: Mail, color: 'text-sky-700' },
+  Email: { Icon: Mail, color: 'text-sky-600' },
   LinkedIn: { Icon: LinkedinIcon, color: 'text-[#0a66c2]' },
-  All: { Icon: Layers, color: 'text-slate-500' },
+  All: { Icon: Layers, color: 'text-indigo-600' },
 }
 
 export function PlatformIcon({ platform, size = 16, className = '' }: { platform: string; size?: number; className?: string }) {
@@ -81,7 +81,31 @@ export function StatusBadge({ status }: { status: string }) {
 // Opening scales the panel in; closing plays the reverse before it is removed.
 const MODAL_EXIT_MS = 160
 
-export function Modal({ title, open, onClose, children, wide, locked }: { title: string; open: boolean; onClose: () => void; children: React.ReactNode; wide?: boolean; locked?: boolean }) {
+// Stops the page behind a dialog from scrolling. Counts open dialogs so a dialog
+// opened on top of another (or closing one of two) doesn't unlock the page early.
+let scrollLocks = 0
+export function useScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    const html = document.documentElement
+    if (scrollLocks++ === 0) {
+      // Keep the layout still where the scrollbar was
+      const gap = window.innerWidth - html.clientWidth
+      html.style.overflow = 'hidden'
+      document.body.style.overflow = 'hidden'
+      if (gap > 0) document.body.style.paddingRight = `${gap}px`
+    }
+    return () => {
+      if (--scrollLocks === 0) {
+        html.style.overflow = ''
+        document.body.style.overflow = ''
+        document.body.style.paddingRight = ''
+      }
+    }
+  }, [active])
+}
+
+export function Modal({ title, open, onClose, children, wide, locked }: { title: string; open: boolean; onClose: () => void; children: React.ReactNode; wide?: boolean | 'xl'; locked?: boolean }) {
   // Closing from inside (X, Esc, backdrop) animates out first, then tells the parent
   const [exiting, setExiting] = useState(false)
   const [prevOpen, setPrevOpen] = useState(open)
@@ -112,11 +136,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
     return () => document.removeEventListener('keydown', onKey)
   }, [mounted, closing, requestClose])
 
-  useEffect(() => {
-    if (!mounted) return
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [mounted])
+  useScrollLock(mounted)
 
   if (!mounted) return null
   return (
@@ -131,7 +151,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
         <div
           role="dialog"
           aria-modal="true"
-          className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden ${closing ? 'motion-panel-out' : 'motion-panel-in'}`}
+          className={`relative w-full ${wide === 'xl' ? 'max-w-6xl' : wide ? 'max-w-4xl' : 'max-w-lg'} max-h-[calc(100dvh-1.5rem)] sm:max-h-[90dvh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden ${closing ? 'motion-panel-out' : 'motion-panel-in'}`}
           onMouseDown={e => e.stopPropagation()}
         >
           <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
@@ -140,7 +160,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
               <X size={18} />
             </button>
           </div>
-          <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+          <div className="overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">{children}</div>
         </div>
       </div>
     </div>
@@ -170,6 +190,7 @@ export function ConfirmModal({
   isPending?: boolean
 }) {
   const { mounted, closing } = usePresence(open, MODAL_EXIT_MS)
+  useScrollLock(mounted)
 
   useEffect(() => {
     if (!open) return
@@ -374,5 +395,22 @@ export function ChipSelect({ options, value, onChange }: { options: readonly str
         )
       })}
     </div>
+  )
+}
+
+// ---------- Info tip: an "i" icon that explains something on hover or focus ----------
+export function InfoTip({ text, align = 'center' }: { text: string; align?: 'center' | 'left' | 'right' }) {
+  const pos = align === 'left' ? 'left-0' : align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2'
+  return (
+    <span className="group relative inline-flex align-middle">
+      {/* A span, not a button, so it can sit inside clickable cards */}
+      <span tabIndex={0} role="img" aria-label={text} onClick={e => e.stopPropagation()}
+        className="inline-flex cursor-help text-slate-400 hover:text-slate-600 focus:text-slate-600 focus:outline-none">
+        <Info size={13} />
+      </span>
+      <span role="tooltip" className={`pointer-events-none absolute bottom-full z-30 mb-1.5 w-max max-w-60 rounded-md bg-slate-900 px-2 py-1 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${pos}`}>
+        {text}
+      </span>
+    </span>
   )
 }

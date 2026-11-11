@@ -272,6 +272,15 @@ function buildMessage(to: string, subject: string, body: string, brand?: EmailBr
   return { html, text, headers }
 }
 
+async function resolveEmailProviderConfig() {
+  try {
+    const { getDynamicEmailConfig } = await import('@/lib/integrations')
+    return await getDynamicEmailConfig()
+  } catch {
+    return null
+  }
+}
+
 export async function sendEmail({
   to,
   subject,
@@ -283,17 +292,34 @@ export async function sendEmail({
   body: string
   brand?: EmailBrand | null
 }): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
-  if (isResendConfigured()) return sendWithResend({ to, subject, body, brand })
+  const dynConfig = await resolveEmailProviderConfig()
+  const provider = dynConfig?.provider || (isResendConfigured() ? 'resend' : 'smtp')
 
-  const user = process.env.SMTP_USER || 'support@selfera.co.uk'
-  const pass = process.env.SMTP_PASS
-
-  if (!pass) {
-    throw new Error('SMTP_PASS is not set in .env. Please add your Google App Password for ' + user)
+  if (provider === 'resend') {
+    const apiKey = dynConfig?.resend_api_key || process.env.RESEND_API_KEY
+    if (apiKey) {
+      return sendWithResend({
+        to,
+        subject,
+        body,
+        brand,
+        apiKey,
+        fromNameOverride: dynConfig?.from_name,
+        fromAddressOverride: dynConfig?.from_email,
+        replyToOverride: dynConfig?.reply_to,
+      })
+    }
   }
 
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com'
-  const port = parseInt(process.env.SMTP_PORT || '465', 10)
+  const user = dynConfig?.smtp_user || process.env.SMTP_USER || 'support@selfera.co.uk'
+  const pass = dynConfig?.smtp_pass || process.env.SMTP_PASS
+
+  if (!pass) {
+    throw new Error('SMTP_PASS is not set in integrations or .env. Please add credentials for ' + user)
+  }
+
+  const host = dynConfig?.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com'
+  const port = parseInt(dynConfig?.smtp_port || process.env.SMTP_PORT || '465', 10)
   const secure = process.env.SMTP_SECURE === 'true' || port === 465
 
   const transporter = nodemailer.createTransport({
@@ -307,9 +333,14 @@ export async function sendEmail({
   })
 
   const { html, text, headers } = buildMessage(to, subject, body, brand)
+  const fromDisplay = brand ? brand.name.replace(/"/g, '') : dynConfig?.from_name
+  const fromAddress = dynConfig?.from_email || user
+  const from = fromDisplay ? `"${fromDisplay}" <${fromAddress}>` : getFromEmail()
+  const replyTo = dynConfig?.reply_to || brand?.replyTo
+
   const info = await transporter.sendMail({
-    from: brand ? `"${brand.name.replace(/"/g, '')}" <${user}>` : getFromEmail(),
-    ...(brand?.replyTo ? { replyTo: brand.replyTo } : {}),
+    from,
+    ...(replyTo ? { replyTo } : {}),
     to,
     subject,
     text,
@@ -333,42 +364,48 @@ export async function sendRawEmail({
   text: string
   replyTo?: string | null
 }): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
-  if (isResendConfigured()) {
-    const fromName = process.env.EMAIL_FROM_NAME || 'Selfera'
-    const fromAddress = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
-    const finalReplyTo = replyTo || process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+  const dynConfig = await resolveEmailProviderConfig()
+  const provider = dynConfig?.provider || (isResendConfigured() ? 'resend' : 'smtp')
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: `${fromName} <${fromAddress}>`,
-        to: [to],
-        subject,
-        text,
-        html,
-        ...(finalReplyTo ? { reply_to: finalReplyTo } : {}),
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const message = `Resend: ${json?.message || `HTTP ${res.status}`}`
-      if (res.status >= 400 && res.status < 500 && res.status !== 429) throw new PermanentEmailError(message)
-      throw new Error(message)
+  if (provider === 'resend') {
+    const apiKey = dynConfig?.resend_api_key || process.env.RESEND_API_KEY
+    if (apiKey) {
+      const fromName = dynConfig?.from_name || process.env.EMAIL_FROM_NAME || 'Selfera'
+      const fromAddress = dynConfig?.from_email || process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
+      const finalReplyTo = replyTo || dynConfig?.reply_to || process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: `${fromName} <${fromAddress}>`,
+          to: [to],
+          subject,
+          text,
+          html,
+          ...(finalReplyTo ? { reply_to: finalReplyTo } : {}),
+        }),
+        signal: AbortSignal.timeout(15_000),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = `Resend: ${json?.message || `HTTP ${res.status}`}`
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) throw new PermanentEmailError(message)
+        throw new Error(message)
+      }
+      return { messageId: String(json.id), provider: 'resend' as const }
     }
-    return { messageId: String(json.id), provider: 'resend' as const }
   }
 
-  const user = process.env.SMTP_USER || 'support@selfera.co.uk'
-  const pass = process.env.SMTP_PASS
+  const user = dynConfig?.smtp_user || process.env.SMTP_USER || 'support@selfera.co.uk'
+  const pass = dynConfig?.smtp_pass || process.env.SMTP_PASS
 
   if (!pass) {
-    throw new Error('SMTP_PASS is not set in .env. Please add your Google App Password for ' + user)
+    throw new Error('SMTP_PASS is not set in integrations or .env. Please add your Google App Password for ' + user)
   }
 
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com'
-  const port = parseInt(process.env.SMTP_PORT || '465', 10)
+  const host = dynConfig?.smtp_host || process.env.SMTP_HOST || 'smtp.gmail.com'
+  const port = parseInt(dynConfig?.smtp_port || process.env.SMTP_PORT || '465', 10)
   const secure = process.env.SMTP_SECURE === 'true' || port === 465
 
   const transporter = nodemailer.createTransport({
@@ -381,9 +418,14 @@ export async function sendRawEmail({
     },
   })
 
+  const fromDisplay = dynConfig?.from_name
+  const fromAddress = dynConfig?.from_email || user
+  const from = fromDisplay ? `"${fromDisplay}" <${fromAddress}>` : getFromEmail()
+  const finalReplyTo = replyTo || dynConfig?.reply_to
+
   const info = await transporter.sendMail({
-    from: getFromEmail(),
-    ...(replyTo ? { replyTo } : {}),
+    from,
+    ...(finalReplyTo ? { replyTo: finalReplyTo } : {}),
     to,
     subject,
     text,
@@ -563,18 +605,42 @@ https://sales.selfera.co.uk`
   return sendRawEmail({ to, subject, html, text })
 }
 
-async function sendWithResend({ to, subject, body, brand }: { to: string; subject: string; body: string; brand?: EmailBrand | null }) {
+async function sendWithResend({
+  to,
+  subject,
+  body,
+  brand,
+  apiKey,
+  fromNameOverride,
+  fromAddressOverride,
+  replyToOverride,
+}: {
+  to: string
+  subject: string
+  body: string
+  brand?: EmailBrand | null
+  apiKey?: string
+  fromNameOverride?: string
+  fromAddressOverride?: string
+  replyToOverride?: string
+}) {
+  const activeKey = apiKey || process.env.RESEND_API_KEY
+  if (!activeKey) {
+    throw new Error('Resend API key is missing. Please configure it in Integrations or .env.')
+  }
   // The From address must be on a domain verified in Resend. Replies go to the
   // mailbox the IMAP sync reads, so reply matching keeps working.
   // A client's email shows the client's name, and replies go to the client
-  const fromName = brand ? brand.name.replace(/[<>"]/g, '') : process.env.EMAIL_FROM_NAME || 'Selfera'
-  const fromAddress = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
-  const replyTo = brand ? brand.replyTo || null : process.env.EMAIL_REPLY_TO || process.env.SMTP_USER
+  const fromName = brand
+    ? brand.name.replace(/[<>"]/g, '')
+    : fromNameOverride || process.env.EMAIL_FROM_NAME || 'Selfera'
+  const fromAddress = fromAddressOverride || process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || 'support@selfera.co.uk'
+  const replyTo = replyToOverride || (brand ? brand.replyTo || null : process.env.EMAIL_REPLY_TO || process.env.SMTP_USER)
 
   const { html, text, headers } = buildMessage(to, subject, body, brand)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${activeKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       from: `${fromName} <${fromAddress}>`,
       to: [to],

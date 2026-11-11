@@ -71,7 +71,7 @@ export function ReplyItem({ r, showCampaign = true, onChange }: { r: CampaignRep
       </div>
       {r.subject && <p className="text-sm font-semibold text-slate-700">{r.subject}</p>}
       <p className={`whitespace-pre-wrap break-words rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ${expanded || !long ? '' : 'line-clamp-3'}`}>{r.body}</p>
-      {long && <button className="text-xs font-semibold text-primary hover:underline" onClick={() => setExpanded(v => !v)}>{expanded ? 'Show less' : 'Show all'}</button>}
+      {long && <button className="text-xs font-semibold text-primary" onClick={() => setExpanded(v => !v)}>{expanded ? 'Show less' : 'Show all'}</button>}
       <ErrorNote error={error} />
     </li>
   )

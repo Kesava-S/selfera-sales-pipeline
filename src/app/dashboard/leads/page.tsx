@@ -116,6 +116,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     total = Number(rows[0]?.total_count ?? 0)
   }
 
+  // Email check results (kept on businesses; the list functions don't return them)
+  const businessIds = [...new Set([...rows, ...missingRows].map(r => r.business_id).filter(Boolean))]
+  const { data: emailRows } = businessIds.length
+    ? await supabase.from('businesses').select('id, email_status, email_reason, email_suggestion, email_role').in('id', businessIds)
+    : { data: [] as { id: string }[] }
+  const emailById = new Map((emailRows || []).map(({ id, ...check }) => [id, check]))
+  rows = rows.map(r => ({ ...r, ...emailById.get(r.business_id) }))
+  missingRows = missingRows.map(r => ({ ...r, ...emailById.get(r.business_id) }))
+
   // Closed leads that wrote back (staff decide whether to reopen)
   const lateReplies: string[] = (lateReplyRows || []).map(r => r.id)
 

@@ -73,6 +73,19 @@ export async function POST(request: Request) {
     for (const entry of entries) {
       const changes = entry.changes || []
       for (const change of changes) {
+        // Meta reviewed a template, or its quality changed (WhatsApp Templates page)
+        if (change.field === 'message_template_status_update' || change.field === 'message_template_quality_update') {
+          const v = change.value || {}
+          const metaId = v.message_template_id != null ? String(v.message_template_id) : null
+          if (metaId) {
+            const patch = change.field === 'message_template_status_update'
+              ? { status: String(v.event || 'PENDING').toUpperCase(), rejected_reason: v.reason && v.reason !== 'NONE' ? String(v.reason) : null }
+              : { quality_score: v.new_quality_score ? String(v.new_quality_score) : null }
+            const { error: tplError } = await supabase.from('meta_templates').update({ ...patch, last_synced_at: new Date().toISOString() }).eq('meta_id', metaId)
+            if (tplError) console.error('[WhatsApp Webhook] template update error:', tplError.message)
+          }
+          continue
+        }
         if (change.field !== 'messages') continue
 
         const value = change.value || {}

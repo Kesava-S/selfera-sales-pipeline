@@ -37,6 +37,7 @@ import { Modal, useAction, ErrorNote, Spinner, toast } from '@/components/ui'
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
 import { RepliesLink } from '@/components/v2/CampaignReplies'
 import { useLists } from '@/components/ListsContext'
+import { MetaTemplatePicker } from '@/components/whatsapp/MetaTemplatePicker'
 
 export type DatabaseContact = {
   id?: string
@@ -117,6 +118,7 @@ export function WhatsAppCampaignsView({
     initialDatabases[0]?.id || ''
   )
   const [message, setMessage] = useState('')
+  const [templateName, setTemplateName] = useState('')
 
   // Database Creation / Edit Modal
   const [dbModalOpen, setDbModalOpen] = useState(false)
@@ -158,6 +160,7 @@ export function WhatsAppCampaignsView({
   const startNewCampaign = () => {
     setEditingCampaign(null)
     setCampaignName('')
+    setTemplateName('')
     setService('General')
     setSelectedDatabaseId(databases[0]?.id || '')
     setMessage(
@@ -170,6 +173,7 @@ export function WhatsAppCampaignsView({
   const startEditCampaign = (c: WhatsAppCampaignRow) => {
     setEditingCampaign(c)
     setCampaignName(c.name)
+    setTemplateName(c.template_name || '')
     setService(c.service || 'General')
     setSelectedDatabaseId(c.database_id || databases[0]?.id || '')
     setMessage(c.message)
@@ -349,6 +353,9 @@ export function WhatsAppCampaignsView({
     const t = templates.find(item => item.id === tId)
     if (!t) return
     setMessage(t.body)
+    if (t.whatsapp_template_name) {
+      setTemplateName(t.whatsapp_template_name)
+    }
   }
 
   // Sample lead for live preview
@@ -394,6 +401,7 @@ export function WhatsAppCampaignsView({
       id: editingCampaign?.id || null,
       name: campaignName,
       message,
+      templateName: templateName.trim() || undefined,
       service,
       databaseId: db?.id || null,
       databaseName: db?.name || 'Custom Database',
@@ -415,7 +423,7 @@ export function WhatsAppCampaignsView({
             id: data.id,
             name: payload.name,
             message: payload.message,
-            template_name: null,
+            template_name: templateName.trim() || null,
             service: payload.service || 'General',
             database_id: payload.databaseId || null,
             database_name: payload.databaseName || null,
@@ -752,6 +760,15 @@ export function WhatsAppCampaignsView({
               </div>
 
               <div className="space-y-3.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="label !mb-0">
+                      Meta template <span className="text-slate-400 font-normal text-xs">(Required outside 24h window)</span>
+                    </label>
+                  </div>
+                  <MetaTemplatePicker value={templateName} onChange={setTemplateName} className="!py-1.5 text-xs font-mono" />
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="label !mb-0">
@@ -1435,6 +1452,7 @@ export function WhatsAppCampaignsView({
                       sendTestWhatsAppCampaign({
                         to: testPhone,
                         message: previewMessage,
+                        templateName: templateName.trim() || undefined,
                       }),
                     () => {
                       setTestSentSuccess(true)

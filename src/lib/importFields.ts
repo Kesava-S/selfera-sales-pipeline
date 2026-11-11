@@ -55,37 +55,26 @@ export const FIELDS: { key: FieldKey; label: string; required?: boolean; synonym
   { key: 'business_name', label: 'Business name', required: true, synonyms: ['business_name', 'business', 'name', 'business name', 'company', 'company name', 'hotel', 'venue'] },
   { key: 'website', label: 'Website', synonyms: ['website', 'existing_website', 'site', 'url', 'web', 'link'] },
   { key: 'no_site', label: 'No site (tick / yes)', synonyms: ['no_site', 'has_no_website', 'no site', 'no_website', 'no website', 'without website'] },
-  { key: 'address', label: 'Address', synonyms: ['address', 'location', 'street', 'full address'] },
+  { key: 'address', label: 'Address', synonyms: ['address', 'location', 'street', 'full address', 'area', 'town', 'borough', 'city', 'neighbourhood'] },
   { key: 'postcode', label: 'Postcode', synonyms: ['postcode', 'post code', 'zip', 'postal code'] },
   { key: 'branches', label: 'Branches (Name | Address | Postcode; ...)', synonyms: ['branches', 'branch list', 'locations', 'group branches'] },
   { key: 'business_type', label: 'Category', required: true, synonyms: ['business_type', 'category', 'type', 'business type', 'sector', 'industry'] },
-  { key: 'services', label: 'Services to pitch', required: true, synonyms: ['services', 'services_to_pitch', 'service_to_pitch', 'service', 'pitch', 'offer', 'services pitched'] },
+  { key: 'services', label: 'Services to pitch (from CSV)', synonyms: ['services', 'services_to_pitch', 'service_to_pitch', 'service', 'pitch', 'offer', 'services pitched'] },
   { key: 'owner_name', label: 'Owner name', synonyms: ['owner_name', 'contact_name', 'owner', 'contact', 'manager', 'contact name', 'owner contact name'] },
   { key: 'owner_email', label: 'Owner email', synonyms: ['owner_email', 'owner email', 'owner e-mail'] },
-  { key: 'owner_whatsapp', label: 'Owner WhatsApp', synonyms: ['owner_whatsapp', 'owner whatsapp', 'owner mobile', 'owner phone'] },
-  { key: 'owner_social', label: 'Owner social / LinkedIn', synonyms: ['owner_social', 'owner social', 'owner linkedin', 'owner socials', 'owner social link'] },
+  { key: 'owner_whatsapp', label: 'Owner WhatsApp', synonyms: ['owner_whatsapp', 'owner whatsapp', 'owner mobile', 'owner phone', 'owner_contact', 'owner contact'] },
+  { key: 'owner_social', label: 'Owner social / LinkedIn', synonyms: ['owner_social', 'owner social', 'owner linkedin', 'owner socials', 'owner social link', 'linkedin', 'business_linkedin', 'li'] },
   { key: 'business_email', label: 'Business email', synonyms: ['business_email', 'email', 'business email', 'e-mail', 'mail', 'email address'] },
   { key: 'business_whatsapp', label: 'Business WhatsApp', synonyms: ['business_whatsapp', 'whatsapp_number', 'whatsapp', 'wa', 'business whatsapp', 'wa number', 'mobile', 'phone', 'telephone', 'tel', 'phone_number', 'phone number', 'mobile_number', 'mobile number', 'contact_number', 'contact number', 'cell', 'cell_number'] },
   { key: 'instagram', label: 'Instagram', synonyms: ['instagram', 'business_instagram', 'ig', 'insta', 'instagram handle'] },
   { key: 'facebook', label: 'Facebook', synonyms: ['facebook', 'business_facebook', 'fb', 'facebook page'] },
   { key: 'tech_partner_type', label: 'Tech partner type (Agency/DIY/None)', synonyms: ['tech_partner_type', 'tech partner type', 'partner type'] },
-  { key: 'tech_partner_name', label: 'Tech partner name', synonyms: ['tech_partner_name', 'tech partner name', 'agency name', 'diy tool', 'partner name'] },
+  { key: 'tech_partner_name', label: 'Tech partner name', synonyms: ['tech_partner_name', 'tech partner name', 'agency name', 'diy tool', 'partner name', 'existing_tech_partner', 'tech_partner', 'tech partner'] },
   { key: 'gaps_found', label: 'Gaps found', synonyms: ['gaps_found', 'gaps', 'gaps found', 'issues', 'audit', 'observations'] },
   { key: 'source', label: 'Source', synonyms: ['source', 'lead source', 'channel', 'campaign'] },
-
-  // Legacy mappings
-  { key: 'owner_contact', label: 'Owner contact (all-in-one)', synonyms: ['owner_contact', 'owner contact'] },
-  { key: 'existing_tech_partner', label: 'Existing tech partner (legacy)', synonyms: ['existing_tech_partner', 'tech_partner', 'tech partner'] },
-  { key: 'linkedin', label: 'Business LinkedIn', synonyms: ['linkedin', 'business_linkedin', 'li'] },
-  { key: 'area', label: 'Area', synonyms: ['area', 'town', 'borough', 'city', 'neighbourhood'] },
+  { key: 'company_type', label: 'Company type', synonyms: ['company_type', 'company type'] },
   { key: 'notes', label: 'Notes', synonyms: ['notes', 'comments', 'remarks'] },
   { key: 'maps_link', label: 'Google Maps link', synonyms: ['maps_link', 'maps', 'google maps'] },
-  { key: 'rating', label: 'Rating', synonyms: ['rating', 'google_rating', 'google rating', 'stars'] },
-  { key: 'reviews_count', label: 'Reviews count', synonyms: ['reviews_count', 'reviews', 'review count'] },
-  { key: 'company_type', label: 'Company type', synonyms: ['company_type', 'company type'] },
-  { key: 'tier', label: 'Tier', synonyms: ['tier', 'star rating'] },
-  { key: 'room_count', label: 'Rooms', synonyms: ['room_count', 'rooms', 'room count'] },
-  { key: 'demo_link', label: 'Demo link', synonyms: ['demo_link', 'demo'] },
 ]
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -179,6 +168,12 @@ export function parseServices(v: string, fallback: string[], known: string[]): {
   return { services: Array.from(new Set(services)), unknown }
 }
 
+export type EmailTypeInfo = {
+  hasEmail: boolean
+  email?: string
+  isValid: boolean
+}
+
 export type ImportRow = {
   idx: number
   line: number
@@ -192,6 +187,8 @@ export type ImportRow = {
   errors: string[]
   warnings: string[]
   phoneInfo: PhoneTypeInfo
+  emailInfo: EmailTypeInfo
+  isCleanData: boolean
 }
 
 export function buildRow(
@@ -257,10 +254,35 @@ export function buildRow(
     }
   }
 
-  const phoneInfo = getPhoneType(cleanBizWa || rawBizWa || cleanOwnerWa || rawOwnerWa)
+  let phoneInfo = getPhoneType(cleanBizWa || rawBizWa)
+  if (!phoneInfo.isWhatsApp && (cleanOwnerWa || rawOwnerWa)) {
+    const ownerPhoneInfo = getPhoneType(cleanOwnerWa || rawOwnerWa)
+    if (ownerPhoneInfo.isWhatsApp || phoneInfo.type === 'empty' || phoneInfo.type === 'invalid') {
+      phoneInfo = ownerPhoneInfo
+    }
+  }
   if (phoneInfo.isWhatsApp && !cleanBizWa && phoneInfo.normalized) {
     cleanBizWa = phoneInfo.normalized
   }
+
+  // Email detection & validation
+  const bEmailValid = Boolean(businessEmail && EMAIL_RE.test(businessEmail.trim()))
+  const oEmailValid = Boolean(ownerEmail && EMAIL_RE.test(ownerEmail.trim()))
+  const validEmail = bEmailValid
+    ? businessEmail.trim().toLowerCase()
+    : oEmailValid
+    ? ownerEmail.trim().toLowerCase()
+    : undefined
+  const anyEmail = businessEmail.trim() || ownerEmail.trim() || undefined
+
+  const emailInfo: EmailTypeInfo = {
+    hasEmail: Boolean(anyEmail),
+    email: validEmail || anyEmail,
+    isValid: Boolean(validEmail),
+  }
+
+  // Clean data detection: lead has at least one direct contact (WhatsApp or Email)
+  const isCleanData = Boolean(phoneInfo.isWhatsApp || emailInfo.isValid)
 
   // Tech partner
   let techType = get('tech_partner_type')
@@ -340,6 +362,8 @@ export function buildRow(
     errors,
     warnings,
     phoneInfo,
+    emailInfo,
+    isCleanData,
     data: {
       business_name: name,
       business_type: type,
@@ -394,4 +418,7 @@ export const TEMPLATE_HEADERS = [
   'tech_partner_name',
   'gaps_found',
   'source',
+  'company_type',
+  'notes',
+  'maps_link',
 ]

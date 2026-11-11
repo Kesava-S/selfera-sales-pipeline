@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getSendRule, needsPecrConfirm, parseApiPlatforms } from '@/lib/sending'
+import { getSendRule, needsPecrConfirm } from '@/lib/sending'
+import { getDynamicApiPlatforms } from '@/lib/integrations'
 import { ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   // Reading the thread also checks this user may see it (database rules)
   const { data: thread } = await supabase
     .from('threads')
-    .select('id, platform, status, external_thread_id, last_inbound_at, opportunities (id, stage, businesses (linkedin, whatsapp_number, email, instagram, facebook, company_type))')
+    .select('id, platform, status, external_thread_id, last_inbound_at, opportunities (id, stage, businesses (business_name, contact_name, area, linkedin, whatsapp_number, email, instagram, facebook, company_type))')
     .eq('id', threadId)
     .maybeSingle()
   if (!thread) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
@@ -38,14 +39,20 @@ export async function POST(request: Request) {
   if (opp?.stage === 'Needs review') return NextResponse.json({ error: 'Approve this lead first. Outreach starts from the Approval queue.' }, { status: 422 })
 
   const webhook = process.env.N8N_WEBHOOK_URL
-  const apiPlatforms = parseApiPlatforms(process.env.SEND_API_PLATFORMS)
-  let templateName: string | null = null
-  if (templateId) {
+  const apiPlatforms = await getDynamicApiPlatforms()
+  let templateName: string | null = input?.templateName || null
+  if (!templateName && templateId) {
     const { data: t } = await supabase.from('templates').select('whatsapp_template_name').eq('id', templateId).maybeSingle()
     templateName = t?.whatsapp_template_name ?? null
   }
   if (!templateName && thread.platform === 'WhatsApp') {
-    templateName = process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+    try {
+      const { getWhatsAppConfig } = await import('@/lib/integrations')
+      const waConfig = await getWhatsAppConfig()
+      templateName = waConfig.default_template_name || process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+    } catch {
+      templateName = process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+    }
   }
 
   // Same rule the screen uses, checked again here
@@ -73,6 +80,8 @@ export async function POST(request: Request) {
 
   // 1. Send the message
   let externalId: string | null = null
+  // What the lead actually received (a template's text differs from the typed message)
+  let sentBody = body
 
   if (thread.platform === 'Email') {
     try {
@@ -84,15 +93,22 @@ export async function POST(request: Request) {
     }
   } else if (thread.platform === 'WhatsApp' && isWhatsAppConfigured()) {
     try {
+      let senderName: string | null = null
+      if (rule.mode === 'api-template') {
+        const { data: me } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle()
+        senderName = (me?.full_name || '').split(' ')[0] || null
+      }
       const res = await sendWhatsAppMessage({
         to,
         body,
         templateName: rule.mode === 'api-template' ? templateName : null,
+        vars: { business_name: b?.business_name, contact_name: b?.contact_name, area: b?.area, sender_name: senderName },
       })
       if (!res.success) {
         return NextResponse.json({ error: `WhatsApp send failed: ${res.error || 'Unknown error'}. Your message is still here.` }, { status: 502 })
       }
       externalId = res.messageId
+      if (res.sentText) sentBody = res.sentText
     } catch (e: any) {
       console.error('WhatsApp send error:', e)
       return NextResponse.json({ error: `Not sent: ${e?.message || 'WhatsApp delivery failed'}. Your message is still here.` }, { status: 502 })
@@ -123,7 +139,7 @@ export async function POST(request: Request) {
   }
 
   const rpcArgs = {
-    p_thread_id: threadId, p_body: body, p_subject: subject, p_template_id: templateId,
+    p_thread_id: threadId, p_body: sentBody, p_subject: subject, p_template_id: templateId,
     p_send_method: 'api', p_external_message_id: externalId, p_sent_by: user.id,
   }
   const { error } = await supabase.rpc('record_outbound', rpcArgs)

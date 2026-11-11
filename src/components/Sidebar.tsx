@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch, Contact } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch, Contact, Plug } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 const NAV = [
@@ -17,6 +17,7 @@ const NAV = [
   { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
   { href: '/dashboard/templates', label: 'Templates', icon: FileText },
+  { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
   { href: '/dashboard/settings', label: 'Settings', icon: Sliders },
 ]
 
@@ -24,7 +25,7 @@ const NAV = [
 const LEAD_PAGE = /^\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/|$)/i
 const sectionOf = (path: string) => (LEAD_PAGE.test(path) ? '/dashboard/leads' : path)
 
-const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/lookup', '/dashboard/audience', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/settings']
+const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/lookup', '/dashboard/audience', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/integrations', '/dashboard/settings']
 
 export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
   const pathname = sectionOf(usePathname())

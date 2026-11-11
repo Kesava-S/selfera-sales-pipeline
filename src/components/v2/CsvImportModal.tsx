@@ -9,7 +9,18 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
-import { Upload, Download, AlertTriangle, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
+import {
+  Upload,
+  Download,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  Phone,
+  Mail,
+  MessageSquare,
+  Copy,
+} from 'lucide-react'
 import { useLists } from '@/components/ListsContext'
 import {
   FIELDS,
@@ -21,8 +32,9 @@ import {
   type ImportRow,
   PROBLEM_LABELS,
 } from '@/lib/importFields'
-import { ChipSelect, ErrorNote, Modal, Spinner, toast } from '@/components/ui'
+import { ChipSelect, ErrorNote, InfoTip, Modal, Spinner, toast } from '@/components/ui'
 import { createImportBatch } from '@/app/dashboard/actions'
+import { EmailCheckBadge, EmailCheckSummary, LeftOutLabel, LeftOutSummary, emailWorks as emailIsWorking, leftOutReason as shortReason, useEmailListCheck } from '@/components/EmailCheck'
 
 const MAX_ROWS = 5000
 const CHUNK = 500
@@ -47,12 +59,14 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   const [progress, setProgress] = useState('')
   const [progressPercent, setProgressPercent] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [previewFilter, setPreviewFilter] = useState<'all' | 'ready' | 'missing' | 'left_out'>('all')
   const [result, setResult] = useState<{
     batchId?: string
     created: number
     updated: number
     pitches: number
     skipped: number
+    leftOut?: number
     failed: number
     ready: number
     missing: number
@@ -75,6 +89,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     setProgress('')
     setProgressPercent(0)
     setError(null)
+    setPreviewFilter('all')
     setResult(null)
   }
 
@@ -146,7 +161,10 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   const mappingProblems = [
     !map.business_name && 'Match the "Business name" column.',
     !map.business_type && 'Match the "Category" column.',
-    !map.services && !defaultServices.length && 'Pick the services to pitch (or match a services column).',
+    !defaultServices.length &&
+      (map.services
+        ? 'Select at least one fallback service (mandatory for any rows with empty services).'
+        : 'Select the services to pitch (mandatory for all rows).'),
   ].filter(Boolean) as string[]
 
   // ---------- Transition to Step 3: Check Duplicates ----------
@@ -186,16 +204,26 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     }
   }
 
+  // Email check (QuickEmailVerification) runs in the check step, before anything is saved
+  const fileEmails = useMemo(
+    () => (step >= 3 ? builtRows.flatMap(r => (!r.isCannotImport && r.emailInfo?.hasEmail && r.emailInfo.email ? [r.emailInfo.email] : [])) : null),
+    [step, builtRows]
+  )
+  const emailCheck = useEmailListCheck(fileEmails)
+  const emailCheckFor = (email?: string | null) => (email ? emailCheck.results[email.trim().toLowerCase()] : undefined)
+
+  // Clean data: a WhatsApp mobile or a working email. A row with neither is left out of the import.
+  // A working email is anything not found Invalid or Throwaway (Valid, Risky, Unknown, or not checked).
+  const emailWorks = (r: ImportRow) => emailIsWorking(!!r.emailInfo?.hasEmail, !!r.emailInfo?.isValid, emailCheckFor(r.emailInfo?.email))
+  const noContact = (r: ImportRow) => !r.isCannotImport && !r.phoneInfo?.isWhatsApp && !emailWorks(r)
+  const leftOutReason = (r: ImportRow) => shortReason(r.phoneInfo?.type, !!r.emailInfo?.hasEmail, emailCheckFor(r.emailInfo?.email))
+
   // Row classifications for Step 3
   const duplicateIdxSet = useMemo(() => new Set(matches.map(m => m.idx)), [matches])
-  const readyCount = useMemo(
-    () => builtRows.filter(r => r.isReady && !duplicateIdxSet.has(r.idx)).length,
-    [builtRows, duplicateIdxSet]
-  )
-  const missingCount = useMemo(
-    () => builtRows.filter(r => r.isMissingData && !duplicateIdxSet.has(r.idx)).length,
-    [builtRows, duplicateIdxSet]
-  )
+  const leftOutRows = builtRows.filter(noContact)
+  const leftOutCount = leftOutRows.length
+  const readyCount = builtRows.filter(r => r.isReady && !duplicateIdxSet.has(r.idx) && !noContact(r)).length
+  const missingCount = builtRows.filter(r => r.isMissingData && !duplicateIdxSet.has(r.idx) && !noContact(r)).length
   const cannotImportCount = useMemo(
     () => builtRows.filter(r => r.isCannotImport).length,
     [builtRows]
@@ -205,6 +233,21 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     () => builtRows.filter(r => !r.isCannotImport && r.phoneInfo?.isWhatsApp).length,
     [builtRows]
   )
+  const emailReadyCount = builtRows.filter(r => !r.isCannotImport && emailWorks(r)).length
+  const cleanDataCount = builtRows.filter(r => !r.isCannotImport && !noContact(r)).length
+  const totalImportable = readyCount + missingCount
+  const cleanPercent = totalImportable > 0 ? Math.round((cleanDataCount / totalImportable) * 100) : 0
+  const whatsAppPercent = totalImportable > 0 ? Math.round((whatsAppReadyCount / totalImportable) * 100) : 0
+  const emailPercent = totalImportable > 0 ? Math.round((emailReadyCount / totalImportable) * 100) : 0
+
+  const filteredRows = (() => {
+    if (previewFilter === 'left_out') return leftOutRows
+    const importable = builtRows.filter(r => !r.isCannotImport && !noContact(r))
+    if (previewFilter === 'ready') return importable.filter(r => r.isReady && !duplicateIdxSet.has(r.idx))
+    if (previewFilter === 'missing') return importable.filter(r => r.isMissingData && !duplicateIdxSet.has(r.idx))
+    // All: the leads to import, then the left-out ones (labelled, not imported)
+    return [...importable, ...leftOutRows]
+  })()
 
   // ---------- Step 4: Import ----------
   const startImport = async () => {
@@ -225,7 +268,8 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     }
 
     const byIdx = new Map(matches.map(m => [m.idx, m]))
-    const importableRows = builtRows.filter(r => !r.isCannotImport)
+    // Rows with no WhatsApp mobile and no working email are left out
+    const importableRows = builtRows.filter(r => !r.isCannotImport && !noContact(r))
     const payload = importableRows
       .map(r => {
         const m = byIdx.get(r.idx)
@@ -237,6 +281,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           services: r.services,
           branches: r.data.branches,
           ...r.data,
+          email_check: emailCheckFor(r.emailInfo?.email) ?? null,
         }
       })
       .filter(r => r.action !== 'skip')
@@ -256,6 +301,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
       updated: 0,
       pitches: 0,
       skipped: builtRows.length - payload.length,
+      leftOut: leftOutCount,
       failed: 0,
       ready: 0,
       missing: 0,
@@ -417,19 +463,26 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             ))}
           </div>
 
-          {/* Services Fallback */}
-          {!map.services && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <label className="label mb-2">Services to pitch (applies to all rows) <span className="text-red-500 font-bold ml-0.5">*</span></label>
-              <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
+          {/* Services Selection / Fallback (Mandatory) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <label className="label">
+                {map.services
+                  ? 'Services fallback (applied when row has empty service)'
+                  : 'Services to pitch (applies to all rows)'}
+                <span className="text-red-500 font-bold ml-0.5">*</span>
+              </label>
+              {defaultServices.length === 0 && (
+                <span className="text-xs font-semibold text-rose-600">Selection required</span>
+              )}
             </div>
-          )}
-          {map.services && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <label className="label mb-2">Services fallback (for rows where services column is empty)</label>
-              <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
-            </div>
-          )}
+            <p className="text-xs text-slate-500">
+              {map.services
+                ? 'Mandatory fallback: Used for rows where the CSV services column is blank or unrecognised, ensuring all leads are outreach-ready.'
+                : 'Since no services column is mapped from your CSV, these services will be assigned to all imported leads.'}
+            </p>
+            <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
+          </div>
 
           {/* Category synonyms fallback */}
           {unknownTypes.length > 0 && (
@@ -485,48 +538,64 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
 
       {/* Step 3: Check */}
       {step === 3 && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* 4 Summary Boxes */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {/* Box 1: Ready */}
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 text-center">
+            <button
+              type="button"
+              onClick={() => setPreviewFilter(f => (f === 'ready' ? 'all' : 'ready'))}
+              className={`rounded-xl border p-3.5 text-center transition-all text-left sm:text-center ${
+                previewFilter === 'ready'
+                  ? 'border-emerald-500 bg-emerald-100/70 ring-2 ring-emerald-500 shadow-xs'
+                  : 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/40 hover:border-emerald-300'
+              }`}
+              title="Click to filter ready leads"
+            >
               <div className="text-2xl font-bold text-emerald-800">{readyCount}</div>
-              <div className="text-xs font-semibold text-emerald-900">Ready</div>
-              <div className="mt-1 text-[11px] text-emerald-700">Approval queue</div>
-            </div>
+              <div className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-emerald-900">Ready <InfoTip text="Go to the Approval queue." /></div>
+            </button>
 
             {/* Box 2: Missing data */}
-            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 text-center">
+            <button
+              type="button"
+              disabled={missingCount === 0}
+              onClick={() => setPreviewFilter(f => (f === 'missing' ? 'all' : 'missing'))}
+              className={`rounded-xl border p-3.5 text-center transition-all text-left sm:text-center ${
+                missingCount > 0 ? 'hover:bg-amber-100/40 hover:border-amber-300 cursor-pointer' : 'opacity-80 cursor-default'
+              } ${
+                previewFilter === 'missing'
+                  ? 'border-amber-500 bg-amber-100/70 ring-2 ring-amber-500 shadow-xs'
+                  : 'border-amber-200 bg-amber-50/50'
+              }`}
+              title={missingCount > 0 ? 'Click to filter missing data leads' : 'No missing data leads'}
+            >
               <div className="text-2xl font-bold text-amber-800">{missingCount}</div>
-              <div className="text-xs font-semibold text-amber-900">Missing data</div>
-              <div className="mt-1 text-[11px] text-amber-700">Can be fixed in queue</div>
-            </div>
+              <div className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-amber-900">Missing data <InfoTip text="Imported to Missing data, to fix later." /></div>
+            </button>
 
-            {/* Box 3: Cannot import */}
-            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3.5 text-center">
-              <div className="text-2xl font-bold text-rose-800">{cannotImportCount}</div>
-              <div className="text-xs font-semibold text-rose-900">Cannot import</div>
-              <div className="mt-1 text-[11px] text-rose-700">No business name</div>
-            </div>
+            {/* Box 3: Cannot import (no name, or no WhatsApp / working email) */}
+            <button
+              type="button"
+              disabled={leftOutCount === 0}
+              onClick={() => setPreviewFilter(f => (f === 'left_out' ? 'all' : 'left_out'))}
+              className={`rounded-xl border p-3.5 text-center transition-all ${
+                previewFilter === 'left_out' ? 'border-rose-500 bg-rose-100/70 ring-2 ring-rose-500' : 'border-rose-200 bg-rose-50/50'
+              } ${leftOutCount > 0 ? 'cursor-pointer hover:bg-rose-100/40' : 'cursor-default'}`}
+              title={leftOutCount > 0 ? 'Click to see the rows left out' : undefined}
+            >
+              <div className="text-2xl font-bold text-rose-800">{cannotImportCount + leftOutCount}</div>
+              <div className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-rose-900">Cannot import <InfoTip text="No business name, or no WhatsApp mobile and no working email. Not imported." /></div>
+            </button>
 
             {/* Box 4: Duplicates */}
             <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3.5 text-center">
               <div className="text-2xl font-bold text-blue-800">{duplicatesCount}</div>
-              <div className="text-xs font-semibold text-blue-900">Duplicates</div>
-              <div className="mt-1 text-[11px] text-blue-700">Existing businesses</div>
+              <div className="inline-flex items-center justify-center gap-1 text-xs font-semibold text-blue-900">Duplicates <InfoTip text="Already in Lead Management. Choose skip, update or new pitch." /></div>
             </div>
           </div>
 
-          {/* WhatsApp Detection Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-2.5 text-xs text-emerald-900">
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white font-bold text-[11px]">✓</span>
-              <span>
-                <b>{whatsAppReadyCount}</b> of <b>{readyCount + missingCount}</b> leads have a valid WhatsApp mobile number detected.
-              </span>
-            </div>
-            <span className="text-[11px] text-emerald-700">Mobile numbers (UK 07 / +447, India +91) automatically mapped to WhatsApp</span>
-          </div>
+          <EmailCheckSummary c={emailCheck} />
 
           {/* Duplicates Resolution Section (if any) */}
           {duplicatesCount > 0 && (
@@ -590,30 +659,88 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             </div>
           )}
 
+          <LeftOutSummary count={leftOutCount} />
+
           {/* Cannot import notice */}
           {cannotImportCount > 0 && (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-              <div className="flex items-center gap-2">
-                <AlertCircle size={15} className="shrink-0" />
-                <span>
-                  {cannotImportCount} row{cannotImportCount === 1 ? '' : 's'} have no business name and will be skipped.
-                </span>
-              </div>
-              <button
-                className="font-semibold hover:text-rose-950 inline-flex items-center gap-1"
-                onClick={downloadCannotImport}
-              >
-                <Download size={13} /> Download skipped rows
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs">
+              <span className="inline-flex items-center gap-1.5">
+                <AlertCircle size={14} className="text-red-600" />
+                <span className="font-semibold text-red-700">{cannotImportCount} without a business name</span>
+                <InfoTip align="left" text="Skipped. Add the name in the file and import again." />
+              </span>
+              <button className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900" onClick={downloadCannotImport}>
+                <Download size={13} /> Download
               </button>
             </div>
           )}
 
-          {/* Leads Preview Table */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Preview of leads to import (showing up to 200 rows):</span>
-              <span>
-                {readyCount + missingCount} total lead{readyCount + missingCount === 1 ? '' : 's'} will be imported
+          {/* Leads Preview Table with Quick Filter */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-500 font-medium">Filter preview:</span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewFilter('all')}
+                  title="Includes left-out leads, labelled"
+
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                    previewFilter === 'all'
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All ({readyCount + missingCount + leftOutCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewFilter('ready')}
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                    previewFilter === 'ready'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  }`}
+                >
+                  Ready ({readyCount})
+                </button>
+                {missingCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFilter('missing')}
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                      previewFilter === 'missing'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    }`}
+                  >
+                    Missing data ({missingCount})
+                  </button>
+                )}
+                {leftOutCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFilter('left_out')}
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                      previewFilter === 'left_out'
+                        ? 'bg-rose-700 text-white shadow-xs'
+                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                    }`}
+                  >
+                    Left out ({leftOutCount})
+                  </button>
+                )}
+              </div>
+              <span className="text-slate-500 text-[11px]">
+                {previewFilter !== 'all' ? (
+                  <span>
+                    Showing <b>{filteredRows.slice(0, 200).length}</b> of <b>{filteredRows.length}</b> filtered leads
+                  </span>
+                ) : (
+                  <span>
+                    <b>{readyCount + missingCount}</b> total leads to import
+                  </span>
+                )}
               </span>
             </div>
             <div className="table-wrap max-h-72 overflow-y-auto">
@@ -623,53 +750,96 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <th>Row</th>
                     <th>Business</th>
                     <th>Category</th>
-                    <th>WhatsApp / Phone</th>
+                    <th>Contact (WA / Email)</th>
                     <th>Services</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {builtRows
-                    .filter(r => !r.isCannotImport)
-                    .slice(0, 200)
-                    .map(r => {
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                        No leads match the selected filter ({previewFilter}).
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRows.slice(0, 200).map(r => {
                       const isDup = duplicateIdxSet.has(r.idx)
+                      const leftOut = noContact(r)
                       return (
-                        <tr key={r.idx} className={r.isMissingData ? 'bg-amber-50/40' : ''}>
+                        <tr key={r.idx} className={leftOut ? 'opacity-70' : r.isMissingData ? 'bg-amber-50/40' : ''}>
                           <td className="text-slate-500">{r.line}</td>
-                          <td className="font-semibold">{r.data.business_name}</td>
+                          <td className="font-semibold">
+                            {r.data.business_name}
+                            {leftOut && <div className="mt-0.5 text-[11px] font-normal text-slate-500">{leftOutReason(r)}</div>}
+                          </td>
                           <td>{r.data.business_type || <i className="text-slate-400">Missing</i>}</td>
                           <td>
-                            {r.phoneInfo?.isWhatsApp ? (
-                              <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800" title={r.phoneInfo.label}>
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                                {r.data.whatsapp_number || r.phoneInfo.normalized}
-                              </span>
-                            ) : r.phoneInfo?.type === 'landline' ? (
-                              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600" title="Landline (Cannot receive WhatsApp)">
-                                {r.data.whatsapp_number || r.phoneInfo.normalized || 'Landline'} (No WA)
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic text-[11px]">None</span>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {r.phoneInfo?.isWhatsApp ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"
+                                  title={r.phoneInfo.label}
+                                >
+                                  <MessageSquare size={13} className="text-emerald-600 shrink-0" />
+                                  <span>{r.data.whatsapp_number || r.phoneInfo.normalized}</span>
+                                </span>
+                              ) : r.phoneInfo?.type === 'landline' ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 text-xs text-slate-500"
+                                  title="Landline (Cannot receive WhatsApp)"
+                                >
+                                  <Phone size={13} className="text-slate-400 shrink-0" />
+                                  <span>{r.data.whatsapp_number || r.phoneInfo.normalized || 'Landline'} (No WA)</span>
+                                </span>
+                              ) : null}
+
+                              {r.emailInfo?.isValid ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700"
+                                  title="Valid email address"
+                                >
+                                  <Mail size={13} className="text-sky-600 shrink-0" />
+                                  <span className="truncate max-w-[220px]">{r.emailInfo.email}</span>
+                                  <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
+                                </span>
+                              ) : r.emailInfo?.hasEmail ? (
+                                <span
+                                  className="inline-flex items-center gap-1.5 text-xs text-amber-700"
+                                  title="Invalid email syntax"
+                                >
+                                  <Mail size={13} className="text-amber-500 shrink-0" />
+                                  <span className="truncate max-w-[220px]">{r.emailInfo.email}</span>
+                                  <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
+                                </span>
+                              ) : null}
+
+                              {!r.phoneInfo?.normalized && !r.data.whatsapp_number && !r.emailInfo?.hasEmail && (
+                                <span className="text-slate-400 italic text-xs">None</span>
+                              )}
+                            </div>
                           </td>
                           <td>{r.services.join(', ') || <i className="text-slate-400">None</i>}</td>
                           <td>
-                            {isDup ? (
-                              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-800">
+                            {leftOut ? (
+                              <LeftOutLabel />
+                            ) : isDup ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                                <Copy size={12} className="text-blue-600 shrink-0" />
                                 Duplicate ({choices[r.idx]})
                               </span>
                             ) : r.isReady ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                                <CheckCircle2 size={13} /> Ready
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs">
+                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" /> Ready
                               </span>
                             ) : (
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex flex-wrap gap-1.5">
                                 {r.problems.map(p => (
                                   <span
                                     key={p}
-                                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900"
+                                    className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800"
                                   >
+                                    <AlertTriangle size={11} className="text-amber-600 shrink-0" />
                                     {PROBLEM_LABELS[p] || p}
                                   </span>
                                 ))}
@@ -678,10 +848,35 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                           </td>
                         </tr>
                       )
-                    })}
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Contact & Clean Data Detection Metrics (Bottom Summary) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mr-1">
+                Contact channels:
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-bold text-emerald-700">
+                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                Clean data: {cleanDataCount} ({cleanPercent}%)
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="inline-flex items-center gap-1.5 font-semibold text-teal-700">
+                <MessageSquare size={13} className="text-teal-600 shrink-0" />
+                WhatsApp: {whatsAppReadyCount}
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="inline-flex items-center gap-1.5 font-semibold text-sky-700">
+                <Mail size={13} className="text-sky-600 shrink-0" />
+                Email: {emailReadyCount}
+              </span>
+            </div>
+            <InfoTip align="right" text="Clean data: a WhatsApp mobile or a working email." />
           </div>
 
           <ErrorNote error={error} />
@@ -693,7 +888,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             </button>
             <button
               className="btn btn-primary"
-              disabled={readyCount + missingCount === 0 || busy}
+              disabled={readyCount + missingCount === 0 || busy || emailCheck.running}
               onClick={startImport}
             >
               {busy && <Spinner />} Import {readyCount + missingCount} lead{readyCount + missingCount === 1 ? '' : 's'}
@@ -727,6 +922,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                   {result.created + result.updated + result.pitches === 1 ? '' : 's'} imported from <b>{fileName}</b>.
                 </p>
               </div>
+
 
               {/* Destination Breakdown */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -767,10 +963,40 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
 
               {/* Extra summary metrics */}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
-                {result.updated > 0 && <span>Updated: {result.updated}</span>}
-                {result.pitches > 0 && <span>New pitches: {result.pitches}</span>}
-                {result.skipped > 0 && <span>Skipped: {result.skipped}</span>}
-                {result.failed > 0 && <span className="text-rose-600">Failed: {result.failed}</span>}
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-800">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                    Clean data: <b>{cleanDataCount} ({cleanPercent}%)</b>
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span>WhatsApp: <b>{whatsAppReadyCount}</b></span>
+                  <span className="text-slate-300">•</span>
+                  <span>Email: <b>{emailReadyCount}</b></span>
+                  {result.updated > 0 && (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span>Updated: {result.updated}</span>
+                    </>
+                  )}
+                  {result.pitches > 0 && (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span>New pitches: {result.pitches}</span>
+                    </>
+                  )}
+                  {result.skipped > 0 && (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span>Skipped: {result.skipped}{result.leftOut ? ` (${result.leftOut} with no WhatsApp or working email)` : ''}</span>
+                    </>
+                  )}
+                  {result.failed > 0 && (
+                    <>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-rose-600">Failed: {result.failed}</span>
+                    </>
+                  )}
+                </div>
                 <button className="text-primary font-semibold hover:text-primary-hover" onClick={close}>
                   Close
                 </button>

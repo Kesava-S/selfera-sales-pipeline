@@ -25,11 +25,12 @@ type Template = { id: string; name: string; platform: string; step: string; serv
 const STEP_ORDER = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
 
 export function ChatInterface({
-  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent, emailBlock = null,
+  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent, emailBlock = null, defaultWhatsAppTemplate,
 }: {
   thread: any; opp: any; draft: any; templates: Template[]; siblings: { id: string; platform: string; status: string }[]
   people: { id: string; full_name: string }[]; me: Profile; senderName: string; apiPlatforms: string[]; humanAgent: boolean
   emailBlock?: EmailBlock | null
+  defaultWhatsAppTemplate?: string
 }) {
   const router = useRouter()
   const b = opp.businesses
@@ -89,8 +90,13 @@ export function ChatInterface({
 
   const template = templates.find(t => t.id === templateId)
   const rule = getSendRule({
-    platform, threadStatus: thread.status, stage: opp.stage, lastInboundAt: thread.last_inbound_at,
-    apiPlatforms, whatsappTemplateName: template?.whatsapp_template_name, humanAgent,
+    platform,
+    threadStatus: thread.status,
+    stage: opp.stage,
+    lastInboundAt: thread.last_inbound_at,
+    apiPlatforms,
+    whatsappTemplateName: template?.whatsapp_template_name || defaultWhatsAppTemplate || 'selfera_sales_pipeline_general',
+    humanAgent,
   })
 
   // Permissions (checked again in the database)
@@ -330,7 +336,7 @@ export function ChatInterface({
       {/* Banners */}
       {opp.replied_after_close_at && (
         <Banner tone="slate" icon={<Info size={16} />}>
-          They replied after this lead was closed ({opp.stage}). <Link href={`/dashboard/${opp.id}`} className="font-semibold text-primary hover:underline">Reopen it from the lead page</Link> to answer.
+          They replied after this lead was closed ({opp.stage}). <Link href={`/dashboard/${opp.id}`} className="font-semibold text-primary">Reopen it from the lead page</Link> to answer.
         </Banner>
       )}
       {thread.status === 'Paused' && (
@@ -422,7 +428,14 @@ export function ChatInterface({
 
             {(rule.mode === 'api' || rule.mode === 'api-template') && (
               <button className="btn btn-primary" disabled={busy || blockers.length > 0 || !!missingContact} onClick={sendApi}>
-                {busy ? <Spinner /> : <Send size={16} />} {platform === 'WhatsApp' ? 'Send WhatsApp' : (rule.mode === 'api-template' ? 'Send template' : 'Send')}
+                {busy ? <Spinner /> : <Send size={16} />}{' '}
+                {platform === 'WhatsApp'
+                  ? rule.mode === 'api-template'
+                    ? 'Send WhatsApp Template'
+                    : 'Send WhatsApp'
+                  : rule.mode === 'api-template'
+                  ? 'Send Template'
+                  : 'Send'}
               </button>
             )}
 

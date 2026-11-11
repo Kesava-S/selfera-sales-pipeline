@@ -17,6 +17,8 @@ import { EmptyState, ErrorNote, Modal, ConfirmModal, Pagination, Spinner, useAct
 import { formatDate } from '@/lib/format'
 import { PageHeader } from '@/components/customers/ClientsView'
 import { CustomerImportModal } from '@/components/customers/CustomerImportModal'
+import { CustomerExportModal } from '@/components/customers/CustomerExportModal'
+import { EmailBadge } from '@/components/EmailCheck'
 
 export type CustomerTab = 'all' | 'ready' | 'missing' | 'dnc'
 export type CustomerFilters = { tab: CustomerTab; q: string; phone: string; country: string }
@@ -52,6 +54,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
   const [selected, setSelected] = useState<string[]>([])
   const [editing, setEditing] = useState<CustomerLead | 'new' | null>(null)
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [confirm, setConfirm] = useState<null | 'delete' | 'dnc'>(null)
   const [reason, setReason] = useState('')
   const bulk = useAction()
@@ -86,7 +89,15 @@ export function CustomersView({ business, customers, total, counts, filters, pag
         title={business.business_name}
         text={`${[business.contact_name && `Owner: ${business.contact_name}`, business.business_type, business.area].filter(Boolean).join(' · ') || 'Client'} · ${counts.total.toLocaleString('en-GB')} customers`}
       >
-        {isAdmin && view === 'customers' && <a href={exportHref} className="btn btn-secondary"><Download size={16} /> Export CSV</a>}
+        {isAdmin && view === 'customers' && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setExporting(true)}
+          >
+            <Download size={16} /> Export CSV{selected.length ? ` (${selected.length})` : ''}
+          </button>
+        )}
         <button className="btn btn-secondary" onClick={() => setImporting(true)}><Upload size={16} /> Import CSV</button>
         <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Add customer</button>
       </PageHeader>
@@ -229,7 +240,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                       {c.phone2 && <PhoneCell raw={c.phone2} e164={c.phone2_e164} type={c.phone2_type} whatsapp={c.phone_type === 'mobile' ? 'no_mobile' : c.whatsapp_status} small />}
                       {!c.phone && !c.phone2 && <span className="text-xs text-slate-400">No phone</span>}
                     </td>}
-                    {cols.has('email') && <td className="max-w-56 truncate text-sm">{c.email || <span className="text-xs text-slate-400">No email</span>}</td>}
+                    {cols.has('email') && <td className="max-w-64 text-sm">{c.email ? <><div className="truncate">{c.email}</div><EmailBadge c={c} /></> : <span className="text-xs text-slate-400">No email</span>}</td>}
                     {cols.has('status') && <td>
                       {c.do_not_contact ? (
                         <span className="text-xs text-red-700">{c.do_not_contact_reason || 'Do not contact'}{c.do_not_contact_at && ` · ${formatDate(c.do_not_contact_at)}`}</span>
@@ -271,6 +282,15 @@ export function CustomersView({ business, customers, total, counts, filters, pag
         />
       )}
       <CustomerImportModal open={importing} onClose={() => setImporting(false)} businessId={business.id} businessName={business.business_name} />
+      <CustomerExportModal
+        open={exporting}
+        onClose={() => setExporting(false)}
+        business={business}
+        customers={customers}
+        selectedIds={selected}
+        totalMatching={total}
+        filters={filters}
+      />
 
       <Modal open={confirm === 'dnc'} onClose={closeConfirm} locked={bulk.pending} title={`Stop contacting ${selected.length} customer${selected.length === 1 ? '' : 's'}?`}>
         <p className="text-sm text-slate-600">Move selected customers to &ldquo;Do not contact&rdquo;?</p>

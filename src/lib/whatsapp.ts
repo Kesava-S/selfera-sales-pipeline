@@ -1,4 +1,5 @@
 import { parseAndValidatePhone } from '@/lib/contact'
+import { paramsFor, renderTemplate, type MetaComponent, type VarKey, type VariableMap } from '@/lib/metaTemplateDraft'
 
 /**
  * Meta WhatsApp Cloud API Client
@@ -30,17 +31,51 @@ export interface SendWhatsAppOptions {
   body: string
   templateName?: string | null
   templateLanguage?: string
+  // Lead details that fill the template's {{n}} (see Templates → WhatsApp); `message` defaults to body
+  vars?: Partial<Record<VarKey, string | null | undefined>>
+  phoneId?: string
+  accessToken?: string
 }
 
 export interface SendWhatsAppResult {
   success: boolean
   messageId: string | null
   error?: string
+  // The template text as sent, with the lead's details filled in
+  sentText?: string
+  // A retry won't help (no usable template)
+  permanent?: boolean
+}
+
+type OurTemplate = { name: string; language: string; status: string; components: MetaComponent[]; variable_map: VariableMap | null }
+
+// Only this product's templates are used (the Meta account is shared with other products)
+async function ourTemplate(name: string): Promise<OurTemplate | null> {
+  const { createServiceClient } = await import('@/lib/supabase/server')
+  const { data } = await createServiceClient()
+    .from('meta_templates')
+    .select('name, language, status, components, variable_map')
+    .eq('name', name)
+    .eq('managed', true)
+    .order('status')
+  const rows = (data || []) as OurTemplate[]
+  return rows.find(r => r.status === 'APPROVED') ?? rows[0] ?? null
 }
 
 export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise<SendWhatsAppResult> {
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
-  const token = process.env.WHATSAPP_ACCESS_TOKEN
+  let phoneId = options.phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID
+  let token = options.accessToken || process.env.WHATSAPP_ACCESS_TOKEN
+
+  if (!phoneId || !token) {
+    try {
+      const { getWhatsAppConfig } = await import('@/lib/integrations')
+      const cfg = await getWhatsAppConfig()
+      phoneId = phoneId || cfg.phone_number_id
+      token = token || cfg.access_token
+    } catch {
+      // Fallback to process.env
+    }
+  }
 
   if (!phoneId || !token) {
     throw new Error('WhatsApp is not configured. Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN.')
@@ -55,28 +90,37 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
 
   let payload: any
 
+  let sentText: string | undefined
   if (options.templateName) {
-    const lang = options.templateLanguage || process.env.WHATSAPP_DEFAULT_TEMPLATE_LANG || 'en'
+    let template: Record<string, unknown>
+    if (options.templateName === 'hello_world') {
+      // Meta's built-in sample, with no variables
+      template = { name: 'hello_world', language: { code: 'en_US' } }
+    } else {
+      const t = await ourTemplate(options.templateName)
+      if (!t) return { success: false, messageId: null, permanent: true, error: `"${options.templateName}" is not one of this product's Meta templates. Link an approved template in Templates → WhatsApp.` }
+      if (t.status !== 'APPROVED') return { success: false, messageId: null, permanent: true, error: `Meta template "${t.name}" is not approved yet (${t.status.toLowerCase().replace(/_/g, ' ')}).` }
+      const map: VariableMap = { body: [], ...(t.variable_map || {}) }
+      const bodyText = (t.components.find(c => c.type === 'BODY') as { text?: string } | undefined)?.text ?? ''
+      const headerText = (t.components.find(c => c.type === 'HEADER') as { text?: string } | undefined)?.text ?? ''
+      const count = new Set(bodyText.match(/\{\{\d+\}\}/g) || []).size
+      const values = { message: options.body, ...(options.vars || {}) }
+      const body = paramsFor(map, count, values)
+      const header = /\{\{1\}\}/.test(headerText) ? paramsFor({ body: [map.header || 'business_name'] }, 1, values)[0] : null
+      const components = [
+        ...(header ? [{ type: 'header', parameters: [{ type: 'text', text: header }] }] : []),
+        ...(body.length ? [{ type: 'body', parameters: body.map(text => ({ type: 'text', text })) }] : []),
+      ]
+      template = { name: t.name, language: { code: options.templateLanguage || t.language }, ...(components.length ? { components } : {}) }
+      sentText = renderTemplate(t.components, body, header)
+    }
+
     payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: cleanTo,
       type: 'template',
-      template: {
-        name: options.templateName,
-        language: { code: lang },
-        components: [
-          {
-            type: 'body',
-            parameters: [
-              {
-                type: 'text',
-                text: options.body,
-              },
-            ],
-          },
-        ],
-      },
+      template,
     }
   } else {
     payload = {
@@ -104,7 +148,9 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
   const json = await res.json().catch(() => ({}))
 
   if (!res.ok) {
-    const errorMsg = json?.error?.message || json?.error?.error_user_msg || `Meta API HTTP ${res.status}`
+    const errorDetail = json?.error?.error_data?.details
+    const baseMsg = json?.error?.message || json?.error?.error_user_msg || `Meta API HTTP ${res.status}`
+    const errorMsg = errorDetail ? `${baseMsg} (${errorDetail})` : baseMsg
     console.error('Meta WhatsApp send failed:', json)
     return {
       success: false,
@@ -118,5 +164,6 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
   return {
     success: true,
     messageId,
+    sentText,
   }
 }

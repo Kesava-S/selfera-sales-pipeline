@@ -2,6 +2,7 @@
 // Used by both the screens (preview) and the server actions (which decide).
 
 import { parsePhoneNumberFromString } from 'libphonenumber-js/max'
+import type { EmailStatus } from '@/lib/emailCheck'
 
 export type Country = 'UK' | 'India'
 export const COUNTRIES: Country[] = ['UK', 'India']
@@ -57,6 +58,11 @@ export function whatsappFrom(...checks: (PhoneCheck | null)[]): WhatsAppStatus {
 export const isEmail = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)
 
 export type CustomerLead = {
+  // Email check (see emailCheck.ts); null = not checked
+  email_status?: EmailStatus | null
+  email_reason?: string | null
+  email_suggestion?: string | null
+  email_role?: boolean | null
   id: string
   business_id: string
   country: Country

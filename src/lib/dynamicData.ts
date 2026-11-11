@@ -174,7 +174,7 @@ const fetchPipelineSetting = async (key: string): Promise<any> => {
     const supabase = createServiceClient()
     const { data, error } = await supabase
       .schema('sales-pipe')
-      .from('pipeline_settings')
+      .from('settings')
       .select('value')
       .eq('key', key)
       .maybeSingle()

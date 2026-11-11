@@ -44,8 +44,15 @@ export function stripEmailQuotedText(text: string): string {
   return result || text.trim()
 }
 
-export function isImapConfigured(): boolean {
-  return Boolean(process.env.IMAP_PASS || process.env.SMTP_PASS)
+export async function isImapConfigured(): Promise<boolean> {
+  if (process.env.IMAP_PASS || process.env.SMTP_PASS) return true
+  try {
+    const { getDynamicEmailConfig } = await import('@/lib/integrations')
+    const dyn = await getDynamicEmailConfig()
+    return Boolean(dyn?.imap_pass || dyn?.smtp_pass)
+  } catch {
+    return false
+  }
 }
 
 export interface SyncResult {
@@ -67,14 +74,20 @@ export async function syncEmailReplies(options?: {
   maxMessages?: number
   sinceDays?: number
 }): Promise<SyncResult> {
-  const host = process.env.IMAP_HOST || 'imap.gmail.com'
-  const port = parseInt(process.env.IMAP_PORT || '993', 10)
-  const secure = process.env.IMAP_SECURE !== 'false'
-  const user = (process.env.IMAP_USER || process.env.SMTP_USER || 'support@selfera.co.uk').trim()
-  const pass = (process.env.IMAP_PASS || process.env.SMTP_PASS || '').trim()
+  let dyn: any = null
+  try {
+    const { getDynamicEmailConfig } = await import('@/lib/integrations')
+    dyn = await getDynamicEmailConfig()
+  } catch {}
+
+  const host = dyn?.imap_host || process.env.IMAP_HOST || 'imap.gmail.com'
+  const port = parseInt(dyn?.imap_port || process.env.IMAP_PORT || '993', 10)
+  const secure = port === 993 || process.env.IMAP_SECURE !== 'false'
+  const user = (dyn?.imap_user || dyn?.smtp_user || process.env.IMAP_USER || process.env.SMTP_USER || 'support@selfera.co.uk').trim()
+  const pass = (dyn?.imap_pass || dyn?.smtp_pass || process.env.IMAP_PASS || process.env.SMTP_PASS || '').trim()
 
   if (!pass) {
-    throw new Error('IMAP_PASS or SMTP_PASS is not configured in .env')
+    throw new Error('IMAP_PASS or SMTP_PASS is not configured in integrations or .env')
   }
 
   const unseenOnly = options?.unseenOnly ?? true

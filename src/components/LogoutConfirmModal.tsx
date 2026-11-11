@@ -5,6 +5,7 @@ import { LogOut, X } from 'lucide-react'
 import { signOut } from '@/app/dashboard/actions'
 import { Preloader } from '@/components/Preloader'
 import { usePresence } from '@/components/usePresence'
+import { useScrollLock } from '@/components/ui'
 
 export function LogoutConfirmModal({
   open,
@@ -15,6 +16,7 @@ export function LogoutConfirmModal({
 }) {
   const [isPending, startTransition] = useTransition()
   const { mounted, closing } = usePresence(open)
+  useScrollLock(mounted)
 
   useEffect(() => {
     if (!open) return

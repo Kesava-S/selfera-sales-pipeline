@@ -101,14 +101,26 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined, customerI
       : { id: r.id, ok: false, error: 'WhatsApp is not configured.', permanent: true }
   }
   try {
+    let templateName = c.template_name || null
+    if (!templateName) {
+      try {
+        const { getWhatsAppConfig } = await import('@/lib/integrations')
+        const cfg = await getWhatsAppConfig()
+        templateName = cfg.default_template_name || process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+      } catch {
+        templateName = process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || 'selfera_sales_pipeline_general'
+      }
+    }
+
     const res = await sendWhatsAppMessage({
       to: r.phone!,
       body: personalise(c.message || '', r, c.service),
-      templateName: c.template_name || null,
+      templateName,
+      vars: { business_name: r.business_name, contact_name: r.contact_name },
     })
     return res.success
       ? { id: r.id, ok: true, external_id: res.messageId }
-      : { id: r.id, ok: false, error: res.error || 'WhatsApp send failed.' }
+      : { id: r.id, ok: false, error: res.error || 'WhatsApp send failed.', permanent: res.permanent }
   } catch (err) {
     // Thrown only for an unusable number, which a retry won't fix
     return { id: r.id, ok: false, error: err instanceof Error ? err.message : 'WhatsApp send failed.', permanent: true }
