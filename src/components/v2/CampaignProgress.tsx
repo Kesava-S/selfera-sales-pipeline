@@ -10,6 +10,7 @@ import { retryFailedCampaignSends } from '@/app/dashboard/actions'
 import { Spinner, useAction } from '@/components/ui'
 import type { CampaignChannel, CampaignProgress as Progress } from '@/lib/campaignQueue'
 import { CampaignRepliesList } from '@/components/v2/CampaignReplies'
+import { friendlyMetaError } from '@/lib/metaErrors'
 
 export function useCampaignProgress(channel: CampaignChannel, campaignId: string | null) {
   const [progress, setProgress] = useState<Progress | null>(null)
@@ -204,7 +205,7 @@ export function CampaignProgress({
                     <span className="block truncate font-medium text-slate-800">{f.name || f.to}</span>
                     {f.name && <span className="block truncate text-slate-500">{f.to}</span>}
                   </span>
-                  <span className={`shrink-0 text-right ${f.error === 'Opted out' ? 'text-slate-500' : 'text-rose-600'}`}>{f.error}</span>
+                  <span className={`shrink-0 text-right ${f.error === 'Opted out' ? 'text-slate-500' : 'text-rose-600'}`} title={f.error || undefined}>{f.error === 'Opted out' ? f.error : friendlyMetaError(f.error).text}</span>
                 </li>
               ))}
             </ul>

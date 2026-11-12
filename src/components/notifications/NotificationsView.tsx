@@ -21,6 +21,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { markNotificationRead } from '@/app/dashboard/actions'
 import { formatDateTime } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
 import { toast } from '@/components/v2/Toast'
 import { Spinner } from '@/components/ui'
 import { Note, getNotificationVisuals, formatRelativeTime } from '@/components/NotificationBell'
@@ -32,6 +33,7 @@ export function NotificationsView({
   initialNotifications: Note[]
   userId: string
 }) {
+  const tz = useTimeZone()
   const [items, setItems] = useState<Note[]>(initialNotifications)
   const [filterTab, setFilterTab] = useState<'all' | 'unread' | 'read'>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -108,7 +110,7 @@ export function NotificationsView({
             Notifications
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-500">
-            View your personal alerts, customer replies, and assignment updates.
+            Replies, assignments and opt-outs for your leads.
           </p>
         </div>
 
@@ -185,13 +187,13 @@ export function NotificationsView({
               onChange={e => setTypeFilter(e.target.value)}
               className="input !py-1.5 text-xs shrink-0 !w-auto"
             >
-              <option value="all">All Types</option>
-              <option value="new_reply">Customer Replies</option>
-              <option value="booking_matched">Bookings Matched</option>
-              <option value="booking_unmatched">Unmatched Bookings</option>
-              <option value="needs_consultant">Consultations</option>
+              <option value="all">All types</option>
+              <option value="new_reply">Replies</option>
+              <option value="reply_waiting">Replies waiting</option>
+              <option value="consultation_reminder">Consultation reminders</option>
               <option value="assigned_to_you">Assignments</option>
-              <option value="upsell_due">Upsell Alerts</option>
+              <option value="needs_consultant">Needs a consultant</option>
+              <option value="upsell_due">Upsells</option>
               <option value="unsubscribed">Opt-outs</option>
             </select>
           </div>
@@ -259,11 +261,11 @@ export function NotificationsView({
                       )}
 
                       <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-0.5">
-                        <span title={formatDateTime(n.created_at)}>
+                        <span title={formatDateTime(n.created_at, tz)}>
                           {formatRelativeTime(n.created_at)}
                         </span>
                         <span>&middot;</span>
-                        <span>{formatDateTime(n.created_at)}</span>
+                        <span>{formatDateTime(n.created_at, tz)}</span>
                       </div>
                     </div>
                   </div>

@@ -23,17 +23,40 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     .eq('id', threadId)
     .eq('opportunity_id', oppId)
     .maybeSingle()
-  if (!thread) notFound()
+  if (!thread || !thread.opportunities?.businesses) notFound()
 
   const opp = thread.opportunities
-  const [{ data: siblings }, { data: templates }, { data: people }, emailBlock, apiPlatforms, waConfig] = await Promise.all([
+  // Meta approves templates on its side: re-check any that are in review or out of date first
+  if (thread.platform === 'WhatsApp') {
+    await import('@/lib/metaTemplates').then(m => m.refreshMetaTemplateStatuses()).catch(() => {})
+  }
+  const [{ data: siblings }, { data: templates }, { data: people }, emailBlock, apiPlatforms, waConfig, { data: metaRows }] = await Promise.all([
     supabase.from('threads').select('id, platform, status').eq('opportunity_id', oppId),
     supabase.from('templates').select('id, name, platform, step, services, business_types, subject, body, whatsapp_template_name').in('platform', MESSAGING.includes(thread.platform) ? [thread.platform, 'All'] : [thread.platform]).eq('is_active', true).order('name'),
     supabase.from('profiles').select('id, full_name'),
     thread.platform === 'Email' ? findEmailBlock(supabase, opp.businesses?.email) : Promise.resolve(null),
     getDynamicApiPlatforms(),
     import('@/lib/integrations').then(m => m.getWhatsAppConfig()).catch(() => null),
+    // This product's Meta templates and their review status (WhatsApp only)
+    thread.platform === 'WhatsApp'
+      ? supabase.from('meta_templates').select('name, status').eq('managed', true)
+      : Promise.resolve({ data: [] as { name: string; status: string }[] }),
   ])
+  let activeMetaRows = metaRows || []
+  if (thread.platform === 'WhatsApp' && activeMetaRows.some(m => m.status === 'PENDING')) {
+    try {
+      const { syncMetaTemplates } = await import('@/app/dashboard/templates/metaActions')
+      await syncMetaTemplates()
+      const { data: refreshed } = await supabase.from('meta_templates').select('name, status').eq('managed', true)
+      if (refreshed) activeMetaRows = refreshed
+    } catch {
+      // Fallback to activeMetaRows
+    }
+  }
+
+  // One status per Meta template name; Approved wins when it exists in any language
+  const metaStatuses: Record<string, string> = {}
+  for (const m of activeMetaRows) if (metaStatuses[m.name] !== 'APPROVED') metaStatuses[m.name] = m.status
 
   const type = opp.businesses?.business_type
 
@@ -71,6 +94,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
         humanAgent={process.env.META_HUMAN_AGENT === 'true'}
         emailBlock={emailBlock}
         defaultWhatsAppTemplate={waConfig?.default_template_name}
+        metaStatuses={metaStatuses}
       />
     </>
   )

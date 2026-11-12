@@ -36,8 +36,8 @@ export async function sendAdminNotification({
         message: message ?? title,
         type,
         employee_id: employeeId, // null notifies all admins
-        link: link ?? null,
-        metadata,
+        // shared.product_notifications has no link column: the link goes in metadata (migration 74)
+        metadata: { ...metadata, ...(link ? { link } : {}), channel: 'in_app' },
       })
 
     if (error) {

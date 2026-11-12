@@ -116,13 +116,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     total = Number(rows[0]?.total_count ?? 0)
   }
 
-  // Email check results (kept on businesses; the list functions don't return them)
+  // Email check results and off-target marks (kept on businesses; the list functions don't return them)
   const businessIds = [...new Set([...rows, ...missingRows].map(r => r.business_id).filter(Boolean))]
   const { data: emailRows } = businessIds.length
-    ? await supabase.from('businesses').select('id, email_status, email_reason, email_suggestion, email_role').in('id', businessIds)
+    ? await supabase.from('businesses').select('id, email_status, email_reason, email_suggestion, email_role, off_target_at, off_target_reason, off_target_noticed, off_target_note').in('id', businessIds)
     : { data: [] as { id: string }[] }
   const emailById = new Map((emailRows || []).map(({ id, ...check }) => [id, check]))
-  rows = rows.map(r => ({ ...r, ...emailById.get(r.business_id) }))
+
+  // Latest reply's type per lead (sorted by word rules; a label only)
+  const oppIds = rows.map(r => r.opportunity_id).filter(Boolean)
+  const { data: replyThreads } = oppIds.length
+    ? await supabase.from('threads').select('opportunity_id, last_reply_intent, last_inbound_at').in('opportunity_id', oppIds)
+      .not('last_reply_intent', 'is', null).order('last_inbound_at', { ascending: false, nullsFirst: false })
+    : { data: [] as { opportunity_id: string; last_reply_intent: string | null }[] }
+  const replyByOpp = new Map<string, string>()
+  for (const t of replyThreads || []) if (t.last_reply_intent && !replyByOpp.has(t.opportunity_id)) replyByOpp.set(t.opportunity_id, t.last_reply_intent)
+  rows = rows.map(r => ({ ...r, ...emailById.get(r.business_id), reply_intent: replyByOpp.get(r.opportunity_id) ?? null }))
   missingRows = missingRows.map(r => ({ ...r, ...emailById.get(r.business_id) }))
 
   // Closed leads that wrote back (staff decide whether to reopen)

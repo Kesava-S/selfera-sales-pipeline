@@ -137,7 +137,6 @@ export function WhatsAppCampaignsView({
   // Test send modal
   const [testModalOpen, setTestModalOpen] = useState(false)
   const [testPhone, setTestPhone] = useState('')
-  const [testSentSuccess, setTestSentSuccess] = useState(false)
 
   // Launch modal
   const [launchModalOpen, setLaunchModalOpen] = useState(false)
@@ -1397,7 +1396,6 @@ export function WhatsAppCampaignsView({
           open
           onClose={() => {
             setTestModalOpen(false)
-            setTestSentSuccess(false)
           }}
         >
           <div className="space-y-4">
@@ -1416,17 +1414,9 @@ export function WhatsAppCampaignsView({
                 value={testPhone}
                 onChange={e => {
                   setTestPhone(e.target.value)
-                  setTestSentSuccess(false)
                 }}
               />
             </div>
-
-            {testSentSuccess && (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-800 flex items-center gap-2">
-                <Check size={14} className="text-emerald-600" />
-                Test message sent successfully! Check WhatsApp.
-              </div>
-            )}
 
             <ErrorNote error={testError} />
 
@@ -1436,7 +1426,6 @@ export function WhatsAppCampaignsView({
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setTestModalOpen(false)
-                  setTestSentSuccess(false)
                 }}
               >
                 Close
@@ -1446,7 +1435,6 @@ export function WhatsAppCampaignsView({
                 className="btn btn-primary btn-sm flex items-center gap-1.5"
                 disabled={testPending || testPhone.trim().length < 6}
                 onClick={() => {
-                  setTestSentSuccess(false)
                   runTest(
                     () =>
                       sendTestWhatsAppCampaign({
@@ -1455,7 +1443,6 @@ export function WhatsAppCampaignsView({
                         templateName: templateName.trim() || undefined,
                       }),
                     () => {
-                      setTestSentSuccess(true)
                       toast.success('Test WhatsApp sent!')
                     }
                   )

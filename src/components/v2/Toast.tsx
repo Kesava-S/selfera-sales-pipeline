@@ -18,13 +18,21 @@ type ToastListener = (toasts: ToastItem[]) => void
 let toasts: ToastItem[] = []
 let listeners: ToastListener[] = []
 
+let lastShown: { key: string; at: number; id: string } = { key: '', at: 0, id: '' }
+
 function notify() {
   listeners.forEach(fn => fn([...toasts]))
 }
 
 export const toast = {
   show(message: string, options?: { type?: ToastType; title?: string; duration?: number }) {
+    // The same alert raised twice in a row (e.g. by an action and by its form) shows once
+    const type = options?.type || 'info'
+    const key = `${type}:${message}`
+    const now = Date.now()
+    if (lastShown.key === key && now - lastShown.at < 4000) return lastShown.id
     const id = Math.random().toString(36).substring(2, 9)
+    lastShown = { key, at: now, id }
     const item: ToastItem = {
       id,
       type: options?.type || 'info',

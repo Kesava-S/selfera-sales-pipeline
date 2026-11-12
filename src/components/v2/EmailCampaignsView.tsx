@@ -138,7 +138,6 @@ export function EmailCampaignsView({
   // Test send modal
   const [testEmailOpen, setTestEmailOpen] = useState(false)
   const [testRecipient, setTestRecipient] = useState(userEmail)
-  const [testSentSuccess, setTestSentSuccess] = useState(false)
 
   // Launch modal
   const [launchModalOpen, setLaunchModalOpen] = useState(false)
@@ -1414,7 +1413,6 @@ export function EmailCampaignsView({
           open
           onClose={() => {
             setTestEmailOpen(false)
-            setTestSentSuccess(false)
           }}
         >
           <div className="space-y-4">
@@ -1433,17 +1431,9 @@ export function EmailCampaignsView({
                 value={testRecipient}
                 onChange={e => {
                   setTestRecipient(e.target.value)
-                  setTestSentSuccess(false)
                 }}
               />
             </div>
-
-            {testSentSuccess && (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-800 flex items-center gap-2">
-                <Check size={14} className="text-emerald-600" />
-                Test email sent successfully! Check your inbox.
-              </div>
-            )}
 
             <ErrorNote error={testError} />
 
@@ -1453,7 +1443,6 @@ export function EmailCampaignsView({
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setTestEmailOpen(false)
-                  setTestSentSuccess(false)
                 }}
               >
                 Close
@@ -1463,7 +1452,6 @@ export function EmailCampaignsView({
                 className="btn btn-primary btn-sm flex items-center gap-1.5"
                 disabled={testPending || !testRecipient.includes('@')}
                 onClick={() => {
-                  setTestSentSuccess(false)
                   runTest(
                     () =>
                       sendTestEmailCampaign({
@@ -1472,7 +1460,6 @@ export function EmailCampaignsView({
                         body: previewBody,
                       }),
                     () => {
-                      setTestSentSuccess(true)
                       toast.success(`Test email sent to ${testRecipient}.`)
                     }
                   )

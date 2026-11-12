@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { CheckCircle2, ChevronRight, ArrowUpRight } from 'lucide-react'
 import { STATUS_PAGES } from '@/lib/config'
 import { dueLabel, stepLabel } from '@/lib/format'
-import { ErrorNote, PlatformIcon } from '@/components/ui'
+import { ErrorNote, InfoTip, PlatformIcon } from '@/components/ui'
+import { REPLY_INTENTS, ReplyIntentLabel } from '@/components/ReplyIntent'
 
 type DueItem = {
   thread_id: string
@@ -17,6 +18,7 @@ type DueItem = {
   status: string
   next_due_on: string | null
   draft_status: string | null
+  reply_intent?: string | null
 }
 
 const TABS = [
@@ -31,12 +33,14 @@ export function DashboardHome({
   counts,
   due,
   loadError,
+  replyTypes = {},
 }: {
   name: string
   role: string
   counts: Record<string, number>
   due: { new: DueItem[]; followups: DueItem[]; replies: DueItem[] }
   loadError: string | null
+  replyTypes?: Record<string, number>
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>(
     due.replies.length ? 'replies' : due.new.length ? 'new' : 'followups'
@@ -97,6 +101,19 @@ export function DashboardHome({
         </div>
       </section>
 
+      {/* Replies waiting, by type (sorted automatically; the stage is still changed by hand) */}
+      {Object.keys(replyTypes).length > 0 && (
+        <section className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+            Replies to answer
+            <InfoTip align="left" text="Sorted by the words in each reply. Labels only: change the stage yourself." />
+          </span>
+          {REPLY_INTENTS.filter(i => replyTypes[i.key]).map(i => (
+            <span key={i.key} className={`inline-flex items-center gap-1 font-medium ${i.cls}`}>{i.icon} {replyTypes[i.key]} {i.label.toLowerCase()}</span>
+          ))}
+        </section>
+      )}
+
       {/* Due today */}
       <section>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Due today</h2>
@@ -138,6 +155,7 @@ export function DashboardHome({
                       <div className="truncate font-semibold text-slate-900">{i.business_name}</div>
                       <div className="text-xs text-slate-500">
                         {i.business_type} · {tab === 'replies' ? `Replied on ${i.platform}` : `${stepLabel(i.step, i.status)} on ${i.platform}`}
+                        {tab === 'replies' && i.reply_intent && <ReplyIntentLabel intent={i.reply_intent} className="ml-2" />}
                         {tab !== 'replies' && d.tone === 'overdue' && (
                           <span className="ml-1 font-semibold text-red-600">· {d.text}</span>
                         )}

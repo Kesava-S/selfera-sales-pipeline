@@ -189,6 +189,7 @@ export function MissingDataTab({
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savingField, setSavingField] = useState<string | null>(null)
   const [justSaved, setJustSaved] = useState<{ id: string; field: string } | null>(null)
+  // Shakes the open cell editor when a save fails (the message itself is a toast)
   const [cellError, setCellError] = useState<string | null>(null)
 
   // Bulk actions modal states
@@ -1302,12 +1303,6 @@ export function MissingDataTab({
               </table>
             </div>
           </div>
-
-          {cellError && (
-            <div key={cellError} role="alert" className="motion-error-in rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              {cellError}
-            </div>
-          )}
 
           {/* Pagination */}
           <div className="flex items-center justify-between pt-2">

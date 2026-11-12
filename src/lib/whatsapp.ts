@@ -6,8 +6,15 @@ import { paramsFor, renderTemplate, type MetaComponent, type VarKey, type Variab
  * Sends messages directly via Meta Graph API v21.0
  */
 
-export function isWhatsAppConfigured(): boolean {
-  return Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID && process.env.WHATSAPP_ACCESS_TOKEN)
+// Set up in Integrations (falls back to .env only when Integrations has no value)
+export async function isWhatsAppConfigured(): Promise<boolean> {
+  try {
+    const { getWhatsAppConfig } = await import('@/lib/integrations')
+    const cfg = await getWhatsAppConfig()
+    return Boolean(cfg.phone_number_id && cfg.access_token)
+  } catch {
+    return false
+  }
 }
 
 export function formatWhatsAppNumber(phone: string): string {
@@ -45,6 +52,8 @@ export interface SendWhatsAppResult {
   sentText?: string
   // A retry won't help (no usable template)
   permanent?: boolean
+  // The Meta template it went out as (outside the 24-hour window)
+  templateUsed?: string
 }
 
 type OurTemplate = { name: string; language: string; status: string; components: MetaComponent[]; variable_map: VariableMap | null }
@@ -63,9 +72,9 @@ async function ourTemplate(name: string): Promise<OurTemplate | null> {
 }
 
 export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise<SendWhatsAppResult> {
-  let phoneId = options.phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID
-  let token = options.accessToken || process.env.WHATSAPP_ACCESS_TOKEN
-
+  // Integrations first (it falls back to .env itself)
+  let phoneId = options.phoneId
+  let token = options.accessToken
   if (!phoneId || !token) {
     try {
       const { getWhatsAppConfig } = await import('@/lib/integrations')
@@ -73,12 +82,12 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       phoneId = phoneId || cfg.phone_number_id
       token = token || cfg.access_token
     } catch {
-      // Fallback to process.env
+      // Integrations unavailable
     }
   }
 
   if (!phoneId || !token) {
-    throw new Error('WhatsApp is not configured. Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN.')
+    throw new Error('WhatsApp is not set up. Add the Phone Number ID and access token in Integrations.')
   }
 
   const cleanTo = formatWhatsAppNumber(options.to)
@@ -91,6 +100,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
   let payload: any
 
   let sentText: string | undefined
+  let templateUsed: string | undefined
   if (options.templateName) {
     let template: Record<string, unknown>
     if (options.templateName === 'hello_world') {
@@ -113,6 +123,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
       ]
       template = { name: t.name, language: { code: options.templateLanguage || t.language }, ...(components.length ? { components } : {}) }
       sentText = renderTemplate(t.components, body, header)
+      templateUsed = t.name
     }
 
     payload = {
@@ -165,5 +176,6 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
     success: true,
     messageId,
     sentText,
+    templateUsed,
   }
 }

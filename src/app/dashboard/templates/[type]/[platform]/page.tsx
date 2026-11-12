@@ -27,6 +27,8 @@ export default async function TemplateSlotsPage({
 
   // Fetch all templates, connected platforms, and this product's Meta templates (for WhatsApp) in parallel
   const isWhatsApp = platform === 'WhatsApp'
+  // Meta approves templates on its side: re-check any that are in review or out of date first
+  if (isWhatsApp) await import('@/lib/metaTemplates').then(m => m.refreshMetaTemplateStatuses()).catch(() => {})
   const [{ data, error }, connectedPlatforms, metaTemplatesRes] = await Promise.all([
     supabase
       .from('templates')
@@ -40,6 +42,22 @@ export default async function TemplateSlotsPage({
           .order('name')
       : Promise.resolve({ data: [] }),
   ])
+
+  let metaTemplates = metaTemplatesRes.data || []
+  if (isWhatsApp && metaTemplates.some(m => m.status === 'PENDING')) {
+    try {
+      const { syncMetaTemplates } = await import('@/app/dashboard/templates/metaActions')
+      await syncMetaTemplates()
+      const { data: refreshed } = await supabase
+        .from('meta_templates')
+        .select('id, meta_id, name, language, category, status, components, rejected_reason, quality_score, variable_map, last_synced_at')
+        .eq('managed', true)
+        .order('name')
+      if (refreshed) metaTemplates = refreshed
+    } catch {
+      // Fallback
+    }
+  }
 
   return (
     <>
@@ -60,7 +78,7 @@ export default async function TemplateSlotsPage({
           platform={platform}
           isAdmin={profile.role === 'admin'}
           connectedPlatforms={connectedPlatforms}
-          metaTemplates={(metaTemplatesRes?.data || []) as MetaTemplateRow[]}
+          metaTemplates={(metaTemplates || []) as MetaTemplateRow[]}
         />
       )}
     </>

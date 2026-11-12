@@ -7,8 +7,9 @@ import {
   Mail, Globe, MapPin, ExternalLink, StickyNote, Trophy, Handshake, ArrowRightLeft, Plus, UserCheck, Pencil,
   CheckCircle2, AlertTriangle, CalendarClock, Star, Lock, MailX, MessageSquareReply,
 } from 'lucide-react'
-import { CONFIG, OPEN_STAGES } from '@/lib/config'
+import { CONFIG, OPEN_STAGES, actsAsConsultant, actsAsSales } from '@/lib/config'
 import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
 import { facebookLink, instagramLink, mailtoLink, websiteLink, whatsappLink } from '@/lib/contact'
 import { addNote, approveLeads, assignConsultant, changeStage, dismissLateReply, handOver, newPitch, recordWin, removeOptOut, startThread } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, useAction } from '@/components/ui'
@@ -17,6 +18,7 @@ import { readiness } from '@/components/v2/LeadsManagement'
 import type { Profile } from '@/lib/auth'
 import { BLOCK_LABEL, type EmailBlock } from '@/lib/emailBlock'
 import { useLists } from '@/components/ListsContext'
+import { OffTargetButton, OffTargetLabel } from '@/components/OffTarget'
 
 type Thread = { id: string; platform: string; status: string; step: number; next_due_on: string | null; paused_reason: string | null; last_inbound_at: string | null; drafts?: { id: string; step_label: string; status: string }[] }
 type Person = { id: string; full_name: string; role: string; is_active: boolean }
@@ -24,6 +26,7 @@ type Person = { id: string; full_name: string; role: string; is_active: boolean 
 const PLATFORM_ORDER = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
 
 export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = null }: { opp: any; otherPitches: any[]; people: Person[]; me: Profile; emailBlock?: EmailBlock | null }) {
+  const tz = useTimeZone()
   const router = useRouter()
   const b = opp.businesses
   const threads: Thread[] = [...(opp.threads || [])].sort((x: Thread, y: Thread) => PLATFORM_ORDER.indexOf(x.platform) - PLATFORM_ORDER.indexOf(y.platform))
@@ -38,13 +41,15 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
   const canAct =
     isAdmin ||
     me.id === opp.assigned_consultant_id ||
+    (actsAsConsultant(me.role) && opp.stage === 'Consultation') ||
     (me.id === opp.assigned_sales_id && !handedOver) ||
-    (me.role === 'sales' && unassigned)
+    (actsAsSales(me.role) && unassigned)
   const needsReview = opp.stage === 'Needs review'
   const closed = ['Won', 'Declined', 'Do not contact'].includes(opp.stage)
 
   // Platforms we have contact details for but haven't started
   const startable = useMemo(() => {
+    if (!b) return []
     const has: Record<string, boolean> = {
       WhatsApp: !!b.whatsapp_number,
       Instagram: !!b.instagram,
@@ -67,8 +72,16 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
     return items.sort((a, z) => (a.at < z.at ? 1 : -1))
   }, [opp.stage_changes, opp.notes, people]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ready = needsReview ? readiness({ ...b, services_pitched: opp.services_pitched } as any) : null
+  const ready = needsReview && b ? readiness({ ...b, services_pitched: opp.services_pitched } as any) : null
   const close = () => { setModal(null); setError(null) }
+
+  if (!b) {
+    return (
+      <div className="card text-center p-8 text-slate-500">
+        Business details are not available.
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -79,6 +92,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
             <h1 className="!mb-0">{b.business_name}</h1>
             <StageBadge stage={opp.stage} />
             {b.archived && <span className="badge">Archived</span>}
+            <OffTargetLabel c={b} by={name(b.off_target_by)} />
             {emailBlock && (
               <span className="badge !bg-red-50 !text-red-700 flex items-center gap-1">
                 <MailX size={12} /> {BLOCK_LABEL[emailBlock.source || ''] || 'Do not email'}
@@ -93,7 +107,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
         </div>
         {canAct && (
           <div className="flex flex-wrap gap-2">
-            {needsReview && (
+            {needsReview && me.role !== 'consultant' && (
               <button className="btn btn-primary" disabled={!!ready || pending} title={ready ?? ''} onClick={() => run(() => approveLeads([b.id]), undefined, { success: 'Lead approved. Drafts are ready in Due today.', key: 'approve' })}>
                 {isPending('approve') ? <Spinner /> : <CheckCircle2 size={16} />} Approve and start outreach
               </button>
@@ -105,6 +119,10 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
             <button className="btn btn-secondary" onClick={() => setModal('note')}><StickyNote size={16} /> Add note</button>
             <button className="btn btn-secondary" onClick={() => setModal('pitch')}><Plus size={16} /> New pitch</button>
             {closed && <button className="btn btn-ghost" onClick={() => setModal('stage')}><ArrowRightLeft size={16} /> Reopen</button>}
+            {!needsReview && (
+              <OffTargetButton size="md" businessIds={[b.id]} marked={!!b.off_target_at} names={b.business_name}
+                defaultNoticed={opp.stage === 'Consultation' ? 'consultation' : threads.some(t => t.step >= 2) ? 'follow_up' : 'outreach'} />
+            )}
           </div>
         )}
       </div>
@@ -113,7 +131,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
       {opp.replied_after_close_at && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           <span className="flex items-center gap-2">
-            <MessageSquareReply size={15} /> Replied after closing ({opp.stage}) on {formatDateTime(opp.replied_after_close_at)}. Reopen to answer them, or dismiss.
+            <MessageSquareReply size={15} /> Replied after closing ({opp.stage}) on {formatDateTime(opp.replied_after_close_at, tz)}. Reopen to answer them, or dismiss.
           </span>
           {canAct && (
             <span className="flex gap-2">
@@ -175,7 +193,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
             )}
             <Row label="Salesperson">{name(opp.assigned_sales_id) || <span className="text-slate-400">Not assigned yet</span>}</Row>
             {(opp.assigned_consultant_id || opp.stage === 'Consultation') && <Row label="Consultant">{name(opp.assigned_consultant_id) || <span className="font-semibold text-amber-700">Needs a consultant</span>}</Row>}
-            {opp.consultation_at && <Row label="Consultation"><span className="flex items-center gap-1"><CalendarClock size={14} /> {formatDateTime(opp.consultation_at)}</span></Row>}
+            {opp.consultation_at && <Row label="Consultation"><span className="flex items-center gap-1"><CalendarClock size={14} /> {formatDateTime(opp.consultation_at, tz)}</span></Row>}
             {opp.upsell_reminder_on && <Row label="Upsell reminder">{formatDate(opp.upsell_reminder_on)}</Row>}
             {opp.demo_link && <Row label="Demo"><a href={opp.demo_link} target="_blank" rel="noreferrer" className="text-primary hover:text-primary-hover">Open demo</a></Row>}
             {otherPitches.length > 0 && (
@@ -281,7 +299,7 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
                     <div className="min-w-0">
                       <div className="text-sm font-semibold">{h.text}</div>
                       {h.detail && <p className="whitespace-pre-wrap text-sm text-slate-600">{h.detail}</p>}
-                      <div className="text-xs text-slate-400">{formatDateTime(h.at)}{h.by ? ` · ${h.by}` : ''}</div>
+                      <div className="text-xs text-slate-400">{formatDateTime(h.at, tz)}{h.by ? ` · ${h.by}` : ''}</div>
                     </div>
                   </li>
                 ))}
@@ -451,7 +469,7 @@ function PitchModal({ opp, onClose }: { opp: any; onClose: () => void }) {
 function ConsultantModal({ opp, people, onClose }: { opp: any; people: Person[]; onClose: () => void }) {
   const { run, pending, error } = useAction()
   const [who, setWho] = useState(opp.assigned_consultant_id || '')
-  const consultants = people.filter(p => p.role === 'consultant' && p.is_active)
+  const consultants = people.filter(p => actsAsConsultant(p.role) && p.is_active)
   return (
     <Modal open onClose={onClose} locked={pending} title="Assign consultant">
       {consultants.length === 0 ? (

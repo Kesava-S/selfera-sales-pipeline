@@ -22,8 +22,8 @@ setup('authenticate', async ({ page }) => {
   await page.goto('/login');
 
   // Fill credentials using accessible locators
-  await page.getByLabel('Email Address').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByLabel(/Email Address/i).fill(email);
+  await page.locator('input#password').fill(password);
 
   // Submit login form
   await page.getByRole('button', { name: /sign in/i }).click();

@@ -3,6 +3,7 @@ import { requireProfile } from '@/lib/auth'
 import { categoryFromSlug, categorySlug, platformFromSlug } from '@/lib/lists'
 import { getSalesLists } from '@/lib/dynamicData'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
+import { LiveRefresh } from '@/components/LiveRefresh'
 import { StatusLeadList, type StatusListRow } from '@/components/v2/DrilldownViews'
 import { ErrorNote } from '@/components/ui'
 
@@ -49,6 +50,7 @@ export default async function StatusTypePlatformPage({
 
   return (
     <div className="space-y-6">
+      <LiveRefresh name="status" />
       <BreadcrumbSetter
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },

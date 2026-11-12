@@ -1,4 +1,5 @@
 import { requireProfile } from '@/lib/auth'
+import { actsAsSales } from '@/lib/config'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import {
   WhatsAppCampaignsView,
@@ -7,7 +8,7 @@ import {
   type PipelineLead,
   type WhatsAppTemplate,
 } from '@/components/v2/WhatsAppCampaignsView'
-import { ErrorNote } from '@/components/ui'
+import { EmptyState, ErrorNote } from '@/components/ui'
 import { isWhatsAppConfigured } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,9 @@ export const dynamic = 'force-dynamic'
 export default async function WhatsAppCampaignsPage() {
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
+  if (profile.role !== 'admin' && !actsAsSales(profile.role)) {
+    return <EmptyState title="Campaigns are for the admin and sales team" />
+  }
 
   // Campaigns, databases, businesses with a WhatsApp number (for building databases)
   // and templates, all fetched at once
@@ -26,7 +30,7 @@ export default async function WhatsAppCampaignsPage() {
   ] = await Promise.all([
     supabase.from('whatsapp_campaigns').select('*').is('audience_business_id', null).order('created_at', { ascending: false }),
     supabase.from('whatsapp_databases').select('*').order('created_at', { ascending: false }),
-    supabase.from('businesses').select('id, business_name, contact_name, whatsapp_number, category, business_type').not('whatsapp_number', 'is', null).neq('whatsapp_number', '').order('business_name'),
+    supabase.from('businesses').select('id, business_name, contact_name, whatsapp_number, category, business_type').not('whatsapp_number', 'is', null).neq('whatsapp_number', '').is('off_target_at', null).order('business_name'),
     supabase.from('templates').select('id, name, body, whatsapp_template_name').in('platform', ['WhatsApp', 'All']).order('name'),
   ])
 
@@ -71,7 +75,7 @@ export default async function WhatsAppCampaignsPage() {
           databases={parsedDatabases}
           pipelineLeads={pipelineLeads}
           templates={templates}
-          isApiConfigured={isWhatsAppConfigured()}
+          isApiConfigured={await isWhatsAppConfigured()}
         />
       )}
     </>

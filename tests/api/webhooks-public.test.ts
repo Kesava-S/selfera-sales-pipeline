@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { BASE_URL, getBearerHeaders, getDbClient, signWhatsAppPayload, createSvixHeaders } from './apiHelper';
+import { BASE_URL, getBearerHeaders, getDbClient, signWhatsAppPayload, createSvixHeaders, WEBHOOK_SECRETS } from './apiHelper';
 import { unsubscribeUrl } from '@/lib/unsubscribe';
 
 describe('API: Webhooks & Public Inbound Endpoints', () => {
@@ -71,7 +71,7 @@ describe('API: Webhooks & Public Inbound Endpoints', () => {
     });
 
     it('GET returns 200 echoing hub.challenge when hub.verify_token matches configured secret', async () => {
-      const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+      const verifyToken = WEBHOOK_SECRETS.whatsappVerifyToken;
       expect(verifyToken).toBeTruthy();
       const challengeCode = `challenge_${Date.now()}`;
       const res = await fetch(

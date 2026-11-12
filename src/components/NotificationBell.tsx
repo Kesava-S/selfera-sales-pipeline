@@ -68,6 +68,18 @@ export function getNotificationVisuals(type: string) {
         color: 'text-rose-600 bg-rose-50 border-rose-100',
         label: 'Upsell',
       }
+    case 'consultation_reminder':
+      return {
+        icon: CalendarCheck,
+        color: 'text-indigo-600 bg-indigo-50 border-indigo-100',
+        label: 'Consultation',
+      }
+    case 'reply_waiting':
+      return {
+        icon: MessageSquare,
+        color: 'text-amber-600 bg-amber-50 border-amber-100',
+        label: 'Reply waiting',
+      }
     case 'unsubscribed':
       return {
         icon: UserMinus,

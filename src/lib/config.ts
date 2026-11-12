@@ -49,7 +49,21 @@ export const STEP_LABELS = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Fina
 export type Service = (typeof CONFIG.SERVICES)[number]
 export type Platform = (typeof CONFIG.PLATFORMS)[number]
 export type Stage = (typeof CONFIG.STAGES)[number]
-export type Role = 'admin' | 'sales' | 'consultant'
+export type Role = 'admin' | 'sales' | 'consultant' | 'sales_consultant'
+
+export const ROLE_LABEL: Record<Role, string> = {
+  admin: 'Admin',
+  sales: 'Sales',
+  consultant: 'Consultant',
+  sales_consultant: 'Sales + Consultant',
+}
+// Roles an admin can invite (administrators are not invited from here)
+export const INVITE_ROLES = ['sales', 'consultant', 'sales_consultant'] as const
+export type InviteRole = (typeof INVITE_ROLES)[number]
+
+// Sales + Consultant does both jobs (the database applies the same rule)
+export const actsAsSales = (role?: string | null) => role === 'sales' || role === 'sales_consultant'
+export const actsAsConsultant = (role?: string | null) => role === 'consultant' || role === 'sales_consultant'
 
 // Colours (Tailwind classes) used everywhere so a stage or status always looks the same
 export const STAGE_STYLE: Record<string, string> = {
@@ -81,7 +95,8 @@ export const STATUS_PAGES: Record<string, { label: string; filter: string; admin
   'went-cold': { label: 'Went cold', filter: 'Went cold', countKey: 'went_cold' },
   'no-response': { label: 'No response', filter: 'No response', countKey: 'no_response' },
   'needs-consultant': { label: 'Needs consultant', filter: 'needs-consultant', adminOnly: true, countKey: 'needs_consultant' },
-  'unmatched-bookings': { label: 'Unmatched bookings', filter: 'unmatched', adminOnly: true, countKey: 'unmatched_bookings' },
+  // Marked by hand (unrelated / not a fit); left out of the boxes above
+  'off-target-leads': { label: 'Off-target leads', filter: 'off-target', countKey: 'off_target' },
 }
 
 export function toTypeSlug(type: string): string {

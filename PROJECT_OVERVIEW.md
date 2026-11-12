@@ -215,7 +215,7 @@ npm run dev
 ```
 
 ### 2. Running Database Migrations
-Migrations are maintained under `supabase/migrations/`. When applying updates to Supabase:
+Migrations are maintained under `supabase/migrations/` (see its `README.md`): numbered files are the change history, `parent_migration.sql` is the whole structure in one file, and `schema/tables/` has one file per table. Regenerate the structure files with `npm run db:schema` after each change. When applying updates to Supabase:
 1. Target the correct database instance (Dev, Staging, or Prod).
 2. Execute migrations using Supabase CLI or SQL Editor.
 3. Reload PostgREST schema cache:

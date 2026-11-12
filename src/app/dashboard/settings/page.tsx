@@ -39,9 +39,23 @@ export default async function SettingsPage() {
       const { data: biz } = await supabase.from('businesses').select('business_name, email').in('email', emails)
       biz?.forEach(b => b.email && names.set(b.email.toLowerCase(), b.business_name))
     }
+    // ...and behind each blocked WhatsApp number
+    const digitsOf = (v?: string | null) => (v || '').replace(/\D/g, '')
+    const phones = [...new Set((blocked || []).filter(o => !o.identifier.includes('@')).map(o => digitsOf(o.identifier)).filter(d => d.length >= 7))]
+    const phoneNames = new Map<string, string>()
+    if (phones.length) {
+      const { data: biz } = await supabase.from('businesses').select('business_name, whatsapp_number, phone_normalised')
+        .or(phones.map(d => `whatsapp_number.ilike.%${d.slice(-9)},phone_normalised.ilike.%${d.slice(-9)}`).join(','))
+      biz?.forEach(b => [b.whatsapp_number, b.phone_normalised].forEach(p => {
+        const d = digitsOf(p).replace(/^0/, '44')
+        const hit = phones.find(x => x === d || x.endsWith(d.slice(-9)))
+        if (hit && !phoneNames.has(hit)) phoneNames.set(hit, b.business_name)
+      }))
+    }
     optOuts = (blocked || []).map(o => ({
       id: o.id, identifier: o.identifier, channel: o.channel, reason: o.reason, source: o.source,
-      createdAt: o.created_at, business: names.get(o.identifier.toLowerCase()) ?? null,
+      createdAt: o.created_at,
+      business: names.get(o.identifier.toLowerCase()) ?? phoneNames.get(digitsOf(o.identifier)) ?? null,
     }))
 
     // Build real team members & pending invites

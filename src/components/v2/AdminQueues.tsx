@@ -4,12 +4,14 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { CalendarClock, Inbox } from 'lucide-react'
 import { formatDateTime } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
 import { assignConsultant, linkBooking } from '@/app/dashboard/actions'
 import { EmptyState, ErrorNote, Spinner, useAction } from '@/components/ui'
 import type { PitchRow } from '@/components/v2/LeadsManagement'
 import { createClient } from '@/lib/supabase/client'
 
 export function ConsultantQueue({ rows, consultants }: { rows: (PitchRow & { consultation_at?: string | null })[]; consultants: { id: string; full_name: string }[] }) {
+  const tz = useTimeZone()
   const { run, pending, isPending, error } = useAction()
   const [choice, setChoice] = useState<Record<string, string>>({})
   if (!rows.length) return <EmptyState icon={<Inbox size={36} />} title="Nobody is waiting for a consultant" />
@@ -22,7 +24,7 @@ export function ConsultantQueue({ rows, consultants }: { rows: (PitchRow & { con
           <div className="min-w-0 flex-1">
             <Link href={`/dashboard/${r.opportunity_id}`} className="font-semibold hover:text-primary">{r.business_name}</Link>
             <div className="flex items-center gap-1 text-xs text-slate-500">
-              <CalendarClock size={13} /> {r.consultation_at ? formatDateTime(r.consultation_at) : 'No time set'} · {r.services_pitched.join(', ')} · Sales: {r.assigned_sales_name || 'nobody'}
+              <CalendarClock size={13} /> {r.consultation_at ? formatDateTime(r.consultation_at, tz) : 'No time set'} · {r.services_pitched.join(', ')} · Sales: {r.assigned_sales_name || 'nobody'}
             </div>
           </div>
           <select className="input !w-56" value={choice[r.opportunity_id] || ''} onChange={e => setChoice(c => ({ ...c, [r.opportunity_id]: e.target.value }))}>
@@ -50,6 +52,7 @@ export function UnmatchedBookings({ bookings }: { bookings: Booking[] }) {
 }
 
 function BookingRow({ b }: { b: Booking }) {
+  const tz = useTimeZone()
   const { run, pending, error } = useAction()
   const [q, setQ] = useState(b.business_name)
   const [results, setResults] = useState<{ opportunity_id: string; business_name: string; stage: string; area: string | null }[]>([])
@@ -69,7 +72,7 @@ function BookingRow({ b }: { b: Booking }) {
       <div>
         <div className="font-semibold">{b.business_name} <span className="font-normal text-slate-500">({b.name})</span></div>
         <div className="text-xs text-slate-500">
-          {formatDateTime(b.booked_for)} · {[b.phone, b.email].filter(Boolean).join(' · ') || 'no contact details'}
+          {formatDateTime(b.booked_for, tz)} · {[b.phone, b.email].filter(Boolean).join(' · ') || 'no contact details'}
         </div>
         {b.message && <p className="mt-1 text-sm text-slate-600">{b.message}</p>}
       </div>

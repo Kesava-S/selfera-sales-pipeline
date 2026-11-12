@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { captureCampaignReply } from '@/lib/campaignReplies'
+import { getWhatsAppConfig } from '@/lib/integrations'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN
+  const verifyToken = (await getWhatsAppConfig().catch(() => null))?.verify_token
 
   if (mode === 'subscribe' && token && token === verifyToken) {
     console.log('[WhatsApp Webhook] Verification successful!')
@@ -34,11 +35,11 @@ export async function GET(request: Request) {
 }
 
 // Meta signs every webhook with the app secret (X-Hub-Signature-256).
-// For security, if WHATSAPP_APP_SECRET is not configured or signature is invalid, reject the request.
-function signatureOk(raw: string, header: string | null): boolean {
-  const secret = process.env.WHATSAPP_APP_SECRET
+// The app secret comes from Integrations. If it isn't set or the signature is wrong, reject the request.
+async function signatureOk(raw: string, header: string | null): Promise<boolean> {
+  const secret = (await getWhatsAppConfig().catch(() => null))?.app_secret
   if (!secret) {
-    console.error('[WhatsApp Webhook] WHATSAPP_APP_SECRET is not configured. Webhook rejected for security.')
+    console.error('[WhatsApp Webhook] The WhatsApp app secret is not set in Integrations. Webhook rejected for security.')
     return false
   }
   if (!header?.startsWith('sha256=')) return false
@@ -57,7 +58,7 @@ type MetaStatus = {
 export async function POST(request: Request) {
   try {
     const raw = await request.text()
-    if (!signatureOk(raw, request.headers.get('x-hub-signature-256'))) {
+    if (!(await signatureOk(raw, request.headers.get('x-hub-signature-256')))) {
       console.warn('[WhatsApp Webhook] Rejected a request with a missing or wrong signature.')
       return NextResponse.json({ status: 'forbidden' }, { status: 401 })
     }
@@ -146,6 +147,16 @@ export async function POST(request: Request) {
           const { error: rpcError } = await supabase.rpc('record_inbound', inboundArgs)
           // Replies to campaigns (and unknown senders) are kept on the campaign side too
           await captureCampaignReply(supabase, { channel: 'whatsapp', from, body, externalMessageId: messageId })
+          // A STOP reply puts the number on the do-not-contact list (no-op for other messages)
+          const optOutArgs = { p_from: from, p_body: body }
+          const { error: optOutError } = await supabase.rpc('record_whatsapp_opt_out', optOutArgs)
+          if (optOutError) {
+            console.error('[WhatsApp Webhook] record_whatsapp_opt_out error:', optOutError.message)
+          } else if (isDualWriteEnabled()) {
+            replicateRpcToSecondary('record_whatsapp_opt_out', optOutArgs).catch(err => {
+              console.warn('[DualWrite] Failed to replicate record_whatsapp_opt_out:', err)
+            })
+          }
 
           if (rpcError) {
             console.error('[WhatsApp Webhook] record_inbound error:', rpcError.message)

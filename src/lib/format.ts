@@ -1,18 +1,22 @@
-// UK date and time formatting, always in London time
+// Date and time formatting (en-GB)
+// Business dates (due dates, "today") follow UK days. Times can be shown in the
+// viewer's own time zone: pass useTimeZone() (src/lib/useTimeZone.ts) as `tz`.
 const TZ = 'Europe/London'
+export const DEFAULT_TZ = TZ
 
-export function formatDate(value?: string | Date | null): string {
+export function formatDate(value?: string | Date | null, tz: string = TZ): string {
   if (!value) return ''
   const d = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + 'T12:00:00Z') : new Date(value)
   if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ })
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz })
 }
 
-export function formatDateTime(value?: string | Date | null): string {
+// Pass the viewer's time zone (useTimeZone) to show the time they'd expect
+export function formatDateTime(value?: string | Date | null, tz: string = TZ): string {
   if (!value) return ''
   const d = new Date(value)
   if (isNaN(d.getTime())) return ''
-  return `${formatDate(d)}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ })}`
+  return `${formatDate(d, tz)}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz })}`
 }
 
 export function todayLondon(): string {

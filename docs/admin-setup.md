@@ -3,7 +3,11 @@
 Run everything in the Supabase **SQL Editor**, one file at a time, in this order.
 Open each file, copy all of it, paste, click **Run**, and wait for "Success" before the next one.
 
-## 1. Database files (in `supabase/migrations/` unless stated)
+## 1. Database files
+
+> **New, empty database:** run `supabase/migrations/parent_migration.sql` once. It holds the whole current structure. See `supabase/migrations/README.md`.
+>
+> The numbered files below are history, now in `supabase/migrations/archive/`. Every environment already has them.
 
 | Order | File | Notes |
 |---|---|---|

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { getDynamicEmailConfig, getWhatsAppConfig } from '@/lib/integrations';
 import crypto from 'crypto';
 
 // Ensure environment variables are loaded
@@ -85,13 +86,24 @@ export function getDbClient() {
   });
 }
 
+// Webhook secrets: the same values the app uses (Integrations, with .env as fallback)
+const [waConfig, emailConfig] = await Promise.all([
+  getWhatsAppConfig().catch(() => null),
+  getDynamicEmailConfig().catch(() => null),
+]);
+export const WEBHOOK_SECRETS = {
+  whatsappAppSecret: waConfig?.app_secret || process.env.WHATSAPP_APP_SECRET || '',
+  whatsappVerifyToken: waConfig?.verify_token || process.env.WHATSAPP_VERIFY_TOKEN || '',
+  resendWebhookSecret: emailConfig?.resend_webhook_secret || process.env.RESEND_WEBHOOK_SECRET || '',
+};
+
 export function signWhatsAppPayload(bodyString: string): string {
-  const secret = process.env.WHATSAPP_APP_SECRET || '';
+  const secret = WEBHOOK_SECRETS.whatsappAppSecret;
   return 'sha256=' + crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
 }
 
 export function createSvixHeaders(rawBody: string, secret?: string) {
-  const sec = secret || process.env.RESEND_WEBHOOK_SECRET || '';
+  const sec = secret || WEBHOOK_SECRETS.resendWebhookSecret;
   const id = `msg_${Date.now()}`;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const key = Buffer.from(sec.replace(/^whsec_/, ''), 'base64');

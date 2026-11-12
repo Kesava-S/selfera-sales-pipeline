@@ -334,10 +334,13 @@ export function SaveLabel({ pending, saved, label, savedLabel = 'Saved', size = 
   return <>{pending && <Spinner size={size} />} {label}</>
 }
 
+// Errors show as a toast (not inline). Kept as a component so every screen that
+// has an error to show just renders <ErrorNote error={…} />.
 export function ErrorNote({ error }: { error?: string | null }) {
-  if (!error) return null
-  // Keyed by message, so a new error slides in again
-  return <div key={error} role="alert" className="motion-error-in rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 break-words whitespace-normal leading-snug">{error}</div>
+  useEffect(() => {
+    if (error) toast.error(error)
+  }, [error])
+  return null
 }
 
 export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {

@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrator',
   consultant: 'Consultant',
   sales: 'Sales Representative',
+  sales_consultant: 'Sales + Consultant',
 }
 
 export default function SetPasswordPage() {

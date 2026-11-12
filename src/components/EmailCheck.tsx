@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, HelpCircle, MailCheck, Trash2, XCircle } from 'lucide-react'
 import { checkEmailList } from '@/app/dashboard/emailCheckActions'
 import { EMAIL_STATUS_LABEL, type EmailCheck, type EmailStatus } from '@/lib/emailCheck'
-import { InfoTip, Spinner } from '@/components/ui'
+import { ErrorNote, InfoTip, Spinner } from '@/components/ui'
 
 export type EmailCheckFields = {
   email_status?: EmailStatus | null
@@ -186,7 +186,7 @@ export function EmailCheckSummary({ c }: { c: EmailListCheck }) {
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${c.total ? Math.round((c.done / c.total) * 100) : 0}%` }} />
         </div>
       )}
-      {!c.running && c.error && <p className="mt-1 text-xs text-red-600">{c.error}</p>}
+      <ErrorNote error={!c.running ? c.error : null} />
     </div>
   )
 }

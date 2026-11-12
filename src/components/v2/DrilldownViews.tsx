@@ -13,6 +13,7 @@ import { toPlatformSlug } from '@/lib/config'
 import { useLists } from '@/components/ListsContext'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { formatDate, formatDateTime, formatWaiting } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
 import { assignConsultant } from '@/app/dashboard/actions'
 import { EmptyState, ErrorNote, Pagination, PlatformIcon, Spinner, useAction } from '@/components/ui'
 
@@ -186,6 +187,7 @@ export function StatusLeadList({
   pageSize?: number
   consultants?: { id: string; full_name: string }[]
 }) {
+  const tz = useTimeZone()
   const isNeedsReply = statusKey === 'needs-reply'
   const isInterested = statusKey === 'interested'
   const isConsultation = statusKey === 'consultation'
@@ -311,7 +313,7 @@ export function StatusLeadList({
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                       <span className="inline-flex items-center gap-1">
                         <Calendar size={13} />
-                        {r.consultation_at ? formatDateTime(r.consultation_at) : 'Date not set'}
+                        {r.consultation_at ? formatDateTime(r.consultation_at, tz) : 'Date not set'}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         · <User size={13} />
@@ -341,7 +343,7 @@ export function StatusLeadList({
                     </Link>
                     <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
                       <Calendar size={13} />
-                      Booking date: {r.consultation_at ? formatDateTime(r.consultation_at) : 'No time set'}
+                      Booking date: {r.consultation_at ? formatDateTime(r.consultation_at, tz) : 'No time set'}
                     </div>
                   </div>
                   <AssignConsultantControl opportunityId={r.opportunity_id} consultants={consultants} />
@@ -441,7 +443,7 @@ function AssignConsultantControl({
   opportunityId: string
   consultants: { id: string; full_name: string }[]
 }) {
-  const { run, pending, error } = useAction()
+  const { run, pending } = useAction()
   const [selected, setSelected] = useState('')
 
   return (
@@ -468,7 +470,6 @@ function AssignConsultantControl({
       >
         {pending && <Spinner size={12} />} Assign
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   )
 }

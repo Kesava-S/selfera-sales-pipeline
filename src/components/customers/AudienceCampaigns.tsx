@@ -75,7 +75,7 @@ export function AudienceCampaigns({ business, isAdmin, won, settings, campaigns,
                       <div className="text-xs text-slate-500">{c.subject ? `${c.subject} · ` : ''}{formatDate(c.created_at)}</div>
                     </td>
                     <td>
-                      <span className={`badge ${paused ? '!border-amber-200 !bg-amber-50 !text-amber-700' : c.status === 'sent' ? '!border-emerald-200 !bg-emerald-50 !text-emerald-700' : '!border-sky-200 !bg-sky-50 !text-sky-700'}`}>
+                      <span className={`text-xs font-semibold ${paused ? 'text-amber-700' : c.status === 'sent' ? 'text-emerald-700' : 'text-sky-700'}`}>
                         {paused ? 'Paused' : c.status === 'sent' ? 'Sent' : 'Sending'}
                       </span>
                     </td>

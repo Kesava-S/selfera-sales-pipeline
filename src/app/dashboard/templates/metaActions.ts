@@ -7,8 +7,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { actsAsSales } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
-import { createMetaTemplate, deleteMetaTemplate, editMetaTemplate, listMetaTemplates, MetaApiError } from '@/lib/metaTemplates'
+import { createMetaTemplate, deleteMetaTemplate, editMetaTemplate, getMetaTemplate, listMetaTemplates, MetaApiError } from '@/lib/metaTemplates'
 import { checkDraft, toComponents, variablesIn, VAR_KEYS, type MetaTemplate, type TemplateDraft, type VariableMap } from '@/lib/metaTemplateDraft'
 
 async function role(): Promise<{ role: string | null; userId: string | null }> {
@@ -42,7 +43,7 @@ const bodyCount = (components: { type: string; text?: string }[]) =>
 // Refresh our templates' content and review status from Meta (other products' are ignored)
 export async function syncMetaTemplates(): Promise<ActionResult<{ count: number; missing: number }>> {
   const me = await role()
-  if (me.role !== 'admin' && me.role !== 'sales') return { ok: false, error: 'You do not have permission to do this.' }
+  if (me.role !== 'admin' && !actsAsSales(me.role)) return { ok: false, error: 'You do not have permission to do this.' }
   try {
     const db = createServiceClient()
     const [remote, { data: ours }] = await Promise.all([
@@ -53,7 +54,19 @@ export async function syncMetaTemplates(): Promise<ActionResult<{ count: number;
     let count = 0
     let missing = 0
     for (const row of ours || []) {
-      const t = remote.find(r => r.id === row.meta_id) ?? remote.find(r => r.name === row.name && r.language === row.language)
+      let t = remote.find(r => r.id === row.meta_id) ?? remote.find(r => r.name === row.name && r.language === row.language)
+      // Not in the list (Meta's list can lag a new template): ask for it by id before calling it deleted
+      if (!t && row.meta_id) {
+        let gone = false
+        try {
+          const one = await getMetaTemplate(row.meta_id)
+          if (one) t = one
+          else gone = true
+        } catch {
+          continue // Meta unreachable for this one: keep it as it is
+        }
+        if (!gone && !t) continue
+      }
       if (!t) {
         // Deleted in Meta's own dashboard: kept so links show it, but it can't send
         await db.from('meta_templates').update({ status: 'DELETED', last_synced_at: now }).eq('id', row.id)

@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { getDynamicApiPlatforms } from '@/lib/integrations'
 import { ukToInternational } from '@/lib/contact'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
-import { emailSendBlocked } from '@/lib/emailBlock'
+import { emailSendBlocked, whatsappSendBlocked } from '@/lib/emailBlock'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,11 +77,17 @@ export async function POST(request: Request) {
     const blocked = await emailSendBlocked(supabase, thread.id, String(to), thread.last_inbound_at)
     if (blocked) return NextResponse.json({ error: blocked }, { status: 422 })
   }
+  // Numbers that replied STOP on WhatsApp (any lead with that number)
+  if (thread.platform === 'WhatsApp') {
+    const blocked = await whatsappSendBlocked(supabase, thread.id, String(to), thread.last_inbound_at)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 422 })
+  }
 
   // 1. Send the message
   let externalId: string | null = null
   // What the lead actually received (a template's text differs from the typed message)
   let sentBody = body
+  let metaTemplateUsed: string | null = null
 
   if (thread.platform === 'Email') {
     try {
@@ -91,7 +97,7 @@ export async function POST(request: Request) {
       console.error('Email send error:', e)
       return NextResponse.json({ error: `Not sent: ${e?.message || 'Email delivery failed'}. Your message is still here.` }, { status: 502 })
     }
-  } else if (thread.platform === 'WhatsApp' && isWhatsAppConfigured()) {
+  } else if (thread.platform === 'WhatsApp' && (await isWhatsAppConfigured())) {
     try {
       let senderName: string | null = null
       if (rule.mode === 'api-template') {
@@ -109,6 +115,7 @@ export async function POST(request: Request) {
       }
       externalId = res.messageId
       if (res.sentText) sentBody = res.sentText
+      metaTemplateUsed = res.templateUsed ?? null
     } catch (e: any) {
       console.error('WhatsApp send error:', e)
       return NextResponse.json({ error: `Not sent: ${e?.message || 'WhatsApp delivery failed'}. Your message is still here.` }, { status: 502 })
@@ -145,6 +152,11 @@ export async function POST(request: Request) {
   const { error } = await supabase.rpc('record_outbound', rpcArgs)
   if (error) {
     return NextResponse.json({ error: `The message WAS sent, but saving it failed (${error.message}). Don't send it again; refresh the page.` }, { status: 500 })
+  }
+  // Note which Meta template it went out as, for the chat
+  if (metaTemplateUsed && externalId) {
+    await createServiceClient().from('messages').update({ meta_template: metaTemplateUsed })
+      .eq('thread_id', threadId).eq('external_message_id', externalId)
   }
 
   if (isDualWriteEnabled()) {

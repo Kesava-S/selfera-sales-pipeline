@@ -12,6 +12,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
 import { emailSendBlocked } from '@/lib/emailBlock'
+import { INVITE_ROLES, type InviteRole, type Role } from '@/lib/config'
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -187,6 +188,19 @@ export async function bulkServices(opportunityIds: string[], services: string[])
 }
 export async function bulkArchive(businessIds: string[], archived: boolean) {
   return rpc<number>('set_archived', { p_business_ids: businessIds, p_archived: archived })
+}
+
+// ---------- Off-target leads (marked by hand; the stage is not changed) ----------
+export async function markOffTarget(businessIds: string[], reason: string, noticed: string, note?: string): Promise<ActionResult<number>> {
+  const ids = Array.from(new Set(businessIds)).filter(Boolean)
+  if (!ids.length) return { ok: false, error: 'Select at least one lead.' }
+  return rpc<number>('mark_off_target', { p_business_ids: ids, p_reason: reason, p_noticed: noticed, p_note: note?.trim() || null })
+}
+
+export async function clearOffTarget(businessIds: string[]): Promise<ActionResult<number>> {
+  const ids = Array.from(new Set(businessIds)).filter(Boolean)
+  if (!ids.length) return { ok: false, error: 'Select at least one lead.' }
+  return rpc<number>('clear_off_target', { p_business_ids: ids })
 }
 
 // ---------- Bookings ----------
@@ -511,7 +525,7 @@ export async function sendTestEmailCampaign({
   if (!to || !to.includes('@')) return { ok: false, error: 'Enter a valid email address.' }
   try {
     const { isSmtpConfigured, sendEmail } = await import('@/lib/mailer')
-    if (!isSmtpConfigured()) {
+    if (!(await isSmtpConfigured())) {
       return { ok: false, error: 'SMTP is not configured in .env.local (SMTP_PASS is required).' }
     }
     await sendEmail({
@@ -654,7 +668,7 @@ export async function sendTestWhatsAppCampaign({
   }
   try {
     const { isWhatsAppConfigured, sendWhatsAppMessage } = await import('@/lib/whatsapp')
-    if (!isWhatsAppConfigured()) {
+    if (!(await isWhatsAppConfigured())) {
       return {
         ok: false,
         error: 'WhatsApp is not configured. Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN in .env.local.',
@@ -849,6 +863,24 @@ export async function deleteLeads(businessIds: string[]): Promise<ActionResult<n
   return res
 }
 
+// Delete leads and everything connected to them (admin only). Opt-outs are kept.
+export type DeletedLeadsSummary = {
+  deleted: number; pitches: number; messages: number; campaign_recipients: number; campaign_replies: number
+  bookings: number; contact_lists: number; audience_customers: number
+}
+export async function deleteLeadsEverywhere(businessIds: string[]): Promise<ActionResult<DeletedLeadsSummary>> {
+  const ids = Array.from(new Set(businessIds)).filter(Boolean)
+  if (!ids.length) return { ok: false, error: 'Select at least one lead.' }
+  const res = await rpc<DeletedLeadsSummary>('delete_leads_everywhere', { p_business_ids: ids })
+  if (res.ok) {
+    revalidatePath('/dashboard', 'layout')
+    revalidatePath('/dashboard/audience')
+    revalidatePath('/dashboard/campaigns')
+    revalidatePath('/dashboard/whatsapp-campaigns')
+  }
+  return res
+}
+
 // ---------- Team Member & Invite Management ----------
 async function getAppBaseUrl(): Promise<string> {
   try {
@@ -871,7 +903,7 @@ async function getAppBaseUrl(): Promise<string> {
 export async function inviteTeamMember(input: {
   fullName: string
   email: string
-  role: 'sales' | 'consultant' | 'admin'
+  role: InviteRole
 }): Promise<ActionResult<{ id: string; actionLink?: string }>> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -884,7 +916,9 @@ export async function inviteTeamMember(input: {
 
   const fullName = input.fullName?.trim()
   const email = input.email?.trim().toLowerCase()
-  const role = input.role || 'sales'
+  const role: InviteRole = input.role || 'sales'
+  // Administrators are not invited from here
+  if (!INVITE_ROLES.includes(role)) return { ok: false, error: 'Pick Sales, Consultant or Sales + Consultant.' }
 
   if (!fullName) return { ok: false, error: 'Please enter a full name.' }
   if (!email || !email.includes('@')) return { ok: false, error: 'Please enter a valid work email.' }
@@ -1106,7 +1140,7 @@ export async function revokeTeamInvite(userId: string): Promise<ActionResult> {
 
 export async function updateTeamMember(
   userId: string,
-  patch: { role?: 'sales' | 'consultant' | 'admin'; is_active?: boolean }
+  patch: { role?: Role; is_active?: boolean }
 ): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1122,8 +1156,29 @@ export async function updateTeamMember(
   }
 
   const service = createServiceClient()
+
+  if (patch.role !== undefined) {
+    if (user.id === userId) return { ok: false, error: 'You cannot change your own role.' }
+    // Same choices as an invite: administrators are not made from here
+    if (!(INVITE_ROLES as readonly string[]).includes(patch.role)) {
+      return { ok: false, error: 'Pick Sales, Consultant or Sales + Consultant.' }
+    }
+    // Admin Panel members get their role from the Admin Panel (it would be overwritten)
+    const { data: emp } = await service.schema('hr').from('employees').select('id').eq('auth_user_id', userId).maybeSingle()
+    if (emp) return { ok: false, error: 'This member is managed in the Admin Panel. Change their role there.' }
+  }
+
   const { error } = await service.from('profiles').update(patch).eq('id', userId)
   if (error) return { ok: false, error: friendly(error.message) }
+
+  // Keep the invite details in step (pending invites read the role from here)
+  if (patch.role) {
+    const { data: authUser } = await service.auth.admin.getUserById(userId)
+    if (authUser?.user) {
+      await service.auth.admin.updateUserById(userId, { user_metadata: { ...authUser.user.user_metadata, role: patch.role } })
+        .catch(err => console.warn('[updateTeamMember] metadata update warning:', err))
+    }
+  }
 
   revalidatePath('/dashboard/settings')
   return { ok: true }

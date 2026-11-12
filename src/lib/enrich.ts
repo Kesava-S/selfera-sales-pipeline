@@ -41,7 +41,9 @@ export const lookupConfig = () => ({
 // Google place types (e.g. "bed_and_breakfast", "italian_restaurant") -> one of
 // our categories, using each category's known spellings (business_categories)
 function businessTypeFromGoogle(lists: SalesLists, types: string[] = []): string | undefined {
+  if (!Array.isArray(types)) return undefined
   for (const t of types) {
+    if (!t || typeof t !== 'string') continue
     const words = t.replace(/_/g, ' ')
     const hit = matchCategory(lists, words) || matchCategory(lists, words.split(' ').pop() || '')
     if (hit) return hit
@@ -97,7 +99,7 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
   if (!res.ok) throw new Error(`Google Places: ${json?.error?.message || `HTTP ${res.status}`}`)
 
   return ((json.places || []) as GooglePlace[]).map(p => {
-    const part = (type: string) => p.addressComponents?.find(c => c.types.includes(type))?.longText
+    const part = (type: string) => p.addressComponents?.find(c => c.types?.includes(type))?.longText
     const suggestion: Suggestion = {
       address: p.formattedAddress,
       postcode: part('postal_code')?.toUpperCase(),

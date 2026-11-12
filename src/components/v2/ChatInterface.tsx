@@ -6,34 +6,44 @@ import { useRouter } from 'next/navigation'
 import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick, MailX } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
 import { fillPlaceholders, missingPlaceholders } from '@/lib/placeholders'
 import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { facebookLink, instagramLink, mailtoLink, whatsappLink } from '@/lib/contact'
 import { markSent, removeOptOut } from '@/app/dashboard/actions'
 import { createClient } from '@/lib/supabase/client'
 import { ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, toast, useAction } from '@/components/ui'
+import { OffTargetButton, OffTargetLabel } from '@/components/OffTarget'
+import { ChatPresence } from '@/components/v2/ChatPresence'
 import { BLOCK_LABEL, replyAllowed, type EmailBlock } from '@/lib/emailBlock'
 import type { Profile } from '@/lib/auth'
+import { ReplyIntentLabel } from '@/components/ReplyIntent'
+import { MetaTemplateStatus, metaOptionLabel } from '@/components/whatsapp/MetaTemplateStatus'
+import { friendlyMetaError } from '@/lib/metaErrors'
 
 type Msg = {
   id: string; direction: 'outbound' | 'inbound' | 'system'; body: string; subject: string | null; step_label: string | null; send_method: string | null; sent_by: string | null; created_at: string
   delivery_status?: string | null; delivered_at?: string | null; read_at?: string | null; error_detail?: string | null
   opened_at?: string | null; clicked_at?: string | null
+  intent?: string | null; intent_matched?: string | null
+  meta_template?: string | null // the approved Meta template it went out as
 }
 type Template = { id: string; name: string; platform: string; step: string; services: string[]; subject: string | null; body: string; whatsapp_template_name: string | null }
 
 const STEP_ORDER = ['First contact', 'Follow-up 1', 'Follow-up 2', 'Final check', 'Reply', 'Upsell']
 
 export function ChatInterface({
-  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent, emailBlock = null, defaultWhatsAppTemplate,
+  thread, opp, draft, templates, siblings, people, me, senderName, apiPlatforms, humanAgent, emailBlock = null, defaultWhatsAppTemplate, metaStatuses = {},
 }: {
   thread: any; opp: any; draft: any; templates: Template[]; siblings: { id: string; platform: string; status: string }[]
   people: { id: string; full_name: string }[]; me: Profile; senderName: string; apiPlatforms: string[]; humanAgent: boolean
   emailBlock?: EmailBlock | null
   defaultWhatsAppTemplate?: string
+  // Meta template name → review status (this product's templates only)
+  metaStatuses?: Record<string, string>
 }) {
   const router = useRouter()
-  const b = opp.businesses
+  const b = opp.businesses || ({} as any)
   const platform: string = thread.platform
   const [messages, setMessages] = useState<Msg[]>(thread.messages || [])
   const bottom = useRef<HTMLDivElement>(null)
@@ -43,7 +53,7 @@ export function ChatInterface({
     setMessages(thread.messages || [])
   }, [thread.messages])
 
-  const fill = (text: string) => fillPlaceholders(text, { business_name: b.business_name, sender_name: senderName, area: b.area, contact_name: b.contact_name })
+  const fill = (text: string) => fillPlaceholders(text, { business_name: b?.business_name || '', sender_name: senderName, area: b?.area || '', contact_name: b?.contact_name || '' })
 
   // Pick the template that matches the next step, if there is no draft
   const stepNow = thread.status === 'Replied' ? 'Reply' : thread.step >= 4 ? null : nextStepLabel(thread.step)
@@ -192,7 +202,13 @@ export function ChatInterface({
     }
   }
 
+  // The Meta template WhatsApp would send outside the 24-hour window, and its review status
+  const metaName = platform === 'WhatsApp' ? (template?.whatsapp_template_name || defaultWhatsAppTemplate || 'selfera_sales_pipeline_general') : null
+  const metaStatus = metaName ? metaStatuses[metaName] ?? null : null
+  const metaBlocked = rule.mode === 'api-template' && metaStatus !== 'APPROVED'
+
   const blockers = [
+    metaBlocked && (metaStatus ? `Meta template "${metaName}" is not approved yet.` : `"${metaName}" is not one of this product's Meta templates.`),
     !body.trim() && (rule.mode === 'log' ? 'Write what happened first.' : 'Write a message first.'),
     unfilled.length > 0 && `Fill in ${unfilled.join(', ')} first.`,
     pecr && !pecrOk && rule.mode !== 'log' && 'Confirm consent first (sole trader / partnership).',
@@ -268,7 +284,9 @@ export function ChatInterface({
           <Link href={`/dashboard/${opp.id}`} className="text-lg font-bold hover:text-primary">{b.business_name}</Link>
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <PlatformIcon platform={platform} /> {platform} <StatusBadge status={thread.status} /> <StageBadge stage={opp.stage} />
+            <OffTargetLabel c={b} by={people.find(p => p.id === b.off_target_by)?.full_name} />
           </div>
+          <ChatPresence oppId={opp.id} platform={platform} me={me} messages={messages} people={people} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {siblings.map(s => (
@@ -280,6 +298,10 @@ export function ChatInterface({
               <span className={`h-2 w-2 rounded-full ${STATUS_STYLE[s.status]?.dot ?? 'bg-slate-300'}`} /> {s.platform}
             </Link>
           ))}
+          {opp.stage !== 'Needs review' && (
+            <OffTargetButton businessIds={[b.id]} marked={!!b.off_target_at} names={b.business_name}
+              defaultNoticed={opp.stage === 'Consultation' ? 'consultation' : thread.step >= 2 ? 'follow_up' : 'outreach'} />
+          )}
           <button
             type="button"
             onClick={handleManualRefresh}
@@ -386,20 +408,46 @@ export function ChatInterface({
       {/* Composer */}
       {canAct && !needsReview && rule.mode !== 'blocked' && !emailLocked && (
         <div className="card space-y-3 !p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {draft && <span className="badge !bg-primary-bg !text-primary">Draft: {draft.step_label}</span>}
-            {rule.mode !== 'log' && (
-              <select className="input !w-auto min-w-56 !py-1.5" value={templateId} onChange={e => pickTemplate(e.target.value)}>
-                <option value="">{templates.length ? 'Pick a template…' : 'No templates for this platform'}</option>
-                {grouped.map(([step, ts]) => (
-                  <optgroup key={step} label={step}>
-                    {ts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            )}
-            <span className="ml-auto flex items-center gap-1 text-xs text-slate-500"><Info size={13} /> {rule.reason}</span>
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+              {draft && <span className="badge !bg-primary-bg !text-primary shrink-0">Draft: {draft.step_label}</span>}
+              {rule.mode !== 'log' && (
+                <div className="relative w-full sm:w-auto min-w-[200px] max-w-full sm:max-w-md">
+                  <select
+                    className="input w-full truncate !py-1.5 text-xs sm:text-sm font-medium"
+                    value={templateId}
+                    onChange={e => pickTemplate(e.target.value)}
+                    title={template?.name || 'Pick a template…'}
+                  >
+                    <option value="">{templates.length ? 'Pick a template…' : 'No templates for this platform'}</option>
+                    {grouped.map(([step, ts]) => (
+                      <optgroup key={step} label={step}>
+                        {ts.map(t => (
+                          <option key={t.id} value={t.id} title={t.name}>
+                            {t.name}{platform === 'WhatsApp' ? ` · ${metaOptionLabel(t.whatsapp_template_name ? metaStatuses[t.whatsapp_template_name] ?? 'NONE' : null)}` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 self-start sm:self-auto">
+              <Info size={13} className="shrink-0 text-slate-400" />
+              <span>{rule.reason}</span>
+            </div>
           </div>
+
+          {metaName && rule.mode !== 'log' && (
+            <MetaTemplateStatus
+              name={metaName}
+              status={metaStatus}
+              outsideWindow={rule.mode === 'api-template'}
+              fromTemplate={!!template?.whatsapp_template_name}
+              onRefresh={() => router.refresh()}
+            />
+          )}
 
           {platform === 'Email' && rule.mode !== 'log' && (
             <input className="input" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} />
@@ -474,7 +522,8 @@ function Banner({ tone, icon, children }: { tone: 'amber' | 'red' | 'slate'; ico
 type DeliveryState = 'sent' | 'delivered' | 'read' | 'opened' | 'clicked' | 'failed' | 'bounced' | 'complained'
 
 function DeliveryTicks({ m }: { m: Msg }) {
-  const when = (t?: string | null) => (t ? formatDateTime(t) : '')
+  const tz = useTimeZone()
+  const when = (t?: string | null) => (t ? formatDateTime(t, tz) : '')
   const problem = ['failed', 'bounced', 'complained'].includes(m.delivery_status || '')
   const status: DeliveryState = !problem && m.clicked_at ? 'clicked' : !problem && m.opened_at ? 'opened' : ((m.delivery_status || 'sent') as DeliveryState)
   const states: Record<DeliveryState, { cls: string; icon: React.ReactNode; word: string; title: string }> = {
@@ -537,8 +586,9 @@ function DeliveryTicks({ m }: { m: Msg }) {
 }
 
 function MessageBubble({ m, platform, who }: { m: Msg; platform: string; who?: string }) {
+  const tz = useTimeZone()
   if (m.direction === 'system') {
-    return <div className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at)}</span></div>
+    return <div className="flex justify-center"><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500 shadow-sm">{m.body} · {formatDateTime(m.created_at, tz)}</span></div>
   }
   const ours = m.direction === 'outbound'
   return (
@@ -548,13 +598,21 @@ function MessageBubble({ m, platform, who }: { m: Msg; platform: string; who?: s
         <div className="whitespace-pre-wrap break-words text-sm">{m.body}</div>
         <div className={`mt-1 flex items-center gap-1.5 text-[11px] ${ours ? 'justify-end text-white/75' : 'text-slate-400'}`}>
           <span>
-            {[m.step_label, who, formatDateTime(m.created_at), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
+            {[m.step_label, who, formatDateTime(m.created_at, tz), ours && (m.send_method === 'manual' ? (platform === 'Walk-in' ? 'logged' : 'sent outside the app') : m.send_method === 'api' ? 'sent from here' : null)]
               .filter(Boolean).join(' · ')}
           </span>
           {ours && (platform === 'WhatsApp' || platform === 'Email') && m.send_method === 'api' && <DeliveryTicks m={m} />}
+          {!ours && <ReplyIntentLabel intent={m.intent} matched={m.intent_matched} className="ml-1" />}
         </div>
+        {ours && m.meta_template && (
+          <div className="mt-1 text-right text-[11px] text-white/80" title="Sent as an approved Meta template (outside the 24-hour window)">
+            Sent as Meta template <span className="font-mono">{m.meta_template}</span>
+          </div>
+        )}
         {ours && ['failed', 'bounced', 'complained'].includes(m.delivery_status || '') && m.error_detail && (
-          <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white">Not delivered: {m.error_detail}</div>
+          <div className="mt-1 rounded-md bg-white/15 px-2 py-1 text-[11px] text-white" title={friendlyMetaError(m.error_detail).raw}>
+            Not delivered: {friendlyMetaError(m.error_detail).text}
+          </div>
         )}
       </div>
     </div>
@@ -562,10 +620,11 @@ function MessageBubble({ m, platform, who }: { m: Msg; platform: string; who?: s
 }
 
 function RoundDivider({ at, round }: { at: string; round: number }) {
+  const tz = useTimeZone()
   return (
     <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-400">
       <span className="h-px flex-1 bg-slate-200" />
-      Reopened {formatDateTime(at)} · round {round}. Earlier messages are greyed out.
+      Reopened {formatDateTime(at, tz)} · round {round}. Earlier messages are greyed out.
       <span className="h-px flex-1 bg-slate-200" />
     </div>
   )

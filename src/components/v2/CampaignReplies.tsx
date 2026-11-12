@@ -9,8 +9,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { ArrowUpRight, Inbox, Mail, MessageCircle, Undo2, X } from 'lucide-react'
 import { countNewCampaignReplies, dismissCampaignReply, listCampaignReplies, openCampaignReply } from '@/app/dashboard/campaigns/replies/actions'
 import type { CampaignReply } from '@/lib/campaignReplies'
-import { EmptyState, ErrorNote, Spinner, useAction } from '@/components/ui'
+import { EmptyState, ErrorNote, Spinner, toast, useAction } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
+import { useTimeZone } from '@/lib/useTimeZone'
+import { ReplyIntentLabel } from '@/components/ReplyIntent'
+import { OffTargetButton, OffTargetLabel } from '@/components/OffTarget'
 
 const STATUS: Record<CampaignReply['status'], { label: string; cls: string }> = {
   new: { label: 'New', cls: '!border-sky-200 !bg-sky-50 !text-sky-700' },
@@ -19,6 +22,7 @@ const STATUS: Record<CampaignReply['status'], { label: string; cls: string }> = 
 }
 
 export function ReplyItem({ r, showCampaign = true, onChange }: { r: CampaignReply; showCampaign?: boolean; onChange?: () => void }) {
+  const tz = useTimeZone()
   const router = useRouter()
   const { run, pending, isPending, error } = useAction()
   const [expanded, setExpanded] = useState(false)
@@ -39,16 +43,22 @@ export function ReplyItem({ r, showCampaign = true, onChange }: { r: CampaignRep
             <span className="font-semibold text-slate-900">{r.businesses?.business_name || r.from_address}</span>
             {r.businesses && <span className="text-xs text-slate-500">{r.from_address}</span>}
             <span className={`badge ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span>
+            <ReplyIntentLabel intent={r.intent} matched={r.intent_matched} />
             {!campaign && <span className="badge !border-amber-200 !bg-amber-50 !text-amber-700">Unmatched</span>}
+            {r.businesses && <OffTargetLabel c={r.businesses} />}
           </div>
           <p className="mt-0.5 text-xs text-slate-500">
-            {formatDateTime(r.received_at)}
+            {formatDateTime(r.received_at, tz)}
             {showCampaign && campaign && <> · Replied to <b className="font-semibold text-slate-600">{campaign}</b></>}
             {!campaign && ' · Not from a recent campaign'}
             {!r.business_id && ' · Not in Lead Management'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {r.business_id && (
+            <OffTargetButton businessIds={[r.business_id]} marked={!!r.businesses?.off_target_at} defaultNoticed="campaign"
+              names={r.businesses?.business_name} onDone={onChange} />
+          )}
           {r.status === 'in_leads' && r.opportunity_id && r.thread_id ? (
             <Link href={`/dashboard/${r.opportunity_id}/thread/${r.thread_id}`} className="btn btn-secondary btn-sm"><ArrowUpRight size={14} /> Open chat</Link>
           ) : (
@@ -92,7 +102,7 @@ export function CampaignRepliesList({ channel, campaignId, count }: { channel: '
       .catch(() => ({ ok: false as const, error: 'Could not load replies.' }))
       .then(res => {
         if (!live) return
-        if (res.ok) { setReplies(res.data || []); setError(null) } else setError(res.error)
+        if (res.ok) { setReplies(res.data || []); setError(null) } else { setError(res.error); toast.error(res.error) }
       })
     return () => { live = false }
   }, [show, channel, campaignId, count, reload])
@@ -107,7 +117,6 @@ export function CampaignRepliesList({ channel, campaignId, count }: { channel: '
       </button>
       {show && (
         <div className="border-t border-slate-100">
-          {error && <p className="px-3 py-2 text-xs text-red-600">{error}</p>}
           {!replies && !error && <p className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500"><Spinner size={12} /> Loading…</p>}
           {replies && <ul className="max-h-96 divide-y divide-slate-100 overflow-y-auto">{replies.map(r => <ReplyItem key={r.id} r={r} showCampaign={false} onChange={load} />)}</ul>}
         </div>

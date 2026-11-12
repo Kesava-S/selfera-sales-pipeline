@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import { BASE_URL, getDbClient } from './testHelper';
+import { WEBHOOK_SECRETS } from '../api/apiHelper';
 
 describe('Integration: POST /api/whatsapp/webhook -> Message status mutation in DB', () => {
   const db = getDbClient();
@@ -65,7 +66,7 @@ describe('Integration: POST /api/whatsapp/webhook -> Message status mutation in 
   });
 
   function signPayload(bodyString: string) {
-    const secret = process.env.WHATSAPP_APP_SECRET || '';
+    const secret = WEBHOOK_SECRETS.whatsappAppSecret;
     return 'sha256=' + crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
   }
 

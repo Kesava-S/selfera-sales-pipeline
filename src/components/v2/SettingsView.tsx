@@ -2,21 +2,23 @@
 
 import { useEffect, useState } from 'react'
 import type { Profile } from '@/lib/auth'
+import { INVITE_ROLES, type InviteRole, type Role } from '@/lib/config'
 import {
   setCadence,
-  removeOptOut,
   inviteTeamMember,
   resendTeamInvite,
   revokeTeamInvite,
   updateTeamMember,
   deleteTeamMember,
 } from '@/app/dashboard/actions'
-import { Modal, ConfirmModal, useAction, ErrorNote, Spinner, SaveLabel, toast } from '@/components/ui'
+import { Modal, ConfirmModal, useAction, ErrorNote, Spinner, SaveLabel, toast, InfoTip } from '@/components/ui'
 import {
   UserPlus,
+  Pencil,
   Users,
   Building2,
   Mail,
+  MessageSquare,
   Shield,
   Briefcase,
   Calendar,
@@ -92,7 +94,7 @@ function MyAccount({ me }: { me: Profile }) {
 }
 
 // ---------- Team & Invites Management (Dynamic Live Integration) ----------
-export type TeamRole = 'admin' | 'sales' | 'consultant'
+export type TeamRole = Role
 
 export type TeamMember = {
   id: string
@@ -121,6 +123,14 @@ const ROLE_INFO: Record<TeamRole, { label: string; icon: any; color: string; bg:
     bg: 'bg-emerald-50',
     border: 'border-emerald-200',
     desc: 'Conducts demos and booked client consultations',
+  },
+  sales_consultant: {
+    label: 'Sales + Consultant',
+    icon: Users,
+    color: 'text-indigo-700',
+    bg: 'bg-indigo-50',
+    border: 'border-indigo-200',
+    desc: 'Works leads and outreach, and runs the consultations',
   },
   admin: {
     label: 'Administrator',
@@ -159,7 +169,7 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
   // Invite form state
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<TeamRole>('sales')
+  const [inviteRole, setInviteRole] = useState<InviteRole>('sales')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [inviteErrors, setInviteErrors] = useState<{ name?: string; email?: string }>({})
@@ -349,6 +359,33 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
     }
   }
 
+  // Change role (not for yourself or Admin Panel members)
+  const [roleEdit, setRoleEdit] = useState<TeamMember | null>(null)
+  const [newRole, setNewRole] = useState<InviteRole>('sales')
+  const [savingRole, setSavingRole] = useState(false)
+  const openRoleEdit = (m: TeamMember) => {
+    setNewRole((INVITE_ROLES as readonly string[]).includes(m.role) ? (m.role as InviteRole) : 'sales')
+    setRoleEdit(m)
+  }
+  const saveRole = async () => {
+    if (!roleEdit) return
+    setSavingRole(true)
+    try {
+      const res = await updateTeamMember(roleEdit.id, { role: newRole })
+      if (!res.ok) {
+        toast.error(res.error)
+      } else {
+        setMembers(prev => prev.map(m => m.id === roleEdit.id ? { ...m, role: newRole } : m))
+        toast.success(`${roleEdit.name} is now ${ROLE_INFO[newRole].label}.`)
+        setRoleEdit(null)
+      }
+    } catch {
+      toast.error('Failed to change the role.')
+    } finally {
+      setSavingRole(false)
+    }
+  }
+
   const handleToggleStatus = async (member: TeamMember) => {
     if (member.id === me.id) {
       toast.error('You cannot deactivate your own account.')
@@ -526,6 +563,18 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
                           <RoleIcon size={14} className="shrink-0" />
                           <span>{roleConfig.label}</span>
                         </span>
+                        {m.id !== me.id && m.source !== 'admin_panel' && (
+                          <button
+                            type="button"
+                            onClick={() => openRoleEdit(m)}
+                            disabled={isBusy}
+                            className="inline-flex items-center rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            title="Change role"
+                            aria-label={`Change role for ${m.name}`}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -626,6 +675,34 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
         </table>
       </div>
 
+      {/* Change role */}
+      <Modal open={!!roleEdit} onClose={() => setRoleEdit(null)} locked={savingRole} title={roleEdit ? `Change role: ${roleEdit.name}` : 'Change role'}>
+        <div className="space-y-4">
+          <fieldset className="space-y-1.5">
+            <legend className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              Pipeline role <InfoTip align="left" text="Takes effect on their next page load. Leads assigned to them stay with them; reassign in Lead Management if needed." />
+            </legend>
+            {INVITE_ROLES.map(r => {
+              const info = ROLE_INFO[r]
+              const Icon = info.icon
+              return (
+                <label key={r} className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors ${newRole === r ? 'border-primary/40' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <input type="radio" name="team-role" value={r} checked={newRole === r} onChange={() => setNewRole(r)} />
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${info.color}`}><Icon size={14} />{info.label}</span>
+                  <span className="ml-auto hidden text-xs text-slate-400 sm:inline">{info.desc}</span>
+                </label>
+              )
+            })}
+          </fieldset>
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRoleEdit(null)} disabled={savingRole}>Cancel</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={saveRole} disabled={savingRole || newRole === roleEdit?.role}>
+              {savingRole && <Spinner size={14} />} Save role
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Invite Modal */}
       {isModalOpen && (
         <Modal
@@ -682,12 +759,11 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
               <select
                 className="input"
                 value={inviteRole}
-                onChange={e => setInviteRole(e.target.value as TeamRole)}
+                onChange={e => setInviteRole(e.target.value as InviteRole)}
               >
-                <option value="sales">Sales Representative</option>
-                <option value="consultant">Consultant</option>
-                <option value="admin">Administrator</option>
+                {INVITE_ROLES.map(r => <option key={r} value={r}>{ROLE_INFO[r].label}</option>)}
               </select>
+              <p className="mt-1 text-xs text-slate-500">{ROLE_INFO[inviteRole].desc}</p>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
@@ -886,28 +962,29 @@ const SOURCE_LABEL: Record<string, string> = {
   unsubscribe: 'Opted out',
   bounce: 'Email bounced',
   complaint: 'Marked as spam',
-  inbound: 'Asked by message',
+  inbound: 'Replied STOP',
+  stage: 'Moved to Do not contact',
 }
 
 function DoNotContact({ list }: { list: OptOut[] }) {
   const [query, setQuery] = useState('')
-  const [undoing, setUndoing] = useState<OptOut | null>(null)
-  const { run, pending, error } = useAction()
   const q = query.trim().toLowerCase()
   const shown = q
     ? list.filter(o => o.identifier.toLowerCase().includes(q) || o.business?.toLowerCase().includes(q))
     : list
+  const isWhatsApp = (o: OptOut) => o.channel?.toLowerCase() === 'whatsapp'
 
   return (
     <section id="do-not-contact" className="card space-y-3 scroll-mt-20">
       <div>
-        <h2 className="font-semibold text-base text-slate-900">Do-not-contact</h2>
-        <p className="text-sm text-muted">
-          Nothing is sent to these addresses: leads who opted out, whose email bounced, or who marked us as spam.
-        </p>
+        <h2 className="flex items-center gap-1.5 font-semibold text-base text-slate-900">
+          Do-not-contact
+          <InfoTip align="left" text="Nothing is sent to these leads on the channel shown: they opted out, their email bounced, they marked us as spam, they replied STOP on any channel, or the lead was moved to Do not contact." />
+        </h2>
+        <p className="text-sm text-muted">{list.length} {list.length === 1 ? 'lead' : 'leads'} opted out</p>
       </div>
       {list.length > 5 && (
-        <input className="input" placeholder="Search by email or business" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search do-not-contact list" />
+        <input className="input" placeholder="Search by email, number or business" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search do-not-contact list" />
       )}
       {shown.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-muted">
@@ -921,38 +998,18 @@ function DoNotContact({ list }: { list: OptOut[] }) {
                 <p className="truncate font-medium">{o.business || o.identifier}</p>
                 <p className="truncate text-xs text-muted">
                   {o.business && <>{o.identifier} · </>}
-                  {SOURCE_LABEL[o.source || ''] || o.source || 'Added'} · {o.channel} ·{' '}
+                  {SOURCE_LABEL[o.source || ''] || o.source || 'Added'} ·{' '}
                   {new Date(o.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </p>
               </div>
-              <button className="btn btn-secondary btn-sm shrink-0" onClick={() => setUndoing(o)}>Undo</button>
+              <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold ${isWhatsApp(o) ? 'text-emerald-700' : 'text-sky-700'}`}>
+                {isWhatsApp(o) ? <MessageSquare size={13} /> : <Mail size={13} />}
+                {o.channel?.toLowerCase() === 'all' ? 'All channels' : o.channel || 'Email'}
+              </span>
             </li>
           ))}
         </ul>
       )}
-
-      <Modal title="Remove from do-not-contact?" open={!!undoing} onClose={() => setUndoing(null)} locked={pending}>
-        {undoing && (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              Allow emails to <span className="font-semibold text-slate-900">{undoing.business || undoing.identifier}</span> again?
-            </p>
-            {undoing.source === 'bounce' && (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">This address bounced. Check it is correct first, or it will bounce again.</p>
-            )}
-            <ErrorNote error={error} />
-            <div className="flex justify-end gap-2">
-              <button className="btn btn-secondary btn-sm" onClick={() => setUndoing(null)} disabled={pending}>Cancel</button>
-              <button
-                className="btn btn-primary btn-sm" disabled={pending}
-                onClick={() => run(() => removeOptOut(undoing.id), () => setUndoing(null), { success: `${undoing.business || undoing.identifier} can be emailed again.` })}
-              >
-                {pending && <Spinner size={14} />} Remove
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </section>
   )
 }

@@ -1,13 +1,26 @@
 import nodemailer from 'nodemailer'
 import { unsubscribeUrl } from '@/lib/unsubscribe'
 
-// Email goes out through Resend when RESEND_API_KEY is set (it reports delivery,
-// opens, clicks and bounces back to /api/email/webhook), otherwise through SMTP.
-export const isResendConfigured = () => Boolean(process.env.RESEND_API_KEY)
+// Email settings come from Integrations (it falls back to .env only when Integrations has no value).
+// Email goes out through Resend when it has an API key (it reports delivery, opens,
+// clicks and bounces back to /api/email/webhook), otherwise through SMTP.
+async function emailSettings() {
+  try {
+    const { getDynamicEmailConfig } = await import('@/lib/integrations')
+    return await getDynamicEmailConfig()
+  } catch {
+    return null
+  }
+}
+
+export async function isResendConfigured(): Promise<boolean> {
+  return Boolean((await emailSettings())?.resend_api_key)
+}
 
 // True when email can be sent by either route
-export function isSmtpConfigured(): boolean {
-  return isResendConfigured() || Boolean(process.env.SMTP_PASS)
+export async function isSmtpConfigured(): Promise<boolean> {
+  const c = await emailSettings()
+  return Boolean(c?.resend_api_key || c?.smtp_pass)
 }
 
 // A send failure that retrying won't fix (bad address, rejected by the provider)
@@ -293,7 +306,7 @@ export async function sendEmail({
   brand?: EmailBrand | null
 }): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
   const dynConfig = await resolveEmailProviderConfig()
-  const provider = dynConfig?.provider || (isResendConfigured() ? 'resend' : 'smtp')
+  const provider = dynConfig?.provider || (dynConfig?.resend_api_key ? 'resend' : 'smtp')
 
   if (provider === 'resend') {
     const apiKey = dynConfig?.resend_api_key || process.env.RESEND_API_KEY
@@ -365,7 +378,7 @@ export async function sendRawEmail({
   replyTo?: string | null
 }): Promise<{ messageId: string; provider: 'resend' | 'smtp' }> {
   const dynConfig = await resolveEmailProviderConfig()
-  const provider = dynConfig?.provider || (isResendConfigured() ? 'resend' : 'smtp')
+  const provider = dynConfig?.provider || (dynConfig?.resend_api_key ? 'resend' : 'smtp')
 
   if (provider === 'resend') {
     const apiKey = dynConfig?.resend_api_key || process.env.RESEND_API_KEY
@@ -451,6 +464,7 @@ export async function sendTeamInviteEmail({
   const roleLabels: Record<string, string> = {
     sales: 'Sales Representative',
     consultant: 'Consultant',
+    sales_consultant: 'Sales + Consultant',
     admin: 'Administrator',
   }
   const roleLabel = roleLabels[role] || role || 'Team Member'

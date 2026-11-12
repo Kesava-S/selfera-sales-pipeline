@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { toEmailEvent, verifyResendSignature } from '@/lib/resendWebhook'
+import { getDynamicEmailConfig } from '@/lib/integrations'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,9 +10,9 @@ export const dynamic = 'force-dynamic'
 // bounced, marked as spam. Every request must carry Resend's signature: a forged
 // "bounced" would put a lead's address on the do-not-contact list.
 export async function POST(request: Request) {
-  const secret = process.env.RESEND_WEBHOOK_SECRET
+  const secret = (await getDynamicEmailConfig().catch(() => null))?.resend_webhook_secret
   if (!secret) {
-    return NextResponse.json({ error: 'Email webhook is not set up (RESEND_WEBHOOK_SECRET missing).' }, { status: 503 })
+    return NextResponse.json({ error: 'Email webhook is not set up (add the Resend webhook secret in Integrations).' }, { status: 503 })
   }
 
   const raw = await request.text()

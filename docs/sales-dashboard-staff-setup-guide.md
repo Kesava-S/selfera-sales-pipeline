@@ -20,7 +20,7 @@
 ## 2. Supabase (do first)
 
 1. **Back up** the existing `tasks` table (export CSV) before running anything.
-2. Open the repo folder `/supabase/migrations/` and run each file **in order** in the Supabase SQL editor.
+2. Open the repo folder `/supabase/migrations/`. For a new, empty database run `parent_migration.sql` once; for an existing one, run the numbered files you don't have yet, **in order**, in the Supabase SQL editor (see `README.md` there).
 3. Check the `tasks` changes: two new columns, `task_type` (default `general`) and `lead_id` (nullable). Existing staff tasks are not affected.
 4. If our `tasks` table uses different column names from `title, description, assigned_to, due_date, status`, update **`lib/config.ts`** and the migration before running.
 5. Optional: run `supabase/seed.sql` to add 3 test leads.

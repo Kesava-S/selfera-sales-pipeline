@@ -2,9 +2,10 @@ import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
 import { STATUS_PAGES } from '@/lib/config'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
+import { LiveRefresh } from '@/components/LiveRefresh'
 import { StatusTypeBoxes } from '@/components/v2/DrilldownViews'
-import { UnmatchedBookings } from '@/components/v2/AdminQueues'
-import { ErrorNote } from '@/components/ui'
+import { OffTargetLeads, type OffTargetRow } from '@/components/v2/OffTargetLeads'
+import { ErrorNote, InfoTip } from '@/components/ui'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,25 +22,26 @@ export default async function StatusPage({
   if (!profile) return null
   if (def.adminOnly && profile.role !== 'admin') notFound()
 
-  // Special queue for unmatched web bookings (no type step)
-  if (key === 'unmatched-bookings') {
-    const { data, error } = await supabase.rpc('list_unmatched_bookings')
+  // Leads staff marked off-target (no type step)
+  if (key === 'off-target-leads') {
+    const { data, error } = await supabase.rpc('list_off_target_leads')
     return (
       <div className="space-y-5">
+        <LiveRefresh name="status" />
         <BreadcrumbSetter
           breadcrumbs={[
             { label: 'Dashboard', href: '/dashboard' },
-            { label: 'Unmatched bookings' },
+            { label: 'Off-target leads' },
           ]}
         />
         <div>
-          <h1>Unmatched bookings</h1>
-          <p className="text-sm text-slate-500">
-            Consultations booked on the website that didn&apos;t match a business by contact details or email. Link each one to the right business.
-          </p>
+          <h1 className="flex items-center gap-2">
+            Off-target leads
+            <InfoTip align="left" text="Reached during outreach or campaigns but unrelated to us, or found not to fit later. Marked by staff; left out of the pipeline, Due today and new campaigns." />
+          </h1>
         </div>
         <ErrorNote error={error?.message} />
-        <UnmatchedBookings bookings={data || []} />
+        <OffTargetLeads rows={(data || []) as OffTargetRow[]} />
       </div>
     )
   }
@@ -51,6 +53,7 @@ export default async function StatusPage({
 
   return (
     <div className="space-y-6">
+      <LiveRefresh name="status" />
       <BreadcrumbSetter
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },

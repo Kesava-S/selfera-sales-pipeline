@@ -5,6 +5,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { actsAsSales } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
 import { cleanCustomer, type CleanCustomer, type Country, type CustomerInput, COUNTRIES } from '@/lib/customerLeads'
 import type { EmailCheck, EmailStatus } from '@/lib/emailCheck'
@@ -17,7 +18,7 @@ async function staff(): Promise<{ supabase: Supabase; userId: string } | { error
   const supabase = await createClient()
   const [{ data: { user } }, { data: role }] = await Promise.all([supabase.auth.getUser(), supabase.rpc('get_user_role')])
   if (!user) return { error: 'Your session has expired. Please log in again.' }
-  if (role !== 'admin' && role !== 'sales') return { error: 'You do not have permission to do this.' }
+  if (role !== 'admin' && !actsAsSales(role)) return { error: 'You do not have permission to do this.' }
   return { supabase, userId: user.id }
 }
 
@@ -28,6 +29,13 @@ function friendly(message: string): string {
   if (/permission denied|row-level security/i.test(message)) return 'You do not have permission to do this.'
   if (/fetch failed|ECONNREFUSED|network/i.test(message)) return 'Could not reach the database. Check your connection and try again.'
   return message.replace(/^.*?ERROR:\s*/i, '')
+}
+
+// Client Audience is only for Won leads (a Won pitch in Lead Management)
+const NOT_WON = 'Only Won leads can be Client Audience clients. Mark the lead as Won in Lead Management first.'
+async function isWon(supabase: Supabase, businessId: string): Promise<boolean> {
+  const { count } = await supabase.from('opportunities').select('id', { count: 'exact', head: true }).eq('business_id', businessId).eq('stage', 'Won')
+  return (count ?? 0) > 0
 }
 
 const done = (businessId: string) => {
@@ -47,6 +55,7 @@ export async function saveCustomerLead(
 ): Promise<ActionResult<{ id: string; problems: string[] }>> {
   const s = await staff()
   if ('error' in s) return { ok: false, error: s.error }
+  if (!(await isWon(s.supabase, businessId))) return { ok: false, error: NOT_WON }
   const { row, problems } = cleanCustomer(input, validCountry(opts.country))
   if (!row) return { ok: false, error: 'Add a name, an email or a phone number.' }
 
@@ -122,6 +131,7 @@ export async function importCustomerLeads(
   if (!batchId) {
     const { data: b } = await supabase.from('businesses').select('id').eq('id', businessId).maybeSingle()
     if (!b) return { ok: false, error: 'This business was not found.' }
+    if (!(await isWon(supabase, businessId))) return { ok: false, error: NOT_WON }
     const { data, error } = await supabase.from('customer_import_batches').insert({ business_id: businessId, file_name: opts.fileName.slice(0, 200) }).select('id').single()
     if (error) return { ok: false, error: friendly(error.message) }
     batchId = data.id as string
@@ -222,19 +232,6 @@ export async function importCustomerLeads(
 
 // ---------- Picking a client (read-only search of Lead Management businesses) ----------
 
-export type BusinessPick = { id: string; business_name: string; contact_name: string | null; business_type: string | null; area: string | null }
-
-export async function findBusinesses(query: string): Promise<ActionResult<BusinessPick[]>> {
-  const s = await staff()
-  if ('error' in s) return { ok: false, error: s.error }
-  const q = query.trim().replace(/[%_,()\\]/g, ' ').trim()
-  let req = s.supabase.from('businesses').select('id, business_name, contact_name, business_type, area').eq('archived', false)
-  if (q) req = req.or(`business_name.ilike.%${q}%,contact_name.ilike.%${q}%`)
-  const { data, error } = await req.order('business_name').limit(20)
-  if (error) return { ok: false, error: friendly(error.message) }
-  return { ok: true, data: (data || []) as BusinessPick[] }
-}
-
 // ---------- Client settings: data-processing agreement and sender ----------
 
 export async function saveAudienceClient(
@@ -243,6 +240,7 @@ export async function saveAudienceClient(
 ): Promise<ActionResult> {
   const s = await staff()
   if ('error' in s) return { ok: false, error: s.error }
+  if (!(await isWon(s.supabase, businessId))) return { ok: false, error: NOT_WON }
   const { error } = await s.supabase.rpc('set_audience_client', {
     p_business_id: businessId, p_dpa_signed_on: input.dpaSignedOn || null, p_sender_name: input.senderName, p_reply_to: input.replyTo,
   })

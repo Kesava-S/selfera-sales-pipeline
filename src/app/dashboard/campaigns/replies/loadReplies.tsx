@@ -1,4 +1,5 @@
 import { requireProfile } from '@/lib/auth'
+import { actsAsSales } from '@/lib/config'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { CampaignRepliesView } from '@/components/v2/CampaignReplies'
 import { EmptyState } from '@/components/ui'
@@ -9,7 +10,7 @@ export async function RepliesPage({ channel, searchParams }: { channel: 'email' 
   const sp = await searchParams
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
-  if (profile.role !== 'admin' && profile.role !== 'sales') {
+  if (profile.role !== 'admin' && !actsAsSales(profile.role)) {
     return <EmptyState title="Campaign replies are for the admin and sales team" />
   }
 

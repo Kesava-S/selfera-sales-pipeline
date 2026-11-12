@@ -6,15 +6,17 @@ import { usePathname } from 'next/navigation'
 import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch, Contact, Plug } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
-const NAV = [
+// roles: who sees the item (everyone when not set). Consultants don't run campaigns or Client Audience.
+const SALES_SIDE = ['admin', 'sales', 'sales_consultant']
+const NAV: { href: string; label: string; icon: typeof Mail; roles?: string[] }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
   // Google Places + Companies House lookups to fill in a lead's missing details
   { href: '/dashboard/lookup', label: 'Lead Lookup', icon: ScanSearch },
   // Customers of our client businesses, for marketing on their behalf
-  { href: '/dashboard/audience', label: 'Client Audience', icon: Contact },
-  { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail },
-  { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare },
+  { href: '/dashboard/audience', label: 'Client Audience', icon: Contact, roles: SALES_SIDE },
+  { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail, roles: SALES_SIDE },
+  { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare, roles: SALES_SIDE },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
   { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
@@ -56,7 +58,7 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
       </Link>
 
       <nav className="sidebar-nav">
-        {NAV.map(item => {
+        {NAV.filter(item => !item.roles || item.roles.includes(userProfile.role)).map(item => {
           const active = pendingHref
             ? pendingHref === item.href
             : item.href === '/dashboard'

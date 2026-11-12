@@ -18,7 +18,7 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     .select(`*, businesses (*), threads (*, drafts (id, step_label, status)), stage_changes (id, from_stage, to_stage, from_services, to_services, reason, changed_by, created_at), notes (id, body, created_by, created_at)`)
     .eq('id', oppId)
     .maybeSingle()
-  if (!opp) notFound()
+  if (!opp || !opp.businesses) notFound()
 
   const email = opp.businesses?.email?.trim()
   const [{ data: others }, { data: people }, { data: block }] = await Promise.all([

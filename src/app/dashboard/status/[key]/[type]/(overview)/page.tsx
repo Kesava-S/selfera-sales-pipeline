@@ -4,6 +4,7 @@ import { STATUS_PAGES } from '@/lib/config'
 import { categoryFromSlug, categorySlug } from '@/lib/lists'
 import { getSalesLists } from '@/lib/dynamicData'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
+import { LiveRefresh } from '@/components/LiveRefresh'
 import { ReplyPlatformBoxes, StatusLeadList, type StatusListRow } from '@/components/v2/DrilldownViews'
 import { ErrorNote } from '@/components/ui'
 
@@ -20,7 +21,7 @@ export default async function StatusTypePage({
   const { key, type } = await params
   const sp = await searchParams
   const def = STATUS_PAGES[key]
-  if (!def || key === 'unmatched-bookings') notFound()
+  if (!def || key === 'off-target-leads') notFound()
 
   const lists = await getSalesLists()
   const canonicalType = categoryFromSlug(lists, type)
@@ -40,6 +41,7 @@ export default async function StatusTypePage({
 
     return (
       <div className="space-y-6">
+        <LiveRefresh name="status" />
         <BreadcrumbSetter
           breadcrumbs={[
             { label: 'Dashboard', href: '/dashboard' },
@@ -73,7 +75,7 @@ export default async function StatusTypePage({
       ? supabase
           .from('profiles')
           .select('id, full_name')
-          .eq('role', 'consultant')
+          .in('role', ['consultant', 'sales_consultant'])
           .eq('is_active', true)
           .order('full_name')
       : Promise.resolve({ data: null, error: null }),
@@ -84,6 +86,7 @@ export default async function StatusTypePage({
 
   return (
     <div className="space-y-6">
+      <LiveRefresh name="status" />
       <BreadcrumbSetter
         breadcrumbs={[
           { label: 'Dashboard', href: '/dashboard' },

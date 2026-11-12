@@ -1,5 +1,7 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireProfile } from '@/lib/auth'
+import { actsAsSales } from '@/lib/config'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { CustomersView, type CustomerFilters, type CustomerTab } from '@/components/customers/CustomersView'
 import { EmptyState } from '@/components/ui'
@@ -23,7 +25,7 @@ export default async function ClientCustomersPage({
   const sp = await searchParams
   const { supabase, profile } = await requireProfile()
   if (!profile) return null
-  if (profile.role !== 'admin' && profile.role !== 'sales') {
+  if (profile.role !== 'admin' && !actsAsSales(profile.role)) {
     return <EmptyState title="Client Audience is for the admin and sales team" text="Ask an admin if you need access." />
   }
 
@@ -34,6 +36,23 @@ export default async function ClientCustomersPage({
     .eq('id', businessId)
     .maybeSingle()
   if (!business) notFound()
+
+  // Client Audience is only for Won leads. A client that stops being Won keeps its
+  // customers (read-only use; campaigns pause), but a business never Won has no page here.
+  const [{ count: wonNow }, { count: customerCount }] = await Promise.all([
+    supabase.from('opportunities').select('id', { count: 'exact', head: true }).eq('business_id', businessId).eq('stage', 'Won'),
+    supabase.from('customer_leads').select('id', { count: 'exact', head: true }).eq('business_id', businessId),
+  ])
+  if (!wonNow && !customerCount) {
+    return (
+      <EmptyState
+        title="Only Won leads can be Client Audience clients"
+        text={`${business.business_name} isn't Won in Lead Management yet. Once it's marked Won, it's added here automatically.`}
+      >
+        <Link href="/dashboard/audience" className="btn btn-secondary">Back to Client Audience</Link>
+      </EmptyState>
+    )
+  }
 
   const filters: CustomerFilters = {
     tab: TABS.includes(sp.tab as CustomerTab) ? (sp.tab as CustomerTab) : 'all',

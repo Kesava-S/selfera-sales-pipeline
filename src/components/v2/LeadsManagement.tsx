@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Pencil,
   Archive,
+  Trash2,
   UserPlus,
   Layers,
   MessageCircle,
@@ -22,11 +23,11 @@ import {
   PhoneOff,
 } from 'lucide-react'
 import { getPhoneType, whatsappLink } from '@/lib/contact'
-import { CONFIG } from '@/lib/config'
+import { CONFIG, actsAsSales } from '@/lib/config'
 import { categoryNames, matchCategory } from '@/lib/lists'
 import { dueLabel, formatDate } from '@/lib/format'
-import { approveLeads, bulkArchive, bulkAssign, bulkServices } from '@/app/dashboard/actions'
-import { ChipSelect, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction, toast } from '@/components/ui'
+import { approveLeads, bulkArchive, bulkAssign, bulkServices, deleteLeadsEverywhere } from '@/app/dashboard/actions'
+import { ChipSelect, ConfirmModal, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction, toast } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
 import { CsvImportModal } from '@/components/v2/CsvImportModal'
 import { LeadExportModal } from '@/components/v2/LeadExportModal'
@@ -36,9 +37,12 @@ import { useLists } from '@/components/ListsContext'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { ColumnPicker, useColumns, type ColumnDef } from '@/components/ColumnPicker'
 import { EmailBadge, type EmailCheckFields } from '@/components/EmailCheck'
+import { ReplyIntentLabel } from '@/components/ReplyIntent'
+import { OffTargetButton, OffTargetLabel, type OffTargetFields } from '@/components/OffTarget'
 
 
-export type PitchRow = EmailCheckFields & {
+export type PitchRow = EmailCheckFields & OffTargetFields & {
+  reply_intent?: string | null // latest reply's type (label only)
   opportunity_id: string
   business_id: string
   business_name: string
@@ -143,7 +147,7 @@ export function LeadsManagement({
   const lists = useLists()
   const router = useRouter()
   const isAdmin = role === 'admin'
-  const canIntake = role === 'admin' || role === 'sales'
+  const canIntake = role === 'admin' || actsAsSales(role)
   const [selected, setSelected] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const cols = useColumns('leads-all-columns', LEAD_COLUMNS)
@@ -154,7 +158,6 @@ export function LeadsManagement({
   const [bulk, setBulk] = useState<null | 'assign' | 'services'>(null)
   const [bulkValue, setBulkValue] = useState('')
   const [bulkServicesValue, setBulkServicesValue] = useState<string[]>([])
-  const [notice, setNotice] = useState<string | null>(null)
   const { run, pending, isPending, error, setError } = useAction()
 
   const go = (patch: Record<string, string | undefined>) => {
@@ -167,6 +170,15 @@ export function LeadsManagement({
   }
 
   const selectedRows = rows.filter(r => selected.includes(r.opportunity_id))
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const deleteSelected = () => {
+    const ids = Array.from(new Set(selectedRows.map(r => r.business_id)))
+    run(() => deleteLeadsEverywhere(ids), d => {
+      toast.success(`${d?.deleted ?? ids.length} lead(s) deleted with everything connected to them.`)
+      setConfirmDelete(false)
+      setSelected([])
+    }, { key: 'delete' })
+  }
   const toggle = (id: string) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
   const allOnPage = rows.length > 0 && rows.every(r => selected.includes(r.opportunity_id))
 
@@ -180,9 +192,7 @@ export function LeadsManagement({
   const approve = (ids: string[], key = 'approve-selected') => {
     const businessIds = Array.from(new Set(rows.filter(r => ids.includes(r.opportunity_id)).map(r => r.business_id)))
     run(() => approveLeads(businessIds), () => {
-      const msg = `${businessIds.length} lead(s) approved. Drafts are ready in Due today.`
-      setNotice(msg)
-      toast.success(msg)
+      toast.success(`${businessIds.length} lead(s) approved. Drafts are ready in Due today.`)
       setSelected([])
     }, { key })
   }
@@ -271,12 +281,6 @@ export function LeadsManagement({
         ))}
       </div>
 
-      {notice && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 break-words whitespace-normal leading-snug">
-          <span>{notice}</span>
-          <button className="shrink-0 font-semibold hover:opacity-80" onClick={() => setNotice(null)}>Close</button>
-        </div>
-      )}
       <ErrorNote error={error || loadError} />
 
       {tab === 'missing' ? (
@@ -430,6 +434,15 @@ export function LeadsManagement({
               >
                 {isPending('archive') ? <Spinner /> : <Archive size={15} />} {params.archived === '1' ? 'Unarchive' : 'Archive'}
               </button>
+              {tab === 'all' && (() => {
+                const ids = Array.from(new Set(selectedRows.map(r => r.business_id)))
+                const allMarked = selectedRows.length > 0 && selectedRows.every(r => r.off_target_at)
+                return <OffTargetButton businessIds={ids} marked={allMarked} onDone={() => setSelected([])}
+                  names={`${selectedRows.slice(0, 3).map(r => r.business_name).join(', ')}${selectedRows.length > 3 ? ` and ${selectedRows.length - 3} more` : ''}`} />
+              })()}
+              <button className="btn btn-secondary btn-sm !text-red-700" disabled={pending} onClick={() => setConfirmDelete(true)}>
+                <Trash2 size={15} /> Delete
+              </button>
             </>
           )}
           <button className="btn btn-ghost btn-sm ml-auto" onClick={() => setSelected([])}>Clear selection</button>
@@ -521,6 +534,7 @@ export function LeadsManagement({
                             ) : null}
                             {r.needs_reply && <span className="ml-2 font-semibold text-emerald-700">Needs reply</span>}
                             {r.archived && <span className="ml-2 font-semibold text-slate-500">Archived</span>}
+                            <OffTargetLabel c={r} className="ml-2" />
                             {!r.assigned_sales_name && (r.stage === 'Active' || r.stage === 'Interested') && <span className="ml-2 font-semibold text-amber-700">Not assigned</span>}
                             {lateReplies.includes(r.opportunity_id) && <span className="ml-2 font-semibold text-sky-700">Replied after closing</span>}
                           </div>
@@ -579,7 +593,7 @@ export function LeadsManagement({
                           </>
                         ) : (
                           <>
-                            {cols.has('stage') && <td><StageBadge stage={r.stage} /></td>}
+                            {cols.has('stage') && <td><StageBadge stage={r.stage} />{r.reply_intent && <div className="mt-1"><ReplyIntentLabel intent={r.reply_intent} /></div>}</td>}
                             {cols.has('platforms') && <td>
                               <div className="flex flex-wrap gap-1.5">
                                 {r.threads.length ? r.threads.map(t => <PlatformStatus key={t.platform} platform={t.platform} status={t.status} step={t.step} />)
@@ -644,7 +658,10 @@ export function LeadsManagement({
                               <Detail label="Company type">{r.company_type || 'Unknown'}</Detail>
                               <Detail label="Added">{formatDate(r.created_at)}</Detail>
                             </div>
-                            <div className="mt-2 px-2"><Link href={`/dashboard/${r.opportunity_id}`} className="text-sm font-semibold text-primary hover:text-primary-hover">Open full business details →</Link></div>
+                            <div className="mt-2 flex flex-wrap items-center gap-3 px-2">
+                              <Link href={`/dashboard/${r.opportunity_id}`} className="text-sm font-semibold text-primary hover:text-primary-hover">Open full business details →</Link>
+                              {tab === 'all' && r.stage !== 'Needs review' && <OffTargetButton businessIds={[r.business_id]} marked={!!r.off_target_at} names={r.business_name} />}
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -663,6 +680,25 @@ export function LeadsManagement({
       {/* Modals */}
       {showAdd && <BusinessForm open mode="add" onClose={() => setShowAdd(false)} />}
       {showImport && <CsvImportModal open onClose={() => setShowImport(false)} />}
+
+      <ConfirmModal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={deleteSelected}
+        isPending={isPending('delete')}
+        variant="danger"
+        title={`Delete ${new Set(selectedRows.map(r => r.business_id)).size} lead(s)?`}
+        confirmText="Delete everywhere"
+        message={
+          <div className="space-y-2 text-left">
+            <p className="font-medium text-slate-800">
+              {selectedRows.slice(0, 3).map(r => r.business_name).join(', ')}{selectedRows.length > 3 ? ` and ${selectedRows.length - 3} more` : ''}
+            </p>
+            <p>Removes the lead and its pitches, conversations, campaign history, bookings and Client Audience. <b>This can&apos;t be undone.</b></p>
+            <p className="text-xs text-slate-500">Opt-outs are kept, so they&apos;re never contacted again.</p>
+          </div>
+        }
+      />
       {showExport && (
         <LeadExportModal
           open={showExport}

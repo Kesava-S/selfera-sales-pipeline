@@ -45,14 +45,18 @@ export type CampaignReply = {
   body: string
   received_at: string
   status: 'new' | 'in_leads' | 'dismissed'
+  // Sorted by word rules (migration 64); a label only
+  intent?: string | null
+  intent_matched?: string | null
   campaign_id: string | null
   whatsapp_campaign_id: string | null
   business_id: string | null
   opportunity_id: string | null
   thread_id: string | null
-  businesses: { business_name: string } | null
+  businesses: { business_name: string; off_target_at?: string | null; off_target_reason?: string | null; off_target_noticed?: string | null; off_target_note?: string | null } | null
   email_campaigns: { name: string } | null
   whatsapp_campaigns: { name: string } | null
 }
 
-export const REPLY_SELECT = 'id, channel, from_address, subject, body, received_at, status, campaign_id, whatsapp_campaign_id, business_id, opportunity_id, thread_id, businesses (business_name), email_campaigns (name), whatsapp_campaigns (name)'
+// Columns for the reply lists (intent = the reply's type, sorted by word rules)
+export const REPLY_SELECT = 'id, channel, from_address, subject, body, received_at, status, intent, intent_matched, campaign_id, whatsapp_campaign_id, business_id, opportunity_id, thread_id, businesses (business_name, off_target_at, off_target_reason, off_target_noticed, off_target_note), email_campaigns (name), whatsapp_campaigns (name)'

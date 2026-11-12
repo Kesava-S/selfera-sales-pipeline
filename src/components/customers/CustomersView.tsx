@@ -232,7 +232,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                     <td className="max-w-64">
                       <div className="flex items-center gap-1.5">
                         <span className={`truncate font-semibold ${name ? 'text-slate-900' : 'italic text-slate-400'}`}>{name || 'No name'}</span>
-                        {c.country === 'India' && <span className="badge !border-violet-200 !bg-violet-50 !py-0 !text-[10px] !text-violet-700">India</span>}
+                        {c.country === 'India' && <span className="text-[10px] font-semibold text-violet-700" title="Test contact">India</span>}
                       </div>
                     </td>
                     {cols.has('phone') && <td>
@@ -245,9 +245,9 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                       {c.do_not_contact ? (
                         <span className="text-xs text-red-700">{c.do_not_contact_reason || 'Do not contact'}{c.do_not_contact_at && ` · ${formatDate(c.do_not_contact_at)}`}</span>
                       ) : missing.length ? (
-                        <span className="badge !border-amber-200 !bg-amber-50 !text-amber-700" title={`Missing: ${missing.join(', ')}`}>Missing: {missing.join(', ')}</span>
+                        <span className="text-xs font-semibold text-amber-700" title={`Missing: ${missing.join(', ')}`}>Missing: {missing.join(', ')}</span>
                       ) : (
-                        <span className="badge !border-emerald-200 !bg-emerald-50 !text-emerald-700"><CheckCircle2 size={12} /> Ready</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CheckCircle2 size={12} /> Ready</span>
                       )}
                     </td>}
                     {cols.has('town') && <td className="text-sm">{[c.town, c.postcode].filter(Boolean).join(', ') || '-'}</td>}

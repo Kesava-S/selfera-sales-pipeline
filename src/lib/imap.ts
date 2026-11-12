@@ -45,7 +45,6 @@ export function stripEmailQuotedText(text: string): string {
 }
 
 export async function isImapConfigured(): Promise<boolean> {
-  if (process.env.IMAP_PASS || process.env.SMTP_PASS) return true
   try {
     const { getDynamicEmailConfig } = await import('@/lib/integrations')
     const dyn = await getDynamicEmailConfig()

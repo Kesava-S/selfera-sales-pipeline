@@ -19,6 +19,7 @@ export function formatRoleTitle(companyRole?: string | null, salesRole?: Role): 
   if (companyRole === 'founder') return 'Founder'
   if (salesRole === 'admin') return 'Admin'
   if (salesRole === 'consultant') return 'Consultant'
+  if (salesRole === 'sales_consultant') return 'Sales + Consultant'
   return 'Sales'
 }
 

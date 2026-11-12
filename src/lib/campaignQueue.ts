@@ -69,7 +69,7 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined, customerI
 
   if (r.channel === 'email') {
     const { isSmtpConfigured, sendEmail } = await import('@/lib/mailer')
-    if (!isSmtpConfigured()) {
+    if (!(await isSmtpConfigured())) {
       return canSimulate()
         ? { id: r.id, ok: true, simulated: true }
         : { id: r.id, ok: false, error: 'Email sending is not configured (add RESEND_API_KEY or SMTP_PASS).', permanent: true }
@@ -95,7 +95,7 @@ async function sendOne(r: ClaimedSend, c: CampaignContent | undefined, customerI
   }
 
   const { isWhatsAppConfigured, sendWhatsAppMessage } = await import('@/lib/whatsapp')
-  if (!isWhatsAppConfigured()) {
+  if (!(await isWhatsAppConfigured())) {
     return canSimulate()
       ? { id: r.id, ok: true, simulated: true }
       : { id: r.id, ok: false, error: 'WhatsApp is not configured.', permanent: true }
