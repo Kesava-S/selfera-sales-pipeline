@@ -47,7 +47,7 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
       expect(clean('unknown')).toBe('');
       expect(clean('tbc')).toBe('');
       expect(clean('-')).toBe('');
-      expect(clean('—')).toBe('');
+      expect(clean('\u2014')).toBe('');
       expect(clean('?')).toBe('');
     });
   });

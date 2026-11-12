@@ -18,7 +18,7 @@ describe('draftFromMessage', () => {
   })
 
   it('builds a valid Meta name', () => {
-    expect(metaNameFrom('Cafés & Bars — Follow-up 2')).toBe('selfera_caf_s_bars_follow_up_2')
+    expect(metaNameFrom('Cafés & Bars - Follow-up 2')).toBe('selfera_caf_s_bars_follow_up_2')
   })
 })
 

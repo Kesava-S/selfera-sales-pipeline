@@ -239,9 +239,9 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
                   <tr key={r.row} className={leftOutRows.has(r.row) ? 'opacity-70' : ''}>
                     <td className="text-xs text-slate-400">{r.row}</td>
                     <td>{[r.data.first_name, r.data.last_name].filter(Boolean).join(' ') || <span className="italic text-slate-400">No name</span>}</td>
-                    <td className="text-xs">{r.data.email ? <><div>{r.data.email}</div><EmailCheckBadge check={emailCheck.results[r.data.email.trim().toLowerCase()]} running={emailCheck.running} /></> : '—'}</td>
+                    <td className="text-xs">{r.data.email ? <><div>{r.data.email}</div><EmailCheckBadge check={emailCheck.results[r.data.email.trim().toLowerCase()]} running={emailCheck.running} /></> : '-'}</td>
                     <td className="text-xs">
-                      {r.data.phone || r.data.phone2 || '—'}
+                      {r.data.phone || r.data.phone2 || '-'}
                       {(r.data.phone_type || r.data.phone2_type) && <span className={`ml-1 font-semibold ${(r.data.phone_type ?? r.data.phone2_type) === 'invalid' ? 'text-red-600' : (r.data.phone_type ?? r.data.phone2_type) === 'mobile' ? 'text-sky-700' : 'text-slate-500'}`}>{PHONE_TYPE_LABEL[(r.data.phone_type ?? r.data.phone2_type)!].replace(' (free-phone, etc.)', '')}</span>}
                       {r.data.country !== country && <span className="ml-1 text-violet-700">{r.data.country}</span>}
                     </td>

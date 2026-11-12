@@ -78,15 +78,15 @@ function MyAccount({ me }: { me: Profile }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
         <div className="space-y-1">
           <span className="text-xs uppercase font-medium tracking-wider text-muted">Full Name</span>
-          <p className="text-sm font-medium">{me.full_name || '—'}</p>
+          <p className="text-sm font-medium">{me.full_name || '-'}</p>
         </div>
         <div className="space-y-1">
           <span className="text-xs uppercase font-medium tracking-wider text-muted">Email</span>
-          <p className="text-sm font-medium">{me.email || '—'}</p>
+          <p className="text-sm font-medium">{me.email || '-'}</p>
         </div>
         <div className="space-y-1">
           <span className="text-xs uppercase font-medium tracking-wider text-muted">Role</span>
-          <p className="text-sm font-medium capitalize">{me.display_role || me.role || '—'}</p>
+          <p className="text-sm font-medium capitalize">{me.display_role || me.role || '-'}</p>
         </div>
       </div>
     </section>

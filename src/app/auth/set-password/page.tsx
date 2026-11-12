@@ -272,7 +272,7 @@ export default function SetPasswordPage() {
                     {userName || 'Team Member'}
                   </div>
                   <div className="truncate text-xs text-slate-500">
-                    {userEmail || '—'}
+                    {userEmail || '-'}
                   </div>
                 </div>
                 <div className="shrink-0">
