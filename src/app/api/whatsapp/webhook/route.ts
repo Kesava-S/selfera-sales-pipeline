@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
@@ -62,13 +62,43 @@ type MetaStatus = {
   errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[]
 }
 
+// Meta sends updates to one address only (production). Production passes each signed
+// update on to the sites in WHATSAPP_WEBHOOK_FORWARD_URLS (comma separated, e.g. dev),
+// so their own messages get replies and delivery updates too. Forwarded updates keep
+// Meta's signature, so the receiving site checks them the same way, and are never
+// forwarded again.
+const FORWARDED_HEADER = 'x-selfera-forwarded'
+
+function forwardToOtherSites(raw: string, signature: string | null, request: Request) {
+  if (request.headers.get(FORWARDED_HEADER) || !signature) return
+  const self = new URL(request.url).host
+  const targets = (process.env.WHATSAPP_WEBHOOK_FORWARD_URLS || '')
+    .split(',').map(u => u.trim()).filter(Boolean)
+    .filter(u => { try { return new URL(u).host !== self } catch { return false } })
+  if (!targets.length) return
+  after(async () => {
+    await Promise.all(targets.map(url =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-hub-signature-256': signature, [FORWARDED_HEADER]: '1' },
+        body: raw,
+        signal: AbortSignal.timeout(8_000),
+      })
+        .then(res => { if (!res.ok) console.warn(`[WhatsApp Webhook] Forward to ${url} returned ${res.status}`) })
+        .catch(err => console.warn(`[WhatsApp Webhook] Forward to ${url} failed:`, err?.message || err))
+    ))
+  })
+}
+
 export async function POST(request: Request) {
   try {
     const raw = await request.text()
-    if (!(await signatureOk(raw, request.headers.get('x-hub-signature-256')))) {
+    const signature = request.headers.get('x-hub-signature-256')
+    if (!(await signatureOk(raw, signature))) {
       console.warn('[WhatsApp Webhook] Rejected a request with a missing or wrong signature.')
       return NextResponse.json({ status: 'forbidden' }, { status: 401 })
     }
+    forwardToOtherSites(raw, signature, request)
     const payload = (() => { try { return JSON.parse(raw) } catch { return {} } })()
 
     if (payload.object !== 'whatsapp_business_account') {
