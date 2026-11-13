@@ -56,9 +56,23 @@ export async function POST(request: Request) {
     }
   }
 
+  // Resolve accurate lastInboundAt: fallback to latest message if thread.last_inbound_at is missing
+  let effectiveLastInbound = thread.last_inbound_at
+  if (!effectiveLastInbound) {
+    const { data: latestInbound } = await supabase
+      .from('messages')
+      .select('created_at')
+      .eq('thread_id', threadId)
+      .eq('direction', 'inbound')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (latestInbound?.created_at) effectiveLastInbound = latestInbound.created_at
+  }
+
   // Same rule the screen uses, checked again here
   const rule = getSendRule({
-    platform: thread.platform, threadStatus: thread.status, stage: opp.stage, lastInboundAt: thread.last_inbound_at,
+    platform: thread.platform, threadStatus: thread.status, stage: opp.stage, lastInboundAt: effectiveLastInbound,
     apiPlatforms, whatsappTemplateName: templateName, humanAgent: process.env.META_HUMAN_AGENT === 'true',
   })
   if (rule.mode !== 'api' && rule.mode !== 'api-template') return NextResponse.json({ error: rule.reason }, { status: 422 })

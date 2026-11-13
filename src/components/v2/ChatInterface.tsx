@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick, MailX } from 'lucide-react'
+import { Send, Copy, ExternalLink, Check, CheckCheck, AlertTriangle, AlertCircle, Info, Lock, PauseCircle, Ban, RotateCw, Eye, MousePointerClick, MailX, Clock } from 'lucide-react'
 import { STATUS_STYLE, STEP_LABELS } from '@/lib/config'
 import { formatDate, formatDateTime, nextStepLabel } from '@/lib/format'
 import { useTimeZone } from '@/lib/useTimeZone'
@@ -12,7 +12,7 @@ import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { facebookLink, instagramLink, mailtoLink, whatsappLink } from '@/lib/contact'
 import { markSent, removeOptOut } from '@/app/dashboard/actions'
 import { createClient } from '@/lib/supabase/client'
-import { ErrorNote, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, toast, useAction } from '@/components/ui'
+import { ErrorNote, InfoTip, Modal, PlatformIcon, Spinner, StageBadge, StatusBadge, toast, useAction } from '@/components/ui'
 import { OffTargetButton, OffTargetLabel } from '@/components/OffTarget'
 import { ChatPresence } from '@/components/v2/ChatPresence'
 import { BLOCK_LABEL, replyAllowed, type EmailBlock } from '@/lib/emailBlock'
@@ -53,11 +53,47 @@ export function ChatInterface({
     setMessages(thread.messages || [])
   }, [thread.messages])
 
+  const lastAt = (dir: Msg['direction']) => messages.filter(m => m.direction === dir).at(-1)?.created_at ?? null
+  const lastInbound = [thread.last_inbound_at, lastAt('inbound')].filter(Boolean).sort().at(-1) ?? null
+
+  const isWhatsApp = platform === 'WhatsApp'
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!isWhatsApp) return
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [isWhatsApp])
+
+  const lastInboundTime = lastInbound ? new Date(lastInbound).getTime() : 0
+  const msElapsed = lastInboundTime > 0 ? now - lastInboundTime : Infinity
+  const msRemaining = Math.max(0, 24 * 3600 * 1000 - msElapsed)
+  const isWhatsAppWindowOpen = isWhatsApp && msRemaining > 0 && msElapsed < 24 * 3600 * 1000
+
+  const windowTimeLeft = useMemo(() => {
+    if (!isWhatsAppWindowOpen) return null
+    const hours = Math.floor(msRemaining / 3600000)
+    const mins = Math.floor((msRemaining % 3600000) / 60000)
+    return hours > 0 ? `${hours}h ${mins}m left` : `${mins}m left`
+  }, [isWhatsAppWindowOpen, msRemaining])
+
+  const timeSinceReply = useMemo(() => {
+    if (!lastInbound) return null
+    const ms = now - new Date(lastInbound).getTime()
+    if (ms < 0) return 'just now'
+    const mins = Math.floor(ms / 60000)
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
+  }, [lastInbound, now])
+
   const fill = (text: string) => fillPlaceholders(text, { business_name: b?.business_name || '', sender_name: senderName, area: b?.area || '', contact_name: b?.contact_name || '' })
 
-  // Pick the template that matches the next step, if there is no draft
+  // Pick the template that matches the next step, if there is no draft.
+  // For WhatsApp inside the 24-hour reply window, default to a direct message without a template.
   const stepNow = thread.status === 'Replied' ? 'Reply' : thread.step >= 4 ? null : nextStepLabel(thread.step)
-  const defaultTemplate = !draft ? templates.find(t => t.step === stepNow) : undefined
+  const defaultTemplate = !draft && (!isWhatsApp || !isWhatsAppWindowOpen) ? templates.find(t => t.step === stepNow) : undefined
 
   const [templateId, setTemplateId] = useState<string>(draft?.template_id || defaultTemplate?.id || '')
   const [body, setBody] = useState<string>(draft ? fill(draft.body) : defaultTemplate ? fill(defaultTemplate.body) : '')
@@ -103,7 +139,7 @@ export function ChatInterface({
     platform,
     threadStatus: thread.status,
     stage: opp.stage,
-    lastInboundAt: thread.last_inbound_at,
+    lastInboundAt: lastInbound,
     apiPlatforms,
     whatsappTemplateName: template?.whatsapp_template_name || defaultWhatsAppTemplate || 'selfera_sales_pipeline_general',
     humanAgent,
@@ -118,8 +154,6 @@ export function ChatInterface({
 
   // Do-not-contact: the email box is locked, except for answering a lead who
   // opted out and then wrote to us (checked again when sending)
-  const lastAt = (dir: Msg['direction']) => messages.filter(m => m.direction === dir).at(-1)?.created_at ?? null
-  const lastInbound = [thread.last_inbound_at, lastAt('inbound')].filter(Boolean).sort().at(-1) ?? null
   const canReplyToBlocked = !!emailBlock && replyAllowed(emailBlock, lastInbound, lastAt('outbound'))
   const emailLocked = !!emailBlock && !canReplyToBlocked
   const [unblockOpen, setUnblockOpen] = useState(false)
@@ -238,9 +272,14 @@ export function ChatInterface({
   // The Meta template WhatsApp would send outside the 24-hour window, and its review status
   const metaName = platform === 'WhatsApp' ? (template?.whatsapp_template_name || defaultWhatsAppTemplate || 'selfera_sales_pipeline_general') : null
   const metaStatus = metaName ? metaStatuses[metaName] ?? null : null
-  const metaBlocked = rule.mode === 'api-template' && metaStatus !== 'APPROVED'
+  const metaBlocked = rule.mode === 'api-template' && (
+    !templateId && !template?.whatsapp_template_name
+      ? true
+      : metaStatus !== 'APPROVED'
+  )
 
   const blockers = [
+    isWhatsApp && !isWhatsAppWindowOpen && !templateId && 'Select an approved template (24h window closed).',
     metaBlocked && (metaStatus ? `Meta template "${metaName}" is not approved yet.` : `"${metaName}" is not one of this product's Meta templates.`),
     !body.trim() && (rule.mode === 'log' ? 'Write what happened first.' : 'Write a message first.'),
     unfilled.length > 0 && `Fill in ${unfilled.join(', ')} first.`,
@@ -445,19 +484,32 @@ export function ChatInterface({
             <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
               {draft && <span className="badge !bg-primary-bg !text-primary shrink-0">Draft: {draft.step_label}</span>}
               {rule.mode !== 'log' && (
-                <div className="relative w-full sm:w-auto min-w-[200px] max-w-full sm:max-w-md">
+                <div className="relative w-full sm:w-auto min-w-[220px] max-w-full sm:max-w-md">
                   <select
                     className="input w-full truncate !py-1.5 text-xs sm:text-sm font-medium"
                     value={templateId}
                     onChange={e => pickTemplate(e.target.value)}
-                    title={template?.name || 'Pick a template…'}
+                    title={template?.name || (isWhatsApp && isWhatsAppWindowOpen ? 'Direct message (no template)' : 'Pick a template…')}
                   >
-                    <option value="">{templates.length ? 'Pick a template…' : 'No templates for this platform'}</option>
+                    {isWhatsApp ? (
+                      isWhatsAppWindowOpen ? (
+                        <option value="">Direct message (no template)</option>
+                      ) : (
+                        <option value="" disabled>Select an approved Meta template (24h window closed)</option>
+                      )
+                    ) : (
+                      <option value="">{templates.length ? 'Pick a template (or write custom)…' : 'No templates for this platform'}</option>
+                    )}
                     {grouped.map(([step, ts]) => (
                       <optgroup key={step} label={step}>
                         {ts.map(t => (
                           <option key={t.id} value={t.id} title={t.name}>
-                            {t.name}{platform === 'WhatsApp' ? ` · ${metaOptionLabel(t.whatsapp_template_name ? metaStatuses[t.whatsapp_template_name] ?? 'NONE' : null)}` : ''}
+                            {t.name}
+                            {isWhatsApp
+                              ? isWhatsAppWindowOpen
+                                ? ' · Optional template'
+                                : ` · ${metaOptionLabel(t.whatsapp_template_name ? metaStatuses[t.whatsapp_template_name] ?? 'NONE' : null)}`
+                              : ''}
                           </option>
                         ))}
                       </optgroup>
@@ -472,14 +524,43 @@ export function ChatInterface({
             </div>
           </div>
 
-          {metaName && rule.mode !== 'log' && (
-            <MetaTemplateStatus
-              name={metaName}
-              status={metaStatus}
-              outsideWindow={rule.mode === 'api-template'}
-              fromTemplate={!!template?.whatsapp_template_name}
-              onRefresh={() => router.refresh()}
-            />
+          {isWhatsApp && rule.mode !== 'log' && (
+            isWhatsAppWindowOpen ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2 text-xs text-emerald-900 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                  <span className="font-semibold text-emerald-800">24-hour window open</span>
+                  <span className="text-emerald-700 font-medium">({windowTimeLeft} remaining)</span>
+                </div>
+                <span className="text-[11px] font-medium text-emerald-700">
+                  Meta approved template is not required
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2 text-xs text-amber-900 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <Clock size={14} className="text-amber-700 shrink-0" />
+                    <span className="font-semibold text-amber-800">24-hour window closed</span>
+                    <span className="text-amber-700 text-[11px]">
+                      {timeSinceReply ? `(Last reply ${timeSinceReply})` : '(Initial message)'}
+                    </span>
+                  </div>
+                  <span className="font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md text-[11px]">
+                    Meta approved template required
+                  </span>
+                </div>
+                {metaName && (
+                  <MetaTemplateStatus
+                    name={metaName}
+                    status={metaStatus}
+                    outsideWindow={true}
+                    fromTemplate={!!template?.whatsapp_template_name}
+                    onRefresh={() => router.refresh()}
+                  />
+                )}
+              </div>
+            )
           )}
 
           {platform === 'Email' && rule.mode !== 'log' && (
@@ -492,7 +573,15 @@ export function ChatInterface({
             onChange={e => setBody(e.target.value)}
             placeholder={rule.mode === 'log' ? 'What happened on the visit?' : 'Write your message…'}
           />
-          {rule.mode !== 'log' && body && <p className="text-xs text-slate-500">Draft from template. Review before sending.</p>}
+          {rule.mode !== 'log' && body && (
+            <p className="text-xs text-slate-500">
+              {templateId
+                ? 'Draft from template. Review before sending.'
+                : isWhatsApp && isWhatsAppWindowOpen
+                ? 'Direct message (24-hour window open).'
+                : 'Custom message. Review before sending.'}
+            </p>
+          )}
 
           {unfilled.length > 0 && <Banner tone="amber" icon={<AlertTriangle size={16} />}>Missing details: {unfilled.join(', ')}. Replace them in the text, or add the details to the business.</Banner>}
           {missingContact && rule.mode !== 'log' && <Banner tone="amber" icon={<AlertTriangle size={16} />}>{missingContact} <Link href={`/dashboard/${opp.id}`} className="font-semibold hover:text-primary">Add it</Link></Banner>}
@@ -510,7 +599,7 @@ export function ChatInterface({
             {(rule.mode === 'api' || rule.mode === 'api-template') && (
               <button className="btn btn-primary" disabled={busy || blockers.length > 0 || !!missingContact} onClick={sendApi}>
                 {busy ? <Spinner /> : <Send size={16} />}{' '}
-                {platform === 'WhatsApp'
+                {isWhatsApp
                   ? rule.mode === 'api-template'
                     ? 'Send WhatsApp Template'
                     : 'Send WhatsApp'

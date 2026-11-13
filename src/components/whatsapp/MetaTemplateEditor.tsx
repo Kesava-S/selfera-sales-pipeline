@@ -29,7 +29,7 @@ type EditorRow = { id: string; name: string; language: string; category: MetaCat
 
 const EMPTY: TemplateDraft = {
   name: 'selfera_', language: 'en_GB', category: 'MARKETING', header: '', headerExample: '',
-  body: '', bodyExamples: [], footer: '', buttons: [],
+  body: '', bodyExamples: [], footer: 'Reply STOP to opt out', buttons: [],
 }
 
 const CATEGORIES: { value: MetaCategory; title: string; text: string; icon: React.ReactNode; disabled?: boolean }[] = [
@@ -322,14 +322,25 @@ function Content({ d, set, headerOn, setHeaderOn, vars, mapFor, vmap, setVmap }:
         </Card>
       )}
 
-      <Card title="Footer" optional hint="Small grey text under the message.">
-        <div className="flex items-center gap-2">
-          <input className="input" maxLength={60} placeholder="e.g. Reply STOP to opt out" value={d.footer} onChange={e => set({ footer: e.target.value })} />
-          <Count n={(d.footer || '').length} max={60} />
+      <Card title="Footer" optional hint="Small grey text under the message. Recommended for marketing opt-out.">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input className="input" maxLength={60} placeholder="e.g. Reply STOP to opt out" value={d.footer} onChange={e => set({ footer: e.target.value })} />
+            <Count n={(d.footer || '').length} max={60} />
+          </div>
+          {!d.footer && (
+            <button
+              type="button"
+              className="text-xs font-medium text-primary hover:underline"
+              onClick={() => set({ footer: 'Reply STOP to opt out' })}
+            >
+              + Add &quot;Reply STOP to opt out&quot;
+            </button>
+          )}
         </div>
       </Card>
 
-      <Card title="Buttons" optional hint="Up to 3 buttons people can tap. A marketing opt-out button lets people stop messages in one tap.">
+      <Card title="Buttons" optional hint="Up to 3 buttons people can tap (quick replies, website links, or phone numbers).">
         <div className="space-y-2">
           {d.buttons.map((b, i) => (
             <div key={i} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
@@ -356,7 +367,7 @@ function Content({ d, set, headerOn, setHeaderOn, vars, mapFor, vmap, setVmap }:
               {menu && (
                 <div className="absolute bottom-full z-10 mb-1 w-64 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-lg">
                   <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Quick reply buttons</p>
-                  <MenuItem onClick={() => addButton({ type: 'QUICK_REPLY', text: 'Stop promotions' })} title="Marketing opt-out" text="Lets people stop messages" />
+                  <MenuItem onClick={() => addButton({ type: 'QUICK_REPLY', text: 'Stop messages' })} title="Marketing opt-out" text="Lets people stop messages" />
                   <MenuItem onClick={() => addButton({ type: 'QUICK_REPLY', text: '' })} title="Custom" text="Your own short reply" />
                   <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Call-to-action buttons</p>
                   <MenuItem onClick={() => addButton({ type: 'URL', text: 'Visit website', url: 'https://' })} title="Visit website" text="Opens a link" />
@@ -421,7 +432,10 @@ function Preview({ d }: { d: TemplateDraft }) {
             </div>
             <div className="flex items-center gap-2 px-2 pb-2.5 pt-0.5">
               <ArrowLeft size={18} />
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[13px] font-bold text-[#008069]">S</span>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white p-0.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="Selfera" className="h-full w-full object-contain" />
+              </div>
               <div className="min-w-0 flex-1 leading-tight">
                 <p className="flex items-center gap-1 truncate text-[14px] font-semibold">Selfera <BadgeCheck size={13} className="fill-[#25d366] text-[#008069]" /></p>
                 <p className="truncate text-[11px] text-white/80">Business account</p>

@@ -3,7 +3,7 @@ import { requireProfile } from '@/lib/auth'
 import { ChatInterface } from '@/components/v2/ChatInterface'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { getDynamicApiPlatforms } from '@/lib/integrations'
-import { findEmailBlock } from '@/lib/emailBlock'
+import { findEmailBlock, findWhatsAppBlock } from '@/lib/emailBlock'
 
 // "All platforms" templates cover messaging platforms
 const MESSAGING = ['WhatsApp', 'Instagram', 'Facebook', 'Email', 'LinkedIn']
@@ -34,7 +34,11 @@ export default async function Page({ params }: { params: Promise<{ oppId: string
     supabase.from('threads').select('id, platform, status').eq('opportunity_id', oppId),
     supabase.from('templates').select('id, name, platform, step, services, business_types, subject, body, whatsapp_template_name').in('platform', MESSAGING.includes(thread.platform) ? [thread.platform, 'All'] : [thread.platform]).eq('is_active', true).order('name'),
     supabase.from('profiles').select('id, full_name'),
-    thread.platform === 'Email' ? findEmailBlock(supabase, opp.businesses?.email) : Promise.resolve(null),
+    thread.platform === 'Email'
+      ? findEmailBlock(supabase, opp.businesses?.email)
+      : thread.platform === 'WhatsApp'
+      ? findWhatsAppBlock(supabase, opp.businesses?.whatsapp_number)
+      : Promise.resolve(null),
     getDynamicApiPlatforms(),
     import('@/lib/integrations').then(m => m.getWhatsAppConfig()).catch(() => null),
     // This product's Meta templates and their review status (WhatsApp only)

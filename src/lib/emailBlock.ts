@@ -13,6 +13,20 @@ export const BLOCK_LABEL: Record<string, string> = {
   unsubscribe: 'Opted out',
   bounce: 'Email bounced',
   complaint: 'Marked our email as spam',
+  inbound: 'Replied STOP on WhatsApp',
+}
+
+const STOP_PHRASES = new Set([
+  'STOP', 'STOP MESSAGES', 'STOP MESSAGE', 'STOP PROMOTIONS', 'STOP PROMOTION',
+  'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT',
+  'CANCEL', 'END', 'QUIT', 'REMOVE ME', 'PLEASE STOP',
+])
+
+export function isStopReply(text?: string | null): boolean {
+  if (!text) return false
+  const clean = text.trim().replace(/[.!?,]+$/, '').toUpperCase()
+  if (STOP_PHRASES.has(clean)) return true
+  return /^(STOP|UNSUBSCRIBE|OPT\s*OUT)\b/.test(clean)
 }
 
 export async function findEmailBlock(supabase: Client, email: string | null | undefined): Promise<EmailBlock | null> {

@@ -155,7 +155,7 @@ export function draftFromMessage(text: string, label: string): { draft: Template
   return {
     draft: {
       name: metaNameFrom(label), language: 'en_GB', category: 'MARKETING', header: '', headerExample: '',
-      body, bodyExamples: order.map(k => VAR_EXAMPLES[k]), footer: '', buttons: [{ type: 'QUICK_REPLY', text: 'Stop messages' }],
+      body, bodyExamples: order.map(k => VAR_EXAMPLES[k]), footer: 'Reply STOP to opt out', buttons: [],
     },
     map: { body: order },
   }

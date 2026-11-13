@@ -7,6 +7,8 @@ describe('draftFromMessage', () => {
     expect(draft.body).toBe('Hi {{1}}, I came across {{2}} while looking at places in {{3}} and had a quick idea to share. Thanks {{1}}, {{4}} from Selfera.')
     expect(map.body).toEqual(['contact_name', 'business_name', 'area', 'sender_name'])
     expect(draft.bodyExamples).toHaveLength(4)
+    expect(draft.buttons).toEqual([])
+    expect(draft.footer).toBe('Reply STOP to opt out')
     expect(draft.name).toBe('selfera_general_intro')
     expect(checkDraft(draft)).toEqual([])
   })
@@ -38,7 +40,7 @@ describe('paramsFor', () => {
 describe('renderTemplate', () => {
   it('shows the text the lead receives', () => {
     const { draft } = draftFromMessage('Hi {contact_name}, a quick idea for {business_name}.', 'a')
-    const text = renderTemplate(toComponents({ ...draft, footer: 'Reply STOP to opt out' }), ['Sam', 'Bloom Cafe'])
+    const text = renderTemplate(toComponents(draft), ['Sam', 'Bloom Cafe'])
     expect(text).toBe('Hi Sam, a quick idea for Bloom Cafe.\n\nReply STOP to opt out')
   })
 })
