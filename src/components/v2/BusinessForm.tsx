@@ -1,12 +1,15 @@
 'use client'
 
 // Add a business (saved as "Needs review") or edit an existing one.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react'
 import { CONFIG } from '@/lib/config'
 import { categoryNames } from '@/lib/lists'
 import { EMAIL_RE } from '@/lib/importFields'
 import { parseAndValidatePhone } from '@/lib/contact'
+import { basicEmailCheck, normaliseEmail, type EmailCheck, type EmailStatus } from '@/lib/emailCheck'
+import { checkEmailList } from '@/app/dashboard/emailCheckActions'
 import { updateBusiness } from '@/app/dashboard/actions'
 import { ChipSelect, ErrorNote, Modal, Spinner, toast } from '@/components/ui'
 import { PhoneInput } from '@/components/v2/PhoneInput'
@@ -34,11 +37,106 @@ export function BusinessForm({
   const [dup, setDup] = useState<Dup | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
+  const [emailCheck, setEmailCheck] = useState<EmailCheck | null>(() => {
+    const initEmail = (initial?.email as string) || ''
+    if (initEmail) {
+      const basic = basicEmailCheck(initEmail)
+      const rawInit = initial as Record<string, unknown>
+      if (rawInit.email_status) {
+        return {
+          status: rawInit.email_status as EmailStatus,
+          reason: (rawInit.email_reason as string) || null,
+          suggestion: (rawInit.email_suggestion as string) || null,
+          role: Boolean(rawInit.email_role),
+        }
+      }
+      return basic
+    }
+    return null
+  })
+  const [emailChecking, setEmailChecking] = useState(false)
+  const [lastVerifiedEmail, setLastVerifiedEmail] = useState<string>(() => (initial?.email as string) || '')
+
+  const isAlreadyVerified = Boolean(
+    emailCheck?.status === 'valid' &&
+    typeof v.email === 'string' &&
+    v.email.trim() &&
+    normaliseEmail(v.email) === normaliseEmail(lastVerifiedEmail)
+  )
+
+  // Verifies email via network/API when clicking the Verify button (or on submit)
+  const handleVerifyEmail = async (emailOverride?: string): Promise<EmailCheck | null> => {
+    const target = emailOverride ?? v.email
+    const rawEmail = typeof target === 'string' ? target.trim() : ''
+    if (!rawEmail) {
+      setEmailCheck(null)
+      setEmailChecking(false)
+      return null
+    }
+
+    const basic = basicEmailCheck(rawEmail)
+    if (basic.status === 'invalid') {
+      setEmailCheck(basic)
+      setEmailChecking(false)
+      toast.error(basic.reason || 'Please enter a valid email format.')
+      return basic
+    }
+    if (basic.status === 'disposable') {
+      setEmailCheck(basic)
+      setEmailChecking(false)
+      toast.error('Throwaway or temporary email addresses cannot be verified.')
+      return basic
+    }
+
+    const norm = normaliseEmail(rawEmail)
+    if (norm === normaliseEmail(lastVerifiedEmail) && emailCheck?.status) {
+      return emailCheck
+    }
+
+    setEmailChecking(true)
+    try {
+      const res = await checkEmailList([norm])
+      if (res.ok && res.data?.results) {
+        const verified = res.data.results[norm]
+        if (verified) {
+          setEmailCheck(verified)
+          setLastVerifiedEmail(norm)
+          if (verified.status === 'valid') {
+            toast.success('Email verified successfully.')
+          } else if (verified.status === 'risky') {
+            toast.warning(`Email is risky: ${verified.reason || 'Accept-all domain'}`)
+          } else if (verified.status === 'invalid') {
+            toast.error(`Email invalid: ${verified.reason || 'Inbox does not exist'}`)
+          }
+          return verified
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Email verification failed.'
+      toast.error(msg)
+    } finally {
+      setEmailChecking(false)
+    }
+    return emailCheck || basic
+  }
+
   const set = (k: keyof BusinessValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setV(prev => ({ ...prev, [k]: e.target.value }))
+    const val = e.target.value
+    setV(prev => ({ ...prev, [k]: val }))
     if (errors[k]) setErrors(prev => { const next = { ...prev }; delete next[k]; return next })
     if (errors.contact && (k === 'email' || k === 'whatsapp_number' || k === 'instagram' || k === 'facebook' || k === 'linkedin' || k === 'owner_contact')) {
       setErrors(prev => { const next = { ...prev }; delete next.contact; return next })
+    }
+    if (k === 'email') {
+      const trimmed = val.trim()
+      if (!trimmed) {
+        setEmailCheck(null)
+        setLastVerifiedEmail('')
+      } else {
+        // Fast local check while typing: syntax, disposable domains, typos (0 API credits)
+        const basic = basicEmailCheck(trimmed)
+        setEmailCheck(basic)
+      }
     }
   }
 
@@ -81,7 +179,7 @@ export function BusinessForm({
     return errList.length === 0
   }
 
-  const payload = (action: string, existingId?: string) => {
+  const payload = (action: string, existingId?: string, checkOverride?: EmailCheck | null) => {
     const rawEntries = Object.entries(v).map(([k, val]) => {
       if (k === 'has_no_website') {
         return [k, Boolean(val)]
@@ -101,14 +199,15 @@ export function BusinessForm({
       action,
       existing_id: existingId,
       services,
+      email_check: checkOverride !== undefined ? checkOverride : emailCheck,
       ...Object.fromEntries(rawEntries),
     }
   }
 
-  const importRow = async (action: string, existingId?: string) => {
+  const importRow = async (action: string, existingId?: string, checkOverride?: EmailCheck | null) => {
     const res = await fetch('/api/leads/import', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows: [payload(action, existingId)] }),
+      body: JSON.stringify({ rows: [payload(action, existingId, checkOverride)] }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(json.error || 'Could not save')
@@ -122,8 +221,21 @@ export function BusinessForm({
     if (!validate()) return
     setBusy(true)
     try {
+      let activeEmailCheck = emailCheck
+      const rawEmail = typeof v.email === 'string' ? v.email.trim() : ''
+      if (rawEmail && !activeEmailCheck?.status && EMAIL_RE.test(rawEmail)) {
+        activeEmailCheck = await handleVerifyEmail(rawEmail)
+      }
+
       if (mode === 'edit' && businessId) {
-        const editData = { ...v }
+        const editData = {
+          ...v,
+          email_status: activeEmailCheck?.status ?? null,
+          email_reason: activeEmailCheck?.reason ?? null,
+          email_suggestion: activeEmailCheck?.suggestion ?? null,
+          email_role: activeEmailCheck?.role ?? false,
+          email_checked_at: activeEmailCheck?.status ? new Date().toISOString() : null,
+        }
         if (typeof editData.whatsapp_number === 'string' && editData.whatsapp_number) {
           const w = parseAndValidatePhone(editData.whatsapp_number)
           if (w.valid) editData.whatsapp_number = w.normalized
@@ -134,7 +246,7 @@ export function BusinessForm({
           const site = editData.existing_website.trim()
           if (!/^https?:\/\//i.test(site)) editData.existing_website = 'https://' + site
         }
-        const res = await updateBusiness(businessId, editData as Record<string, string | number | null>)
+        const res = await updateBusiness(businessId, editData as Record<string, string | number | boolean | null>)
         if (!res.ok) throw new Error(res.error)
         toast.success('Business details updated successfully.')
         router.refresh()
@@ -159,7 +271,7 @@ export function BusinessForm({
         setDup(d.matches[0])
         return
       }
-      await importRow('new')
+      await importRow('new', undefined, activeEmailCheck)
       const successMsg = 'Business added! It is now in the review queue.'
       setDone(successMsg)
       toast.success(successMsg)
@@ -297,7 +409,101 @@ export function BusinessForm({
             )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-              {field('email', 'Business Email', { type: 'email', placeholder: 'hello@business.com' })}
+              <div>
+                <label className="label">{renderLabel('Business Email')}</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    className={`input ${v.email ? 'pr-16' : ''} ${errors.email ? '!border-red-400' : ''}`}
+                    placeholder="hello@business.com"
+                    value={(v.email as string) ?? ''}
+                    onChange={set('email')}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleVerifyEmail()
+                      }
+                    }}
+                  />
+                  {v.email && typeof v.email === 'string' && v.email.trim() && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                      {emailChecking ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                          <Spinner size={12} />
+                        </span>
+                      ) : isAlreadyVerified ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600" title="Email verified">
+                          <CheckCircle2 size={15} className="text-emerald-600" />
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyEmail()}
+                          className="rounded px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary-bg transition-colors cursor-pointer"
+                          title="Verify this email address"
+                        >
+                          Verify
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+                {v.email && typeof v.email === 'string' && v.email.trim() && !errors.email && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                    {emailChecking ? (
+                      <span className="inline-flex items-center gap-1 text-slate-500">
+                        <Spinner size={12} className="shrink-0" />
+                        Checking email...
+                      </span>
+                    ) : emailCheck?.status === 'valid' ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+                        <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                        Email verified{emailCheck.reason ? ` (${emailCheck.reason})` : ''}
+                        {emailCheck.role && <span className="text-slate-500 font-normal">· Shared inbox</span>}
+                      </span>
+                    ) : emailCheck?.status === 'risky' ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                        <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                        Risky email{emailCheck.reason ? ` (${emailCheck.reason})` : ''}
+                        {emailCheck.role && <span className="text-slate-500 font-normal">· Shared inbox</span>}
+                      </span>
+                    ) : emailCheck?.status === 'invalid' ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-rose-600">
+                        <XCircle size={13} className="text-rose-500 shrink-0" />
+                        Invalid email{emailCheck.reason ? ` (${emailCheck.reason})` : ''}
+                      </span>
+                    ) : emailCheck?.status === 'disposable' ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-rose-600">
+                        <XCircle size={13} className="text-rose-500 shrink-0" />
+                        Throwaway email address
+                      </span>
+                    ) : emailCheck?.status === 'unknown' ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-slate-500">
+                        <HelpCircle size={13} className="text-slate-400 shrink-0" />
+                        Unverified
+                      </span>
+                    ) : null}
+                    {emailCheck?.suggestion && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const sug = emailCheck.suggestion!
+                          setV(prev => ({ ...prev, email: sug }))
+                          if (errors.email) {
+                            setErrors(prev => { const next = { ...prev }; delete next.email; return next })
+                          }
+                          await handleVerifyEmail(sug)
+                        }}
+                        className="text-xs text-amber-700 underline font-medium hover:text-amber-800 ml-1 cursor-pointer"
+                        title="Click to apply suggested email correction"
+                      >
+                        Did you mean {emailCheck.suggestion}?
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="label">Business WhatsApp</label>
                 <PhoneInput

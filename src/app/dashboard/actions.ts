@@ -121,9 +121,10 @@ const EDITABLE = [
   'whatsapp_number', 'email', 'instagram', 'facebook', 'linkedin', 'existing_website', 'company_type', 'contact_name', 'notes',
   'owner_contact', 'gaps_found', 'has_no_website',
   'owner_email', 'tech_partner_type', 'tech_partner_name', 'branches', 'source',
+  'email_status', 'email_reason', 'email_suggestion', 'email_role', 'email_checked_at',
 ] as const
 
-export async function updateBusiness(businessId: string, fields: Record<string, string | number | null>) {
+export async function updateBusiness(businessId: string, fields: Record<string, string | number | boolean | null>) {
   const supabase = await createClient()
   const clean: Record<string, unknown> = {}
   for (const k of EDITABLE) {

@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from 'react'
 import { getCountries, getCountryCallingCode, getExampleNumber, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/max'
 import examples from 'libphonenumber-js/examples.mobile.json'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 import { getPhoneType } from '@/lib/contact'
 import { useLists } from '@/components/ListsContext'
 
@@ -164,15 +164,19 @@ export function PhoneInput({ value = '', onChange, error, placeholder, disabled 
         <div className="mt-1 flex items-center gap-1.5 text-xs">
           {phoneInfo.isWhatsApp ? (
             <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+              <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
               WhatsApp ready ({phoneInfo.label})
             </span>
           ) : phoneInfo.type === 'landline' ? (
             <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+              <AlertTriangle size={13} className="text-amber-500 shrink-0" />
               Landline: can&apos;t receive WhatsApp messages
             </span>
           ) : phoneInfo.type === 'invalid' ? (
-            <span className="font-medium text-red-600">{phoneInfo.label}</span>
+            <span className="inline-flex items-center gap-1 font-medium text-rose-600">
+              <XCircle size={13} className="text-rose-500 shrink-0" />
+              {phoneInfo.label}
+            </span>
           ) : null}
         </div>
       )}
