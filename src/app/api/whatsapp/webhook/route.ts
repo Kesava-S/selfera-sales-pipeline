@@ -42,10 +42,17 @@ async function signatureOk(raw: string, header: string | null): Promise<boolean>
     console.error('[WhatsApp Webhook] The WhatsApp app secret is not set in Integrations. Webhook rejected for security.')
     return false
   }
-  if (!header?.startsWith('sha256=')) return false
+  if (!header?.startsWith('sha256=')) {
+    console.warn('[WhatsApp Webhook] Missing or malformed x-hub-signature-256 header.')
+    return false
+  }
   const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex')
   const given = header.slice(7)
-  return given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))
+  const ok = given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))
+  if (!ok) {
+    console.warn('[WhatsApp Webhook] Signature verification failed (x-hub-signature-256 does not match configured app_secret).')
+  }
+  return ok
 }
 
 type MetaStatus = {
@@ -95,6 +102,7 @@ export async function POST(request: Request) {
         // Delivery receipts for messages we sent: sent -> delivered -> read, or failed
         const statuses = (value.statuses || []) as MetaStatus[]
         if (statuses.length) {
+          console.log(`[WhatsApp Webhook] 📋 Received ${statuses.length} status update(s):`, statuses.map(s => `${s.id}: ${s.status}`).join(', '))
           const statusArgs = {
             p_statuses: statuses.map(st => ({
               id: st.id,
@@ -105,10 +113,13 @@ export async function POST(request: Request) {
                 : null,
             })),
           }
-          const { error: statusError } = await supabase.rpc('record_whatsapp_status', statusArgs)
+          const { data: updatedCount, error: statusError } = await supabase.rpc('record_whatsapp_status', statusArgs)
           if (statusError) {
             console.error('[WhatsApp Webhook] record_whatsapp_status error:', statusError.message)
-          } else if (isDualWriteEnabled()) {
+          } else {
+            console.log(`[WhatsApp Webhook] ✅ Updated ${updatedCount ?? 0} message delivery record(s) in database.`)
+          }
+          if (!statusError && isDualWriteEnabled()) {
             replicateRpcToSecondary('record_whatsapp_status', statusArgs).catch(err => {
               console.warn('[DualWrite] Failed to replicate record_whatsapp_status:', err)
             })

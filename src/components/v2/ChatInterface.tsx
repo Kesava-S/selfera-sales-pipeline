@@ -170,9 +170,42 @@ export function ChatInterface({
         const updated = payload?.new as Msg | undefined
         if (updated) setMessages(prev => prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m)))
       })
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[Realtime] Thread ${thread.id} subscription status:`, status)
+        }
+      })
     return () => { supabase.removeChannel(ch).catch(() => {}) }
   }, [thread.id, router])
+
+  // When tab becomes visible again, refresh messages
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        reloadMessages()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [thread.id])
+
+  // Fallback poll while any outbound message is waiting for delivery receipt (sent but not delivered/read/failed)
+  useEffect(() => {
+    const hasPendingDelivery = messages.some(
+      m => m.direction === 'outbound' &&
+           m.send_method === 'api' &&
+           (m.delivery_status === 'sent' || !m.delivery_status)
+    )
+    if (!hasPendingDelivery) return
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        reloadMessages()
+      }
+    }, 8000)
+
+    return () => clearInterval(timer)
+  }, [messages, thread.id])
 
   useEffect(() => {
     if (platform === 'Email') {

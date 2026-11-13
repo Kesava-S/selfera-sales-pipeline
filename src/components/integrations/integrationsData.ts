@@ -68,7 +68,6 @@ export const CHANNELS: ChannelIntegration[] = [
     provider: 'Direct Messaging',
     accountInfo: 'Not configured',
     status: 'disconnected',
-    webhookUrl: '/api/instagram/webhook',
     config: {},
     fields: [
       { key: 'username', label: 'Username', type: 'text', placeholder: 'e.g. @yourbusiness' },
@@ -82,7 +81,6 @@ export const CHANNELS: ChannelIntegration[] = [
     provider: 'Messenger & Pages',
     accountInfo: 'Not configured',
     status: 'disconnected',
-    webhookUrl: '/api/facebook/webhook',
     config: {},
     fields: [
       { key: 'page_name', label: 'Page Name', type: 'text', placeholder: 'e.g. Your Business Page' },

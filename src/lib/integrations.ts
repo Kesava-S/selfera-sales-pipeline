@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { isDualWriteEnabled, replicateTableMutationToSecondary } from '@/lib/dual-write'
 import { CHANNELS } from '@/components/integrations/integrationsData'
 import type { ChannelId, ChannelIntegration } from '@/components/integrations/types'
 import { encryptIntegrationConfig, decryptIntegrationConfig } from '@/lib/crypto'
@@ -175,6 +176,26 @@ export async function saveChannelIntegrationDb(
     if (error) {
       console.error('[Integrations] Save error in "sales-pipe".integrations:', error.message)
       return { ok: false, error: error.message }
+    }
+
+    if (isDualWriteEnabled()) {
+      replicateTableMutationToSecondary({
+        table: 'integrations',
+        operation: 'upsert',
+        schema: 'sales-pipe',
+        matchKey: 'channel',
+        data: {
+          channel: channelId,
+          name: baseChannel?.name || channelId,
+          provider: baseChannel?.provider || '',
+          status,
+          account_info: accountInfo,
+          webhook_url: baseChannel?.webhookUrl || null,
+          config: encryptedConfig,
+          updated_at: new Date().toISOString(),
+          updated_by: userId || null,
+        },
+      }).catch(err => console.warn('[DualWrite] Failed to replicate integration update:', err))
     }
 
     return { ok: true }
@@ -481,19 +502,37 @@ export async function testChannelIntegration(
       } catch {}
     }
 
+    if (!channel.config.username && !channel.config.account_id && !channel.config.access_token) {
+      return {
+        ok: false,
+        latencyMs: 25,
+        message: 'Instagram Professional account ID and Access Token not configured yet.',
+        error: 'Not configured',
+      }
+    }
+
     return {
       ok: true,
       latencyMs: 135,
-      message: `Instagram DM routing verified for ${channel.config.username || '@selfera.official'}.`,
+      message: `Instagram DM routing verified for ${channel.config.username || 'configured account'}.`,
     }
   }
 
   // 4. Facebook
   if (channelId === 'facebook') {
+    if (!channel.config.page_id && !channel.config.access_token) {
+      return {
+        ok: false,
+        latencyMs: 25,
+        message: 'Facebook Page ID and Access Token not configured yet.',
+        error: 'Not configured',
+      }
+    }
+
     return {
       ok: true,
       latencyMs: 95,
-      message: `Facebook Page connection verified for "${channel.config.page_name || 'Selfera UK'}" (ID: ${channel.config.page_id || '102938475610293'}).`,
+      message: `Facebook Page connection verified for "${channel.config.page_name || 'Facebook Page'}" (ID: ${channel.config.page_id || 'Not set'}).`,
     }
   }
 

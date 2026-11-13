@@ -9,7 +9,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
+import { isDualWriteEnabled, replicateRpcToSecondary, replicateTableMutationToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
 import { applyPhoneDefaults } from '@/lib/dynamicData'
 import { emailSendBlocked } from '@/lib/emailBlock'
@@ -178,6 +178,17 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
     return { ok: false, error: friendly(error.message) } as ActionResult
   }
   if (count === 0) return { ok: false, error: 'You cannot edit this business.' } as ActionResult
+
+  if (isDualWriteEnabled()) {
+    replicateTableMutationToSecondary({
+      table: 'businesses',
+      operation: 'update',
+      data: clean,
+      matchKey: 'id',
+      matchValue: businessId,
+    }).catch(err => console.warn('[DualWrite] Failed to replicate business update:', err))
+  }
+
   revalidatePath('/dashboard', 'layout')
   return { ok: true } as ActionResult
 }

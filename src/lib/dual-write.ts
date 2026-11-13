@@ -60,7 +60,7 @@ export async function replicateRpcToSecondary(fn: string, args: Record<string, u
  */
 export async function replicateTableMutationToSecondary(opts: {
   table: string
-  operation: 'insert' | 'update' | 'delete'
+  operation: 'insert' | 'update' | 'delete' | 'upsert'
   data?: any
   matchKey?: string
   matchValue?: any
@@ -76,6 +76,8 @@ export async function replicateTableMutationToSecondary(opts: {
     let res: any
     if (operation === 'insert') {
       res = await query.insert(data)
+    } else if (operation === 'upsert') {
+      res = await query.upsert(data, matchKey ? { onConflict: matchKey } : undefined)
     } else if (operation === 'update' && matchKey) {
       res = await query.update(data).eq(matchKey, matchValue)
     } else if (operation === 'delete' && matchKey) {
