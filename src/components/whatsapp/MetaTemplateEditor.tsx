@@ -1,5 +1,6 @@
 'use client'
 
+import { exampleNumber } from '@/lib/contact'
 // Create / edit a WhatsApp message template, laid out like Meta's WhatsApp Manager:
 // 1. Set up template (category, name, language) → 2. Edit template (header, body,
 // footer, buttons, variable samples) → 3. Review and submit. Live phone preview.
@@ -345,7 +346,7 @@ function Content({ d, set, headerOn, setHeaderOn, vars, mapFor, vmap, setVmap }:
                   <Count n={b.text.length} max={25} />
                 </div>
                 {b.type === 'URL' && <input className="input" placeholder="https://www.example.com" value={b.url} onChange={e => setButton(i, { ...b, url: e.target.value })} />}
-                {b.type === 'PHONE_NUMBER' && <input className="input" placeholder="+447911123456" value={b.phone_number} onChange={e => setButton(i, { ...b, phone_number: e.target.value })} />}
+                {b.type === 'PHONE_NUMBER' && <input className="input" placeholder={exampleNumber('e164')} value={b.phone_number} onChange={e => setButton(i, { ...b, phone_number: e.target.value })} />}
               </div>
             </div>
           ))}
@@ -359,7 +360,7 @@ function Content({ d, set, headerOn, setHeaderOn, vars, mapFor, vmap, setVmap }:
                   <MenuItem onClick={() => addButton({ type: 'QUICK_REPLY', text: '' })} title="Custom" text="Your own short reply" />
                   <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Call-to-action buttons</p>
                   <MenuItem onClick={() => addButton({ type: 'URL', text: 'Visit website', url: 'https://' })} title="Visit website" text="Opens a link" />
-                  <MenuItem onClick={() => addButton({ type: 'PHONE_NUMBER', text: 'Call us', phone_number: '+44' })} title="Call phone number" text="Starts a phone call" />
+                  <MenuItem onClick={() => addButton({ type: 'PHONE_NUMBER', text: 'Call us', phone_number: '' })} title="Call phone number" text="Starts a phone call" />
                 </div>
               )}
             </div>

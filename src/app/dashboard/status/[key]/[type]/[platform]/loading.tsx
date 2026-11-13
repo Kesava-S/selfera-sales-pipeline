@@ -1,11 +1,12 @@
-import { SkeletonPage, PageHeaderSkeleton, CardListSkeleton } from '@/components/Skeleton'
+import { SkeletonPage, PageHeaderSkeleton } from '@/components/Skeleton'
+import { LeadCardsSkeleton } from '@/components/StatusSkeletons'
 
-// Shown instantly while leads loads; the sidebar and top bar stay usable
+// Shown instantly while the lead list loads: one card per lead
 export default function StatusListLoading() {
   return (
     <SkeletonPage label="Loading leads">
       <PageHeaderSkeleton />
-      <CardListSkeleton count={7} />
+      <LeadCardsSkeleton count={7} />
     </SkeletonPage>
   )
 }

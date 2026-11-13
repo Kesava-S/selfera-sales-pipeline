@@ -1,3 +1,5 @@
+import { internationalDigits } from '@/lib/contact'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import { requireProfile } from '@/lib/auth'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { SettingsView, type OptOut, type TeamMember } from '@/components/v2/SettingsView'
@@ -42,12 +44,13 @@ export default async function SettingsPage() {
     // ...and behind each blocked WhatsApp number
     const digitsOf = (v?: string | null) => (v || '').replace(/\D/g, '')
     const phones = [...new Set((blocked || []).filter(o => !o.identifier.includes('@')).map(o => digitsOf(o.identifier)).filter(d => d.length >= 7))]
+    await applyPhoneDefaults()
     const phoneNames = new Map<string, string>()
     if (phones.length) {
       const { data: biz } = await supabase.from('businesses').select('business_name, whatsapp_number, phone_normalised')
         .or(phones.map(d => `whatsapp_number.ilike.%${d.slice(-9)},phone_normalised.ilike.%${d.slice(-9)}`).join(','))
       biz?.forEach(b => [b.whatsapp_number, b.phone_normalised].forEach(p => {
-        const d = digitsOf(p).replace(/^0/, '44')
+        const d = internationalDigits(p) || digitsOf(p)
         const hit = phones.find(x => x === d || x.endsWith(d.slice(-9)))
         if (hit && !phoneNames.has(hit)) phoneNames.set(hit, b.business_name)
       }))

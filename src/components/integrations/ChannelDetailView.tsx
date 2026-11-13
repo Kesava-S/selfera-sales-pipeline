@@ -1,5 +1,6 @@
 'use client'
 
+import { exampleNumber } from '@/lib/contact'
 import React, { useMemo, useState } from 'react'
 import {
   CheckCircle2,
@@ -727,7 +728,7 @@ export function ChannelDetailView({
                   type="text"
                   value={testRecipient}
                   onChange={e => setTestRecipient(e.target.value)}
-                  placeholder={channel.id === 'whatsapp' ? 'e.g. +44 7123 456789 or +91 98765 43210' : 'test@example.com'}
+                  placeholder={channel.id === 'whatsapp' ? `e.g. ${exampleNumber()}` : 'test@example.com'}
                   className="input text-sm !py-2 font-mono"
                 />
               </div>

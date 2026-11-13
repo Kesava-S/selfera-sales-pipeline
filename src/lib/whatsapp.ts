@@ -1,4 +1,5 @@
-import { parseAndValidatePhone } from '@/lib/contact'
+import { internationalDigits } from '@/lib/contact'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import { paramsFor, renderTemplate, type MetaComponent, type VarKey, type VariableMap } from '@/lib/metaTemplateDraft'
 
 /**
@@ -17,20 +18,10 @@ export async function isWhatsAppConfigured(): Promise<boolean> {
   }
 }
 
+// Digits with the country code, as the WhatsApp API expects. A number without a
+// country code is read as the default country (Settings).
 export function formatWhatsAppNumber(phone: string): string {
-  const res = parseAndValidatePhone(phone)
-  if (res.valid && res.normalized) {
-    if (res.normalized.startsWith('+44')) return res.normalized.slice(1)
-    if (res.normalized.startsWith('+0')) return '44' + res.normalized.slice(2)
-    if (res.normalized.startsWith('0')) return '44' + res.normalized.slice(1)
-    if (res.normalized.startsWith('44')) return res.normalized
-    return res.normalized.replace(/^\+/, '')
-  }
-  let digits = phone.replace(/\D/g, '')
-  if (digits.startsWith('0') && digits.length === 11) {
-    digits = '44' + digits.slice(1)
-  }
-  return digits
+  return internationalDigits(phone) || phone.replace(/\D/g, '')
 }
 
 export interface SendWhatsAppOptions {
@@ -90,6 +81,7 @@ export async function sendWhatsAppMessage(options: SendWhatsAppOptions): Promise
     throw new Error('WhatsApp is not set up. Add the Phone Number ID and access token in Integrations.')
   }
 
+  await applyPhoneDefaults()
   const cleanTo = formatWhatsAppNumber(options.to)
   if (!cleanTo) {
     throw new Error(`Invalid WhatsApp phone number: ${options.to}`)

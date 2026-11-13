@@ -1,6 +1,6 @@
 import { CONFIG } from '@/lib/config'
 import { categoryNames, matchCategory, type SalesLists } from '@/lib/lists'
-import { parseAndValidatePhone, isUkMobile, getPhoneType, type PhoneTypeInfo } from '@/lib/contact'
+import { parseAndValidatePhone, getPhoneType, type PhoneTypeInfo } from '@/lib/contact'
 
 export type FieldKey =
   | 'business_name'
@@ -128,12 +128,6 @@ export function isValidUkPostcode(pc?: string | null): boolean {
   return UK_POSTCODE_RE.test(trimmed) || IND_POSTCODE_RE.test(trimmed)
 }
 
-export function isValidUkMobileDigits(raw?: string | null): boolean {
-  if (!raw) return false
-  const digits = raw.replace(/\D/g, '')
-  return /^(07\d{9}|447\d{9})$/.test(digits)
-}
-
 export type BranchItem = {
   name: string
   address: string
@@ -212,7 +206,12 @@ export function buildRow(
 
   const name = get('business_name')
   const rawType = get('business_type')
-  const type = typeOverrides[rawType] || guessType(rawType, lists) || ''
+  const type =
+    typeOverrides[rawType] ||
+    guessType(rawType, lists) ||
+    guessType(name, lists) ||
+    lists.categories[0]?.name ||
+    'Restaurant or cafe'
 
   // Website & No site
   const rawNoSite = get('no_site')

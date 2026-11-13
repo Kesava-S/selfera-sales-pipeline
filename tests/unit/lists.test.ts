@@ -32,6 +32,7 @@ describe('business category & platform lookup logic (src/lib/lists.ts)', () => {
         synonyms: ['restaurant', 'cafe', 'bistro', 'diner'],
       },
     ],
+    phone: { country: null, first: [] },
   };
 
   describe('categoryNames', () => {

@@ -1,148 +1,90 @@
 // Links and validation for contacting a business outside the app
 
+// ---------- Phone numbers ----------
+// Any country's number is checked with libphonenumber-js (Google's phone rules):
+// valid or not, mobile or landline. A number written without its country code is
+// read as the default country from Settings (key 'phone_defaults'); nothing about
+// countries is fixed in the code.
+
+import { getCountries, getExampleNumber, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/max'
+import examples from 'libphonenumber-js/examples.mobile.json'
+
+export type { CountryCode }
+
+let defaultCountry: CountryCode | undefined
+
+export function isCountryCode(c?: string | null): c is CountryCode {
+  return !!c && (getCountries() as string[]).includes(c)
+}
+
+// Set once per page (browser) or request (server) from Settings
+export function setPhoneDefaults(country?: string | null) {
+  defaultCountry = isCountryCode(country) ? country : undefined
+}
+
+export type NumberKind = 'mobile' | 'landline' | 'mobile_or_landline' | 'other' | 'invalid' | 'empty'
+export type NumberCheck = { valid: boolean; e164: string | null; country: CountryCode | null; kind: NumberKind; error?: string }
+
+export function checkNumber(raw?: string | null, country: CountryCode | undefined = defaultCountry): NumberCheck {
+  const value = (raw || '').trim()
+  if (!value) return { valid: false, e164: null, country: null, kind: 'empty' }
+  const tryParse = (v: string, c?: CountryCode) => {
+    try { return parsePhoneNumberFromString(v, c) } catch { return undefined }
+  }
+  let p = tryParse(value.replace(/^00/, '+'), country)
+  // Digits that already start with a country code (as WhatsApp sends them, e.g. 4479…)
+  if ((!p || !p.isValid()) && /^[1-9][\d\s()-]{6,}$/.test(value)) {
+    const intl = tryParse(`+${value.replace(/\D/g, '')}`)
+    if (intl?.isValid()) p = intl
+  }
+  if (!p) {
+    return { valid: false, e164: null, country: null, kind: 'invalid', error: value.startsWith('+') || country ? 'Not a valid phone number' : 'Add the country code (for example +…)' }
+  }
+  if (!p.isValid()) return { valid: false, e164: null, country: p.country ?? null, kind: 'invalid', error: 'Not a valid phone number' }
+  const t = p.getType()
+  const kind: NumberKind =
+    t === 'MOBILE' ? 'mobile'
+      : t === 'FIXED_LINE' ? 'landline'
+        : t === 'FIXED_LINE_OR_MOBILE' ? 'mobile_or_landline'
+          : 'other'
+  return { valid: true, e164: p.number, country: p.country ?? null, kind }
+}
+
+// "GB" -> "United Kingdom" (falls back to the code)
+export function countryName(code?: string | null): string {
+  if (!code) return ''
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code } catch { return code }
+}
+
+// An example mobile number for the default country, for placeholders ("+44 7400 123456")
+export function exampleNumber(format: 'international' | 'e164' = 'international', country: CountryCode | undefined = defaultCountry): string {
+  if (!country) return '+<country code> <number>'
+  try {
+    const n = getExampleNumber(country, examples)
+    if (!n) return '+<country code> <number>'
+    return format === 'e164' ? n.number : n.formatInternational()
+  } catch {
+    return '+<country code> <number>'
+  }
+}
+
 export type PhoneValidationResult =
   | { valid: true; normalized: string; error?: never }
   | { valid: true; normalized: null; error?: never }
   | { valid: false; normalized: null; error: string }
 
-/**
- * Validates that a phone number explicitly includes the +44 or +0 country code:
- * - Allowed: +44... (e.g. +44 7123 456789) or +0... (e.g. +07123 456789, +020 7946 0991)
- *
- * If +44 or +0 is NOT present, returns an error and does NOT auto-add them.
- */
-export function parseAndValidatePhone(raw?: string | null): PhoneValidationResult {
-  if (!raw || !raw.trim()) {
-    return { valid: true, normalized: null }
-  }
-
-  const trimmed = raw.trim()
-  const noSpace = trimmed.replace(/[\s()-]/g, '')
-
-  // 1. Explicit +44 prefix
-  if (noSpace.startsWith('+44')) {
-    let digits = noSpace.slice(1).replace(/\D/g, '') // e.g. 447123456789
-    // Clean domestic trunk zero if user wrote +44(0)7... -> +4407...
-    if (digits.startsWith('440') && digits.length >= 12) {
-      digits = '44' + digits.slice(3)
-    }
-    const after44 = digits.slice(2)
-    if (after44.length < 9) {
-      return { valid: false, normalized: null, error: 'Phone number is too short (UK numbers need 10-11 digits)' }
-    }
-    if (after44.length > 10) {
-      return { valid: false, normalized: null, error: 'Phone number is too long (UK numbers need 10-11 digits)' }
-    }
-    return { valid: true, normalized: `+${digits}` }
-  }
-
-  // 2. Explicit +0 prefix
-  if (noSpace.startsWith('+0')) {
-    const digits = noSpace.slice(1).replace(/\D/g, '') // e.g. 07123456789
-    if (digits.length < 10) {
-      return { valid: false, normalized: null, error: 'Phone number is too short (UK numbers need 10-11 digits)' }
-    }
-    if (digits.length > 11) {
-      return { valid: false, normalized: null, error: 'Phone number is too long (UK numbers need 10-11 digits)' }
-    }
-    return { valid: true, normalized: `+${digits}` }
-  }
-
-  // 3. Other international numbers with '+' (e.g. +91...)
-  if (noSpace.startsWith('+')) {
-    const digits = noSpace.slice(1).replace(/\D/g, '')
-    if (digits.length < 8 || digits.length > 15) {
-      return { valid: false, normalized: null, error: 'Invalid international phone number length' }
-    }
-    return { valid: true, normalized: `+${digits}` }
-  }
-
-  // 4. Without '+' symbol, but starting with international '00'
-  if (noSpace.startsWith('00')) {
-    const digits = noSpace.slice(2).replace(/\D/g, '')
-    if (digits.length < 8 || digits.length > 15) {
-      return { valid: false, normalized: null, error: 'Invalid international phone number length' }
-    }
-    return { valid: true, normalized: `+${digits}` }
-  }
-
-  // 5. Without '+' symbol, but with UK country code '44'
-  if (noSpace.startsWith('44')) {
-    let digits = noSpace.replace(/\D/g, '')
-    if (digits.startsWith('440') && digits.length >= 12) {
-      digits = '44' + digits.slice(3)
-    }
-    const after44 = digits.slice(2)
-    if (after44.length < 9) {
-      return { valid: false, normalized: null, error: 'Phone number is too short (UK numbers need 10-11 digits)' }
-    }
-    if (after44.length > 10) {
-      return { valid: false, normalized: null, error: 'Phone number is too long (UK numbers need 10-11 digits)' }
-    }
-    return { valid: true, normalized: `+${digits}` }
-  }
-
-  // 6. Without '+' symbol, with UK national / trunk code '0' (e.g. 07..., 02..., 01...)
-  if (noSpace.startsWith('0')) {
-    const digits = noSpace.replace(/\D/g, '')
-    if (digits.length < 10) {
-      return { valid: false, normalized: null, error: 'Phone number is too short (UK numbers need 10-11 digits)' }
-    }
-    if (digits.length > 11) {
-      return { valid: false, normalized: null, error: 'Phone number is too long (UK numbers need 10-11 digits)' }
-    }
-    return { valid: true, normalized: digits }
-  }
-
-  // Missing country code (e.g. 7514 953005, bare digits): reject with error
-  return {
-    valid: false,
-    normalized: null,
-    error: 'Phone must include country code (e.g. +44, 44, or 0...)',
-  }
+// Valid numbers come back in international form (+<country code><number>); empty is allowed
+export function parseAndValidatePhone(raw?: string | null, country?: CountryCode): PhoneValidationResult {
+  const c = checkNumber(raw, country ?? defaultCountry)
+  if (c.kind === 'empty') return { valid: true, normalized: null }
+  if (!c.valid || !c.e164) return { valid: false, normalized: null, error: c.error || 'Not a valid phone number' }
+  return { valid: true, normalized: c.e164 }
 }
 
-export function ukToInternational(phone?: string | null): string | null {
-  if (!phone) return null
-  const res = parseAndValidatePhone(phone)
-  if (res.valid && res.normalized) {
-    if (res.normalized.startsWith('+44')) return res.normalized.slice(1)
-    if (res.normalized.startsWith('+0')) return '44' + res.normalized.slice(2)
-    if (res.normalized.startsWith('0')) return '44' + res.normalized.slice(1)
-    if (res.normalized.startsWith('44')) return res.normalized
-    return res.normalized.replace(/^\+/, '')
-  }
-  let d = phone.replace(/\D/g, '')
-  if (d.startsWith('00')) d = d.slice(2)
-  if (d.startsWith('0')) d = '44' + d.slice(1)
-  return d.length >= 10 ? d : null
-}
-
-export function isUkMobile(phone?: string | null): boolean {
-  if (!phone) return false
-  const res = parseAndValidatePhone(phone)
-  if (res.valid && res.normalized) {
-    return (
-      res.normalized.startsWith('+447') ||
-      res.normalized.startsWith('447') ||
-      res.normalized.startsWith('+07') ||
-      res.normalized.startsWith('07')
-    )
-  }
-  const d = ukToInternational(phone)
-  return !!d && d.startsWith('447')
-}
-
-export function isIndianMobile(phone?: string | null): boolean {
-  if (!phone) return false
-  const digits = phone.replace(/\D/g, '')
-  if (digits.startsWith('91') && digits.length === 12) {
-    return /^[6-9]/.test(digits.slice(2))
-  }
-  if (digits.length === 10) {
-    return /^[6-9]/.test(digits)
-  }
-  return false
+// Digits only, with the country code (what wa.me and the WhatsApp API expect)
+export function internationalDigits(phone?: string | null, country?: CountryCode): string | null {
+  const c = checkNumber(phone, country ?? defaultCountry)
+  return c.valid && c.e164 ? c.e164.replace(/^\+/, '') : null
 }
 
 export type PhoneTypeInfo = {
@@ -152,44 +94,13 @@ export type PhoneTypeInfo = {
   normalized: string | null
 }
 
-export function getPhoneType(phone?: string | null): PhoneTypeInfo {
-  if (!phone || !phone.trim()) {
-    return { type: 'empty', label: 'No number', isWhatsApp: false, normalized: null }
-  }
-
-  const res = parseAndValidatePhone(phone)
-  if (!res.valid) {
-    return { type: 'invalid', label: res.error || 'Invalid phone', isWhatsApp: false, normalized: null }
-  }
-
-  const norm = res.normalized || phone.replace(/[^\d+]/g, '')
-
-  // 1. UK Mobile: 07... or +447...
-  if (isUkMobile(phone)) {
-    return { type: 'whatsapp_mobile', label: 'UK Mobile (WhatsApp Ready)', isWhatsApp: true, normalized: norm }
-  }
-
-  // 2. India Mobile: +91 [6-9]... or 10 digits [6-9]...
-  if (isIndianMobile(phone)) {
-    return { type: 'whatsapp_mobile', label: 'India Mobile (WhatsApp Ready)', isWhatsApp: true, normalized: norm }
-  }
-
-  // 3. UK Landline: 01..., 02..., 03..., +44 1..., +44 2..., +44 3...
-  const rawClean = phone.replace(/[\s()-]/g, '')
-  if (
-    rawClean.startsWith('01') || rawClean.startsWith('02') || rawClean.startsWith('03') ||
-    rawClean.startsWith('+441') || rawClean.startsWith('+442') || rawClean.startsWith('+443') ||
-    rawClean.startsWith('441') || rawClean.startsWith('442') || rawClean.startsWith('443')
-  ) {
-    return { type: 'landline', label: 'UK Landline (Not WhatsApp)', isWhatsApp: false, normalized: norm }
-  }
-
-  // 4. Other international mobile candidate
-  if (norm.startsWith('+') && norm.length >= 10 && norm.length <= 15) {
-    return { type: 'whatsapp_mobile', label: 'Mobile (WhatsApp Candidate)', isWhatsApp: true, normalized: norm }
-  }
-
-  return { type: 'landline', label: 'Landline / Unknown', isWhatsApp: false, normalized: norm }
+export function getPhoneType(phone?: string | null, country?: CountryCode): PhoneTypeInfo {
+  const c = checkNumber(phone, country ?? defaultCountry)
+  if (c.kind === 'empty') return { type: 'empty', label: 'No number', isWhatsApp: false, normalized: null }
+  if (!c.valid) return { type: 'invalid', label: c.error || 'Not a valid phone number', isWhatsApp: false, normalized: null }
+  if (c.kind === 'mobile') return { type: 'whatsapp_mobile', label: 'Mobile', isWhatsApp: true, normalized: c.e164 }
+  if (c.kind === 'mobile_or_landline') return { type: 'whatsapp_mobile', label: 'Mobile or landline', isWhatsApp: true, normalized: c.e164 }
+  return { type: 'landline', label: c.kind === 'landline' ? 'Landline' : 'Not a mobile', isWhatsApp: false, normalized: c.e164 }
 }
 
 export function isWhatsAppCapable(phone?: string | null): boolean {
@@ -197,7 +108,7 @@ export function isWhatsAppCapable(phone?: string | null): boolean {
 }
 
 export function whatsappLink(phone?: string | null, text?: string): string | null {
-  const n = ukToInternational(phone)
+  const n = internationalDigits(phone)
   if (!n) return null
   return `https://wa.me/${n}${text ? `?text=${encodeURIComponent(text)}` : ''}`
 }
@@ -221,11 +132,8 @@ export function mailtoLink(email?: string | null, subject?: string, body?: strin
 
 export function telLink(phone?: string | null): string | null {
   if (!phone) return null
-  const res = parseAndValidatePhone(phone)
-  if (res.valid && res.normalized) {
-    return `tel:${res.normalized}`
-  }
-  return `tel:${phone.replace(/[^\d+]/g, '')}`
+  const c = checkNumber(phone)
+  return `tel:${c.valid && c.e164 ? c.e164 : phone.replace(/[^\d+]/g, '')}`
 }
 
 export function websiteLink(site?: string | null): string | null {

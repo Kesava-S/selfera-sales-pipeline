@@ -9,20 +9,17 @@ CREATE OR REPLACE FUNCTION "sales-pipe".normalise_phone(p_phone text)
  SET search_path TO 'sales-pipe', 'public'
 AS $function$
 DECLARE
-    clean_phone text;
+    clean text;
 BEGIN
     IF p_phone IS NULL OR trim(p_phone) = '' THEN RETURN NULL; END IF;
-    clean_phone := regexp_replace(p_phone, '[^\d+]', '', 'g');
-    
-    -- If it starts with 07 (UK mobile), convert to +44
-    IF clean_phone LIKE '07%' THEN
-        clean_phone := '+44' || substr(clean_phone, 2);
-    -- If it doesn't have a plus but has country code, prepend +
-    ELSIF clean_phone NOT LIKE '+%' AND clean_phone ~ '^[1-9]' THEN
-        clean_phone := '+' || clean_phone;
+    clean := regexp_replace(p_phone, '[^\d+]', '', 'g');
+    IF clean = '' THEN RETURN NULL; END IF;
+    IF clean LIKE '00%' THEN
+        clean := '+' || substr(clean, 3);
+    ELSIF clean NOT LIKE '+%' AND clean ~ '^[1-9]' THEN
+        clean := '+' || clean;
     END IF;
-    
-    RETURN clean_phone;
+    RETURN clean;
 END;
 $function$;
 REVOKE ALL ON FUNCTION "sales-pipe"."normalise_phone"(p_phone text) FROM PUBLIC;

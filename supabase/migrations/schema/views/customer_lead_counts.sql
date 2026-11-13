@@ -9,7 +9,7 @@ SELECT business_id,
     count(*) FILTER (WHERE NOT is_ready AND NOT do_not_contact)::integer AS missing,
     count(*) FILTER (WHERE do_not_contact)::integer AS do_not_contact,
     count(*) FILTER (WHERE (whatsapp_status = ANY (ARRAY['likely'::text, 'confirmed'::text])) AND NOT do_not_contact)::integer AS whatsapp,
-    count(*) FILTER (WHERE country = 'India'::text)::integer AS test,
+    0 AS test,
     max(created_at) AS last_added_at
    FROM "sales-pipe".customer_leads
   GROUP BY business_id;

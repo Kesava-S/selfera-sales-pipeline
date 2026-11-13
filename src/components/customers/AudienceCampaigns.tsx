@@ -12,6 +12,8 @@ import { CampaignProgress } from '@/components/v2/CampaignProgress'
 import { EmptyState, ErrorNote, Modal, ConfirmModal, Spinner, useAction } from '@/components/ui'
 import { formatDate } from '@/lib/format'
 import { MetaTemplatePicker } from '@/components/whatsapp/MetaTemplatePicker'
+import { useLists } from '@/components/ListsContext'
+import { countryName } from '@/lib/contact'
 
 export type AudienceCampaignRow = {
   id: string; channel: 'email' | 'whatsapp'; name: string; subject: string | null
@@ -22,8 +24,9 @@ type Business = { id: string; business_name: string; email?: string | null }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export function AudienceCampaigns({ business, isAdmin, won, settings, campaigns, tags }: {
+export function AudienceCampaigns({ business, isAdmin, won, settings, campaigns, tags, countries = [] }: {
   business: Business; isAdmin: boolean; won: boolean; settings: Settings; campaigns: AudienceCampaignRow[]; tags: string[]
+  countries?: string[] // countries found in this client's customer numbers
 }) {
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -90,7 +93,7 @@ export function AudienceCampaigns({ business, isAdmin, won, settings, campaigns,
       )}
 
       {editing && <ClientSettings business={business} settings={settings} onClose={() => setEditing(false)} />}
-      {creating && <NewCampaign business={business} tags={tags} onClose={() => setCreating(false)} />}
+      {creating && <NewCampaign business={business} tags={tags} countries={countries} onClose={() => setCreating(false)} />}
       <Modal open={!!report} onClose={() => setReport(null)} title={report ? `Report · ${report.name}` : 'Report'}>
         {report && <CampaignProgress audience channel={report.channel} campaignId={report.id} />}
       </Modal>
@@ -162,7 +165,8 @@ function ClientSettings({ business, settings, onClose }: { business: Business; s
   )
 }
 
-function NewCampaign({ business, tags, onClose }: { business: Business; tags: string[]; onClose: () => void }) {
+function NewCampaign({ business, tags, countries, onClose }: { business: Business; tags: string[]; countries: string[]; onClose: () => void }) {
+  const { phone } = useLists()
   const router = useRouter()
   const [channel, setChannel] = useState<'email' | 'whatsapp'>('email')
   const [name, setName] = useState('')
@@ -174,7 +178,8 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
   const [months, setMonths] = useState<number[]>([])
   const [visit, setVisit] = useState<'any' | 'within' | 'not'>('any')
   const [days, setDays] = useState(90)
-  const [country, setCountry] = useState('UK')
+  // Starts on the default country from Settings when this client has customers there
+  const [country, setCountry] = useState(() => (phone?.country && countries.includes(phone.country) && countries.length > 1 ? phone.country : ''))
   const [mobileOnly, setMobileOnly] = useState(false)
   const [preview, setPreview] = useState<AudiencePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -350,14 +355,15 @@ function NewCampaign({ business, tags, onClose }: { business: Business; tags: st
             {visit !== 'any' && <><input className="input !w-20 text-right" type="number" min={1} max={3650} value={days} onChange={e => setDays(Number(e.target.value))} /> days</>}
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              Country
-              <select className="input !w-auto" value={country} onChange={e => setCountry(e.target.value)}>
-                <option value="UK">UK</option>
-                <option value="India">India</option>
-                <option value="">Both</option>
-              </select>
-            </label>
+            {countries.length > 1 && (
+              <label className="flex items-center gap-2">
+                Country
+                <select className="input !w-auto" value={country} onChange={e => setCountry(e.target.value)}>
+                  <option value="">All countries</option>
+                  {countries.map(c => <option key={c} value={c}>{countryName(c)}</option>)}
+                </select>
+              </label>
+            )}
             {channel === 'email' && (
               <label className="flex items-center gap-2"><input type="checkbox" checked={mobileOnly} onChange={e => setMobileOnly(e.target.checked)} /> Only customers with a mobile</label>
             )}

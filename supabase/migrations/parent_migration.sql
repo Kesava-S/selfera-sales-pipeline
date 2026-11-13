@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS "sales-pipe"."customer_import_batches" (
 CREATE TABLE IF NOT EXISTS "sales-pipe"."customer_leads" (
     "id" uuid DEFAULT gen_random_uuid() NOT NULL,
     "business_id" uuid NOT NULL,
-    "country" text DEFAULT 'UK'::text NOT NULL,
+    "country" text,
     "first_name" text,
     "last_name" text,
     "email" text,
@@ -2446,8 +2446,8 @@ BEGIN
             END IF;
 
             v_type := nullif(trim(x->>'business_type'), '');
-            IF v_type IS NOT NULL AND v_type NOT IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN
-                v_type := "sales-pipe".canonical_business_type(v_type);
+            IF v_type IS NULL OR v_type NOT IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN
+                v_type := coalesce("sales-pipe".canonical_business_type(coalesce(v_type, v_name)), 'Restaurant or cafe');
             END IF;
 
             -- Website normalization
@@ -3271,20 +3271,17 @@ CREATE OR REPLACE FUNCTION "sales-pipe".normalise_phone(p_phone text)
  SET search_path TO 'sales-pipe', 'public'
 AS $function$
 DECLARE
-    clean_phone text;
+    clean text;
 BEGIN
     IF p_phone IS NULL OR trim(p_phone) = '' THEN RETURN NULL; END IF;
-    clean_phone := regexp_replace(p_phone, '[^\d+]', '', 'g');
-    
-    -- If it starts with 07 (UK mobile), convert to +44
-    IF clean_phone LIKE '07%' THEN
-        clean_phone := '+44' || substr(clean_phone, 2);
-    -- If it doesn't have a plus but has country code, prepend +
-    ELSIF clean_phone NOT LIKE '+%' AND clean_phone ~ '^[1-9]' THEN
-        clean_phone := '+' || clean_phone;
+    clean := regexp_replace(p_phone, '[^\d+]', '', 'g');
+    IF clean = '' THEN RETURN NULL; END IF;
+    IF clean LIKE '00%' THEN
+        clean := '+' || substr(clean, 3);
+    ELSIF clean NOT LIKE '+%' AND clean ~ '^[1-9]' THEN
+        clean := '+' || clean;
     END IF;
-    
-    RETURN clean_phone;
+    RETURN clean;
 END;
 $function$;
 REVOKE ALL ON FUNCTION "sales-pipe"."normalise_phone"(p_phone text) FROM PUBLIC;
@@ -5905,7 +5902,7 @@ SELECT business_id,
     count(*) FILTER (WHERE NOT is_ready AND NOT do_not_contact)::integer AS missing,
     count(*) FILTER (WHERE do_not_contact)::integer AS do_not_contact,
     count(*) FILTER (WHERE (whatsapp_status = ANY (ARRAY['likely'::text, 'confirmed'::text])) AND NOT do_not_contact)::integer AS whatsapp,
-    count(*) FILTER (WHERE country = 'India'::text)::integer AS test,
+    0 AS test,
     max(created_at) AS last_added_at
    FROM "sales-pipe".customer_leads
   GROUP BY business_id;
@@ -5948,7 +5945,7 @@ ALTER TABLE "sales-pipe"."consultation_bookings" ADD CONSTRAINT "consultation_bo
 ALTER TABLE "sales-pipe"."customer_import_batches" ADD CONSTRAINT "customer_import_batches_pkey" PRIMARY KEY (id);
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_pkey" PRIMARY KEY (id);
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_birthday_month_check" CHECK (((birthday_month IS NULL) OR ((birthday_month >= 1) AND (birthday_month <= 12))));
-ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_country_check" CHECK ((country = ANY (ARRAY['UK'::text, 'India'::text])));
+ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_country_check" CHECK (((country IS NULL) OR (country ~ '^[A-Z]{2}$'::text)));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_email_check" CHECK (((email IS NULL) OR (email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'::text)));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_email_status_check" CHECK ((email_status = ANY (ARRAY['valid'::text, 'risky'::text, 'invalid'::text, 'disposable'::text, 'unknown'::text])));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_has_identity" CHECK (((COALESCE(btrim(first_name), ''::text) <> ''::text) OR (email IS NOT NULL) OR (phone IS NOT NULL) OR (phone2 IS NOT NULL)));

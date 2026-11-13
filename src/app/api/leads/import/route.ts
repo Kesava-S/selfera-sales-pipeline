@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import type { EmailCheck, EmailStatus } from '@/lib/emailCheck'
 
 const EMAIL_STATUSES: (EmailStatus | null)[] = ['valid', 'risky', 'invalid', 'disposable', 'unknown']
@@ -19,12 +20,16 @@ export async function POST(request: Request) {
   if (!Array.isArray(rows) || rows.length === 0) return NextResponse.json({ error: 'No rows to import' }, { status: 400 })
   if (rows.length > 2000) return NextResponse.json({ error: 'Send at most 2,000 rows at a time' }, { status: 400 })
 
+  await applyPhoneDefaults()
   for (const row of rows) {
     if (typeof row.whatsapp_number === 'string' && row.whatsapp_number.trim()) {
       const w = parseAndValidatePhone(row.whatsapp_number.trim())
       if (w.valid && w.normalized) {
         row.whatsapp_number = w.normalized
       }
+    }
+    if (!row.business_type || typeof row.business_type !== 'string' || !row.business_type.trim()) {
+      row.business_type = 'Restaurant or cafe'
     }
   }
 

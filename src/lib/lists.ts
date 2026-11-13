@@ -15,10 +15,15 @@ export type ListCategory = {
 
 export type ListPlatform = { name: string; slug: string }
 
+// Phone numbers: the country used for numbers written without a country code, and
+// the countries listed first in phone pickers (Settings key 'phone_defaults')
+export type PhoneDefaults = { country: string | null; first: string[] }
+
 export type SalesLists = {
   services: string[]
   platforms: ListPlatform[]
   categories: ListCategory[]
+  phone: PhoneDefaults
 }
 
 // The channels the app can send on (the database checks the same set).
@@ -33,6 +38,7 @@ export const DEFAULT_LISTS: SalesLists = {
   services: [...CONFIG.SERVICES],
   platforms: CONFIG.PLATFORMS.map(name => ({ name, slug: name.toLowerCase() })),
   categories: LEAD_CATEGORIES.map(name => ({ name, slug: slugify(name), description: null, icon_name: null, synonyms: [name.toLowerCase()] })),
+  phone: { country: null, first: [] },
 }
 
 export const categoryNames = (lists: SalesLists) => lists.categories.map(c => c.name)

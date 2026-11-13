@@ -1,0 +1,207 @@
+-- Migration 78: import_businesses_fallback_type.sql
+-- Ensure business_type falls back to canonical or default category when not provided in CSV import
+
+CREATE OR REPLACE FUNCTION "sales-pipe".import_businesses(p_rows jsonb, p_batch_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'sales-pipe', 'public'
+AS $function$
+DECLARE
+    x jsonb;
+    v_bid uuid;
+    v_action text;
+    v_name text;
+    v_type text;
+    v_services text[];
+    v_tech_type text;
+    v_tech_name text;
+    v_branches jsonb;
+    v_raw_branches text;
+    v_ready int := 0;
+    v_missing int := 0;
+    v_skipped int := 0;
+    v_probs text[];
+    b_str text;
+    v_raw_services text;
+    v_raw_tp text;
+    v_site text;
+BEGIN
+    PERFORM "sales-pipe".require_role(ARRAY['admin', 'sales']);
+
+    FOR x IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+        v_action := coalesce(x->>'action', 'new');
+        v_name := trim(coalesce(x->>'business_name', ''));
+
+        IF v_action = 'skip' THEN
+            v_skipped := v_skipped + 1;
+            CONTINUE;
+        END IF;
+
+        IF v_action IN ('new', 'update') THEN
+            -- Services parsing (handles JSON array e.g. ["Website"] and comma-separated string)
+            IF x->'services' IS NOT NULL AND jsonb_typeof(x->'services') = 'array' THEN
+                SELECT coalesce(array_agg(trim(val)), '{}'::text[]) INTO v_services
+                FROM jsonb_array_elements_text(x->'services') val
+                WHERE trim(val) = ANY("sales-pipe".valid_services());
+            ELSIF x->'services_pitched' IS NOT NULL AND jsonb_typeof(x->'services_pitched') = 'array' THEN
+                SELECT coalesce(array_agg(trim(val)), '{}'::text[]) INTO v_services
+                FROM jsonb_array_elements_text(x->'services_pitched') val
+                WHERE trim(val) = ANY("sales-pipe".valid_services());
+            ELSE
+                v_raw_services := trim(coalesce(x->>'services', x->>'services_pitched', ''));
+                SELECT coalesce(array_agg(trim(s)), '{}'::text[]) INTO v_services
+                FROM unnest(string_to_array(v_raw_services, ',')) s
+                WHERE trim(s) = ANY("sales-pipe".valid_services());
+            END IF;
+            IF v_services IS NULL THEN
+                v_services := '{}'::text[];
+            END IF;
+
+            v_type := nullif(trim(x->>'business_type'), '');
+            IF v_type IS NULL OR v_type NOT IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN
+                v_type := coalesce("sales-pipe".canonical_business_type(coalesce(v_type, v_name)), 'Restaurant or cafe');
+            END IF;
+
+            -- Website normalization
+            v_site := nullif(trim(x->>'existing_website'), '');
+            IF v_site IS NOT NULL AND v_site !~* '^https?://' AND v_site ~* '^[^\s.]+\.[^\s]{2,}' THEN
+                v_site := 'https://' || v_site;
+            END IF;
+
+            -- Tech partner parsing
+            v_tech_type := nullif(trim(x->>'tech_partner_type'), '');
+            v_raw_tp := nullif(trim(coalesce(x->>'tech_partner', x->>'existing_tech_partner', '')), '');
+            IF v_tech_type IS NULL AND v_raw_tp IS NOT NULL THEN
+                IF lower(v_raw_tp) = 'none' THEN
+                    v_tech_type := 'None';
+                    v_tech_name := NULL;
+                ELSIF v_raw_tp ~* '^Agency' THEN
+                    v_tech_type := 'Agency';
+                    v_tech_name := nullif(btrim(regexp_replace(v_raw_tp, '^Agency\s*', '', 'i'), ' ()'), '');
+                ELSIF v_raw_tp ~* '^DIY' THEN
+                    v_tech_type := 'DIY';
+                    v_tech_name := nullif(btrim(regexp_replace(v_raw_tp, '^DIY\s*', '', 'i'), ' ()'), '');
+                ELSE
+                    v_tech_type := 'Agency';
+                    v_tech_name := v_raw_tp;
+                END IF;
+            END IF;
+            IF v_tech_type IS NOT NULL AND v_tech_type NOT IN ('Agency', 'DIY', 'None') THEN
+                v_tech_type := NULL;
+            END IF;
+            IF v_tech_name IS NULL THEN
+                v_tech_name := nullif(trim(x->>'tech_partner_name'), '');
+            END IF;
+
+            -- Branches parsing
+            IF x->'branches' IS NOT NULL AND jsonb_typeof(x->'branches') = 'array' THEN
+                v_branches := x->'branches';
+            ELSIF nullif(trim(x->>'branches'), '') IS NOT NULL THEN
+                v_raw_branches := trim(x->>'branches');
+                SELECT jsonb_agg(jsonb_build_object(
+                    'name', trim(split_part(b_str, '|', 1)),
+                    'address', trim(split_part(b_str, '|', 2)),
+                    'postcode', upper(trim(split_part(b_str, '|', 3)))
+                )) INTO v_branches
+                FROM unnest(string_to_array(v_raw_branches, ';')) b_str
+                WHERE trim(b_str) <> '';
+            ELSE
+                v_branches := '[]'::jsonb;
+            END IF;
+
+            IF v_action = 'new' THEN
+                INSERT INTO "sales-pipe".businesses (
+                    business_name, business_type, category, tier, room_count, area, address, postcode, maps_link,
+                    google_rating, google_reviews_count, whatsapp_number, email, instagram, facebook, linkedin,
+                    existing_website, company_type, contact_name, notes, owner_contact, gaps_found, has_no_website,
+                    owner_email, tech_partner_type, tech_partner_name, branches, source, import_batch_id)
+                VALUES (
+                    v_name, v_type, "sales-pipe".type_category(v_type),
+                    nullif(x->>'tier', ''), nullif(x->>'room_count', '')::int,
+                    nullif(trim(x->>'area'), ''), nullif(trim(x->>'address'), ''), upper(nullif(trim(x->>'postcode'), '')),
+                    nullif(trim(x->>'maps_link'), ''),
+                    nullif(x->>'google_rating', '')::numeric, nullif(regexp_replace(coalesce(x->>'google_reviews_count', ''), '\D', '', 'g'), '')::int,
+                    nullif(trim(x->>'whatsapp_number'), ''),
+                    nullif(lower(trim(x->>'email')), ''),
+                    "sales-pipe".clean_handle(x->>'instagram'), "sales-pipe".clean_handle(x->>'facebook'), nullif(trim(x->>'linkedin'), ''),
+                    v_site,
+                    coalesce(nullif(x->>'company_type', ''), 'Unknown'),
+                    nullif(trim(x->>'contact_name'), ''), nullif(trim(x->>'notes'), ''),
+                    coalesce(nullif(trim(x->>'owner_contact'), ''), nullif(trim(x->>'owner_whatsapp'), ''), nullif(trim(x->>'owner_social'), '')),
+                    nullif(trim(x->>'gaps_found'), ''),
+                    coalesce((x->>'has_no_website')::boolean, (lower(trim(coalesce(x->>'no_site', ''))) IN ('true', 'yes', '1', 't'))),
+                    nullif(lower(trim(x->>'owner_email')), ''),
+                    v_tech_type, v_tech_name, coalesce(v_branches, '[]'::jsonb), nullif(trim(x->>'source'), ''), p_batch_id)
+                RETURNING id INTO v_bid;
+
+                PERFORM "sales-pipe".add_pitch(v_bid, v_services, nullif(trim(x->>'demo_link'), ''));
+
+                UPDATE "sales-pipe".businesses SET problems = "sales-pipe".lead_problems(v_bid) WHERE id = v_bid RETURNING problems INTO v_probs;
+                IF array_length(v_probs, 1) IS NULL THEN
+                    v_ready := v_ready + 1;
+                ELSE
+                    v_missing := v_missing + 1;
+                END IF;
+            ELSE
+                v_bid := (x->>'match_id')::uuid;
+                IF v_bid IS NOT NULL THEN
+                    UPDATE "sales-pipe".businesses b SET
+                        business_name = coalesce(nullif(v_name, ''), b.business_name),
+                        business_type = coalesce(v_type, b.business_type),
+                        category = coalesce("sales-pipe".type_category(v_type), b.category),
+                        tier = coalesce(nullif(x->>'tier', ''), b.tier),
+                        room_count = coalesce(nullif(x->>'room_count', '')::int, b.room_count),
+                        area = coalesce(nullif(trim(x->>'area'), ''), b.area),
+                        address = coalesce(nullif(trim(x->>'address'), ''), b.address),
+                        postcode = coalesce(upper(nullif(trim(x->>'postcode'), '')), b.postcode),
+                        maps_link = coalesce(nullif(trim(x->>'maps_link'), ''), b.maps_link),
+                        google_rating = coalesce(nullif(x->>'google_rating', '')::numeric, b.google_rating),
+                        google_reviews_count = coalesce(nullif(regexp_replace(coalesce(x->>'google_reviews_count', ''), '\D', '', 'g'), '')::int, b.google_reviews_count),
+                        whatsapp_number = coalesce(nullif(trim(x->>'whatsapp_number'), ''), b.whatsapp_number),
+                        email = coalesce(nullif(lower(trim(x->>'email')), ''), b.email),
+                        instagram = coalesce("sales-pipe".clean_handle(x->>'instagram'), b.instagram),
+                        facebook = coalesce("sales-pipe".clean_handle(x->>'facebook'), b.facebook),
+                        linkedin = coalesce(nullif(trim(x->>'linkedin'), ''), b.linkedin),
+                        existing_website = coalesce(v_site, b.existing_website),
+                        company_type = coalesce(nullif(x->>'company_type', ''), b.company_type),
+                        contact_name = coalesce(nullif(trim(x->>'contact_name'), ''), b.contact_name),
+                        notes = CASE WHEN nullif(trim(x->>'notes'), '') IS NOT NULL THEN concat_ws('; ', b.notes, trim(x->>'notes')) ELSE b.notes END,
+                        owner_contact = coalesce(nullif(trim(x->>'owner_contact'), ''), nullif(trim(x->>'owner_whatsapp'), ''), nullif(trim(x->>'owner_social'), ''), b.owner_contact),
+                        owner_email = coalesce(nullif(lower(trim(x->>'owner_email')), ''), b.owner_email),
+                        tech_partner_type = coalesce(v_tech_type, b.tech_partner_type),
+                        tech_partner_name = coalesce(v_tech_name, b.tech_partner_name),
+                        branches = CASE WHEN v_branches IS NOT NULL AND jsonb_array_length(v_branches) > 0 THEN v_branches ELSE b.branches END,
+                        source = coalesce(nullif(trim(x->>'source'), ''), b.source),
+                        import_batch_id = coalesce(p_batch_id, b.import_batch_id),
+                        gaps_found = coalesce(nullif(trim(x->>'gaps_found'), ''), b.gaps_found),
+                        has_no_website = coalesce((x->>'has_no_website')::boolean, (lower(trim(coalesce(x->>'no_site', ''))) IN ('true', 'yes', '1', 't')), b.has_no_website)
+                    WHERE b.id = v_bid;
+
+                    IF array_length(v_services, 1) > 0 THEN
+                        UPDATE "sales-pipe".opportunities SET services_pitched = v_services
+                        WHERE business_id = v_bid AND stage = 'Needs review';
+                    END IF;
+
+                    UPDATE "sales-pipe".businesses SET problems = "sales-pipe".lead_problems(v_bid) WHERE id = v_bid RETURNING problems INTO v_probs;
+                    IF array_length(v_probs, 1) IS NULL THEN
+                        v_ready := v_ready + 1;
+                    ELSE
+                        v_missing := v_missing + 1;
+                    END IF;
+                END IF;
+            END IF;
+        END IF;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'ready', v_ready,
+        'missing', v_missing,
+        'skipped', v_skipped,
+        'total', v_ready + v_missing + v_skipped
+    );
+END;
+$function$;
+REVOKE ALL ON FUNCTION "sales-pipe"."import_businesses"(p_rows jsonb, p_batch_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION "sales-pipe"."import_businesses"(p_rows jsonb, p_batch_id uuid) TO "authenticated";
+GRANT EXECUTE ON FUNCTION "sales-pipe"."import_businesses"(p_rows jsonb, p_batch_id uuid) TO "service_role";

@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   parseAndValidatePhone,
-  ukToInternational,
-  isUkMobile,
-  isIndianMobile,
+  internationalDigits,
+  checkNumber,
+  setPhoneDefaults,
+  countryName,
   getPhoneType,
   isWhatsAppCapable,
   whatsappLink,
@@ -15,125 +16,89 @@ import {
 } from '@/lib/contact';
 
 describe('contact & phone utilities (src/lib/contact.ts)', () => {
+  // Default country comes from Settings; tests set it like the app does
+  beforeEach(() => setPhoneDefaults('GB'));
+
+  describe('checkNumber (any country)', () => {
+    it('reads international numbers from any country', () => {
+      expect(checkNumber('+44 7123 456789')).toMatchObject({ valid: true, e164: '+447123456789', country: 'GB', kind: 'mobile' });
+      expect(checkNumber('+91 98765 43210')).toMatchObject({ valid: true, e164: '+919876543210', country: 'IN', kind: 'mobile' });
+      expect(checkNumber('+1 202 555 0123')).toMatchObject({ valid: true, e164: '+12025550123' });
+      expect(checkNumber('+49 151 12345678')).toMatchObject({ valid: true, country: 'DE', kind: 'mobile' });
+      expect(checkNumber('0044 7123 456789')).toMatchObject({ valid: true, e164: '+447123456789' });
+    });
+
+    it('reads numbers without a country code as the default country', () => {
+      expect(checkNumber('07123 456789')).toMatchObject({ valid: true, e164: '+447123456789', country: 'GB' });
+      setPhoneDefaults('IN');
+      expect(checkNumber('98765 43210')).toMatchObject({ valid: true, e164: '+919876543210', country: 'IN' });
+    });
+
+    it('accepts digits that already include a country code', () => {
+      expect(checkNumber('917305395094')).toMatchObject({ valid: true, e164: '+917305395094', country: 'IN' });
+      expect(checkNumber('447928750453')).toMatchObject({ valid: true, e164: '+447928750453' });
+    });
+
+    it('tells landlines from mobiles', () => {
+      expect(checkNumber('+44 20 7946 0958').kind).toBe('landline');
+    });
+
+    it('rejects numbers that are not real', () => {
+      expect(checkNumber('+44 12').valid).toBe(false);
+      expect(checkNumber('hello').valid).toBe(false);
+      expect(checkNumber('').kind).toBe('empty');
+    });
+
+    it('asks for a country code when there is no default country', () => {
+      setPhoneDefaults(null);
+      const c = checkNumber('07123 456789');
+      expect(c.valid).toBe(false);
+      expect(c.error).toMatch(/country code/i);
+    });
+  });
+
   describe('parseAndValidatePhone', () => {
-    it('returns valid: true with normalized: null for empty or whitespace inputs', () => {
-      expect(parseAndValidatePhone(null)).toEqual({ valid: true, normalized: null });
-      expect(parseAndValidatePhone(undefined)).toEqual({ valid: true, normalized: null });
-      expect(parseAndValidatePhone('   ')).toEqual({ valid: true, normalized: null });
+    it('allows empty and returns valid numbers in international form', () => {
+      expect(parseAndValidatePhone('')).toEqual({ valid: true, normalized: null });
+      expect(parseAndValidatePhone('07123 456789')).toEqual({ valid: true, normalized: '+447123456789' });
+      expect(parseAndValidatePhone('+91 98765 43210')).toEqual({ valid: true, normalized: '+919876543210' });
     });
 
-    it('correctly normalizes UK phone numbers with +44 prefix', () => {
-      const res = parseAndValidatePhone('+44 7123 456789');
-      expect(res).toEqual({ valid: true, normalized: '+447123456789' });
-    });
-
-    it('strips domestic trunk zero from +44(0) format', () => {
-      const res = parseAndValidatePhone('+44 (0) 7123 456789');
-      expect(res).toEqual({ valid: true, normalized: '+447123456789' });
-    });
-
-    it('flags too short or too long UK numbers', () => {
-      expect(parseAndValidatePhone('+44 7123')).toMatchObject({ valid: false });
-      expect(parseAndValidatePhone('+44 7123 4567890123')).toMatchObject({ valid: false });
-    });
-
-    it('handles +0 prefix for national numbers', () => {
-      const res = parseAndValidatePhone('+07123 456789');
-      expect(res).toEqual({ valid: true, normalized: '+07123456789' });
-    });
-
-    it('validates international phone numbers with + or 00', () => {
-      expect(parseAndValidatePhone('+91 98765 43210')).toEqual({
-        valid: true,
-        normalized: '+919876543210',
-      });
-      expect(parseAndValidatePhone('0091 98765 43210')).toEqual({
-        valid: true,
-        normalized: '+919876543210',
-      });
-    });
-
-    it('normalizes UK domestic numbers starting with 0', () => {
-      expect(parseAndValidatePhone('07123 456789')).toEqual({
-        valid: true,
-        normalized: '07123456789',
-      });
-    });
-
-    it('rejects bare digits without country code', () => {
-      const res = parseAndValidatePhone('7514 953005');
-      expect(res.valid).toBe(false);
-      expect(res.error).toContain('must include country code');
+    it('returns an error for invalid numbers', () => {
+      const r = parseAndValidatePhone('+44 12');
+      expect(r.valid).toBe(false);
     });
   });
 
-  describe('ukToInternational', () => {
-    it('converts UK phone formats to international digit string', () => {
-      expect(ukToInternational('+44 7123 456789')).toBe('447123456789');
-      expect(ukToInternational('07123 456789')).toBe('447123456789');
-      expect(ukToInternational('+07123 456789')).toBe('447123456789');
-      expect(ukToInternational('447123456789')).toBe('447123456789');
-    });
-
-    it('returns null for missing inputs', () => {
-      expect(ukToInternational(null)).toBeNull();
-      expect(ukToInternational('')).toBeNull();
-    });
-  });
-
-  describe('isUkMobile', () => {
-    it('returns true for UK mobile prefixes (+447, 07)', () => {
-      expect(isUkMobile('+44 7123 456789')).toBe(true);
-      expect(isUkMobile('07123 456789')).toBe(true);
-      expect(isUkMobile('+07123 456789')).toBe(true);
-    });
-
-    it('returns false for UK landlines and invalid numbers', () => {
-      expect(isUkMobile('020 7946 0991')).toBe(false);
-      expect(isUkMobile('+44 161 496 0123')).toBe(false);
-      expect(isUkMobile(null)).toBe(false);
-    });
-  });
-
-  describe('isIndianMobile', () => {
-    it('identifies valid Indian mobile numbers', () => {
-      expect(isIndianMobile('+91 98765 43210')).toBe(true);
-      expect(isIndianMobile('9876543210')).toBe(true);
-      expect(isIndianMobile('7123456789')).toBe(true);
-    });
-
-    it('rejects numbers starting with digits < 6 or wrong length', () => {
-      expect(isIndianMobile('5876543210')).toBe(false);
-      expect(isIndianMobile('98765')).toBe(false);
-      expect(isIndianMobile(null)).toBe(false);
+  describe('internationalDigits', () => {
+    it('gives digits with the country code', () => {
+      expect(internationalDigits('07123 456789')).toBe('447123456789');
+      expect(internationalDigits('+91 98765 43210')).toBe('919876543210');
+      expect(internationalDigits(null)).toBeNull();
+      expect(internationalDigits('nonsense')).toBeNull();
     });
   });
 
   describe('getPhoneType & isWhatsAppCapable', () => {
-    it('categorizes UK mobile numbers as whatsapp_mobile', () => {
-      const type = getPhoneType('+44 7123 456789');
-      expect(type.type).toBe('whatsapp_mobile');
-      expect(type.isWhatsApp).toBe(true);
-      expect(isWhatsAppCapable('+44 7123 456789')).toBe(true);
+    it('marks mobiles as WhatsApp-ready, without naming a country', () => {
+      const t = getPhoneType('+44 7123 456789');
+      expect(t).toMatchObject({ type: 'whatsapp_mobile', isWhatsApp: true, normalized: '+447123456789' });
+      expect(t.label).toBe('Mobile');
+      expect(isWhatsAppCapable('+91 98765 43210')).toBe(true);
     });
 
-    it('categorizes UK landlines as landline', () => {
-      const type = getPhoneType('020 7946 0991');
-      expect(type.type).toBe('landline');
-      expect(type.isWhatsApp).toBe(false);
-      expect(isWhatsAppCapable('020 7946 0991')).toBe(false);
+    it('marks landlines, empty and invalid numbers', () => {
+      expect(getPhoneType('+44 20 7946 0958')).toMatchObject({ type: 'landline', isWhatsApp: false });
+      expect(getPhoneType('')).toMatchObject({ type: 'empty', isWhatsApp: false });
+      expect(getPhoneType('+44 12')).toMatchObject({ type: 'invalid', isWhatsApp: false });
     });
+  });
 
-    it('categorizes empty numbers as empty', () => {
-      const type = getPhoneType('');
-      expect(type.type).toBe('empty');
-      expect(type.isWhatsApp).toBe(false);
-    });
-
-    it('categorizes malformed numbers as invalid', () => {
-      const type = getPhoneType('123');
-      expect(type.type).toBe('invalid');
-      expect(type.isWhatsApp).toBe(false);
+  describe('countryName', () => {
+    it('names a country from its code', () => {
+      expect(countryName('GB')).toBe('United Kingdom');
+      expect(countryName('IN')).toBe('India');
+      expect(countryName(null)).toBe('');
     });
   });
 
@@ -143,6 +108,7 @@ describe('contact & phone utilities (src/lib/contact.ts)', () => {
       expect(whatsappLink('+44 7123 456789', 'Hello Selfera')).toBe(
         'https://wa.me/447123456789?text=Hello%20Selfera'
       );
+      expect(whatsappLink('917305395094')).toBe('https://wa.me/917305395094');
       expect(whatsappLink(null)).toBeNull();
     });
 

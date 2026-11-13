@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isCountryCode } from '@/lib/contact'
 import { createClient } from '@/lib/supabase/server'
 
 const csvCell = (v: unknown) => {
@@ -118,7 +119,7 @@ async function executeAudienceExport(params: {
       else if (['mobile', 'landline', 'invalid'].includes(phone)) {
         list = list.or(`phone_type.eq.${phone},phone2_type.eq.${phone}`)
       }
-      if (country === 'UK' || country === 'India') list = list.eq('country', country)
+      if (isCountryCode(country)) list = list.eq('country', country)
     }
 
     const { data, error } = await list.order('created_at').range(offset, offset + PAGE - 1)

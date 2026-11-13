@@ -8,10 +8,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { AlertTriangle, Ban, CheckCircle2, Contact, Download, MessageCircle, Phone, Plus, Search, Trash2, Undo2, Upload, X } from 'lucide-react'
 import { approveCustomerImport, deleteAudience, deleteCustomerLeads, saveCustomerLead, setCustomerDoNotContact, undoCustomerImport } from '@/app/dashboard/audience/actions'
+import { countryName } from '@/lib/contact'
+import { PhoneInput } from '@/components/v2/PhoneInput'
 import { ColumnPicker, useColumns, type ColumnDef } from '@/components/ColumnPicker'
 import {
-  checkPhone, missingFor, COUNTRIES, PHONE_TYPE_LABEL,
-  type Country, type CustomerInput, type CustomerLead, type PhoneType,
+  checkPhone, missingFor, PHONE_TYPE_LABEL,
+  type CustomerInput, type CustomerLead, type PhoneType,
 } from '@/lib/customerLeads'
 import { EmptyState, ErrorNote, Modal, ConfirmModal, Pagination, Spinner, useAction } from '@/components/ui'
 import { formatDate } from '@/lib/format'
@@ -43,8 +45,9 @@ const COLUMNS: ColumnDef[] = [
   { key: 'added', label: 'Added' },
 ]
 
-export function CustomersView({ business, customers, total, counts, filters, page, pageSize, view = 'customers', isAdmin = false, meId, pendingImports = [], children }: {
+export function CustomersView({ business, customers, total, counts, filters, page, pageSize, view = 'customers', isAdmin = false, meId, pendingImports = [], countries = [], children }: {
   business: Business; customers: CustomerLead[]; total: number; counts: Counts; filters: CustomerFilters; page: number; pageSize: number
+  countries?: string[] // countries found in this client's customer numbers
   view?: 'customers' | 'campaigns'; isAdmin?: boolean; meId?: string; pendingImports?: PendingImport[]; children?: React.ReactNode
 }) {
   const router = useRouter()
@@ -161,11 +164,12 @@ export function CustomersView({ business, customers, total, counts, filters, pag
           <option value="invalid">Invalid number</option>
           <option value="none">No phone</option>
         </select>
-        <select className="input !w-auto" value={filters.country} onChange={e => setFilter({ country: e.target.value })}>
-          <option value="">UK and India</option>
-          <option value="UK">UK</option>
-          <option value="India">India</option>
-        </select>
+        {countries.length > 1 && (
+          <select className="input !w-auto" value={filters.country} onChange={e => setFilter({ country: e.target.value })}>
+            <option value="">All countries</option>
+            {countries.map(c => <option key={c} value={c}>{countryName(c)}</option>)}
+          </select>
+        )}
         {filtered && <button className="btn btn-ghost btn-sm" onClick={() => { setQ(''); setFilter({ q: '', phone: '', country: '' }) }}><X size={14} /> Clear</button>}
         {navigating && <Spinner size={14} className="text-slate-400" />}
         <span className="ml-auto"><ColumnPicker columns={COLUMNS} state={cols} /></span>
@@ -232,7 +236,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                     <td className="max-w-64">
                       <div className="flex items-center gap-1.5">
                         <span className={`truncate font-semibold ${name ? 'text-slate-900' : 'italic text-slate-400'}`}>{name || 'No name'}</span>
-                        {c.country === 'India' && <span className="text-[10px] font-semibold text-violet-700" title="Test contact">India</span>}
+
                       </div>
                     </td>
                     {cols.has('phone') && <td>
@@ -254,7 +258,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
                     {cols.has('tags') && <td className="text-xs">{c.tags.length ? c.tags.join(', ') : '-'}</td>}
                     {cols.has('visit') && <td className="whitespace-nowrap text-sm">{c.last_purchase_on ? formatDate(c.last_purchase_on) : '-'}{c.purchased && <div className="text-xs text-slate-500">{c.purchased}</div>}</td>}
                     {cols.has('birthday') && <td className="text-sm">{c.birthday_month ? MONTH_NAMES[c.birthday_month - 1] : '-'}</td>}
-                    {cols.has('country') && <td className="text-sm">{c.country}</td>}
+                    {cols.has('country') && <td className="text-sm">{countryName(c.country) || '-'}</td>}
                     {cols.has('consent') && <td className="whitespace-nowrap text-xs">{c.consent_confirmed ? `Yes${c.consent_confirmed_at ? `, ${formatDate(c.consent_confirmed_at)}` : ''}` : <span className="text-amber-700">No</span>}</td>}
                     {cols.has('added') && <td className="whitespace-nowrap text-xs text-slate-500">{formatDate(c.created_at)}<br />{c.source === 'csv' ? 'CSV' : 'Form'}</td>}
                   </tr>
@@ -401,7 +405,6 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
     tags: customer?.tags.join(', ') ?? '',
     notes: customer?.notes ?? '',
   })
-  const [country, setCountry] = useState<Country>(customer?.country ?? 'UK')
   const [consent, setConsent] = useState(customer?.consent_confirmed ?? false)
   const [formErrors, setFormErrors] = useState<{ firstName?: string; contact?: string; email?: string; phone?: string; consent?: string }>({})
   const { run, pending, error } = useAction()
@@ -411,8 +414,13 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
     if (k === 'email') setFormErrors(prev => ({ ...prev, email: undefined, contact: undefined }))
     if (k === 'phone' || k === 'phone2') setFormErrors(prev => ({ ...prev, phone: undefined, contact: undefined }))
   }
-  const p1 = useMemo(() => checkPhone(v.phone, country), [v.phone, country])
-  const p2 = useMemo(() => checkPhone(v.phone2, country), [v.phone2, country])
+  // The country-code phone box gives the number itself, not an input event
+  const setPhone = (k: 'phone' | 'phone2') => (value: string) => {
+    setV(prev => ({ ...prev, [k]: value }))
+    setFormErrors(prev => ({ ...prev, phone: undefined, contact: undefined }))
+  }
+  const p1 = useMemo(() => checkPhone(v.phone), [v.phone])
+  const p2 = useMemo(() => checkPhone(v.phone2), [v.phone2])
 
   const validate = () => {
     const errs: { firstName?: string; contact?: string; email?: string; phone?: string; consent?: string } = {}
@@ -439,7 +447,7 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
   const save = () => {
     if (!validate()) return
     run(
-      () => saveCustomerLead(businessId, customer?.id ?? null, v, { country, consent }),
+      () => saveCustomerLead(businessId, customer?.id ?? null, v, { consent }),
       onClose,
       { success: customer ? 'Customer saved.' : 'Customer added.' },
     )
@@ -461,16 +469,11 @@ function CustomerForm({ businessId, customer, onClose }: { businessId: string; c
           <input className={`input ${formErrors.email || formErrors.contact ? '!border-rose-400' : ''}`} type="email" value={v.email ?? ''} onChange={set('email')} />
         </Field>
         <Field label="Phone / mobile" error={formErrors.phone} hint={<PhoneHint check={p1} />}>
-          <input className={`input ${formErrors.phone ? '!border-rose-400' : ''}`} inputMode="tel" placeholder={country === 'UK' ? '07911 123456' : '98765 43210'} value={v.phone ?? ''} onChange={set('phone')} />
+          <PhoneInput value={v.phone ?? ''} onChange={setPhone('phone')} error={formErrors.phone} showStatus={false} />
         </Field>
-        <Field label="Second phone" hint={<PhoneHint check={p2} />}><input className="input" inputMode="tel" placeholder="Landline or other" value={v.phone2 ?? ''} onChange={set('phone2')} /></Field>
-        <Field label="Country" required>
-          <select className="input" value={country} onChange={e => setCountry(e.target.value as Country)}>
-            {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
+        <Field label="Second phone" hint={<PhoneHint check={p2} />}><PhoneInput value={v.phone2 ?? ''} onChange={setPhone('phone2')} placeholder="Landline or other" showStatus={false} /></Field>
         <Field label="Town / city"><input className="input" value={v.town ?? ''} onChange={set('town')} /></Field>
-        <Field label={country === 'India' ? 'PIN code' : 'Postcode'}><input className="input" value={v.postcode ?? ''} onChange={set('postcode')} /></Field>
+        <Field label="Postcode"><input className="input" value={v.postcode ?? ''} onChange={set('postcode')} /></Field>
         <Field label="Birthday month">
           <select className="input" value={v.birthday_month} onChange={set('birthday_month')}>
             <option value="">Not known</option>
@@ -530,10 +533,10 @@ function Field({ label, hint, span, required, error, children }: { label: string
 
 function PhoneHint({ check }: { check: ReturnType<typeof checkPhone> }) {
   if (!check) return null
-  if (check.type === 'invalid') return <span className="text-xs font-medium text-red-600">Not a valid UK or India number</span>
+  if (check.type === 'invalid') return <span className="text-xs font-medium text-red-600">Not a valid phone number</span>
   return (
     <span className={`text-xs font-medium ${check.type === 'mobile' ? 'text-sky-700' : 'text-slate-500'}`}>
-      {check.country} {PHONE_TYPE_LABEL[check.type].toLowerCase()}{check.type === 'mobile' ? ' · opens in WhatsApp' : check.type === 'landline' ? ' · calls only' : ''}
+      {countryName(check.country)} {PHONE_TYPE_LABEL[check.type].toLowerCase()}{check.type === 'mobile' ? ' · opens in WhatsApp' : check.type === 'landline' ? ' · calls only' : ''}
     </span>
   )
 }

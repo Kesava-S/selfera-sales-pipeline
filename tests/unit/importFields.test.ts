@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { setPhoneDefaults } from '@/lib/contact'
+import { beforeAll, describe, it, expect } from 'vitest';
 import {
   ALL_FIELDS,
   MATCH_FIELDS,
@@ -8,12 +9,14 @@ import {
   clean,
   guessTier,
   isValidUkPostcode,
-  isValidUkMobileDigits,
   parseBranches,
   parseRating,
   parseServices,
 } from '@/lib/importFields';
 import { DEFAULT_LISTS } from '@/lib/lists';
+
+// The app reads numbers without a country code as the default country from Settings
+beforeAll(() => setPhoneDefaults('GB'))
 
 describe('CSV lead import field parsers and validators (src/lib/importFields.ts)', () => {
   describe('TEMPLATE_HEADERS & MATCH_FIELDS', () => {
@@ -124,19 +127,6 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
     });
   });
 
-  describe('isValidUkMobileDigits', () => {
-    it('validates 11-digit UK mobile starting with 07 or 447', () => {
-      expect(isValidUkMobileDigits('07123456789')).toBe(true);
-      expect(isValidUkMobileDigits('447123456789')).toBe(true);
-      expect(isValidUkMobileDigits('+44 7123-456-789')).toBe(true);
-    });
-
-    it('rejects non-mobile UK numbers', () => {
-      expect(isValidUkMobileDigits('02079460991')).toBe(false);
-      expect(isValidUkMobileDigits('442079460991')).toBe(false);
-      expect(isValidUkMobileDigits(null)).toBe(false);
-    });
-  });
 
   describe('parseBranches', () => {
     it('parses semicolon and pipe-separated branch definitions', () => {
@@ -288,7 +278,7 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
       const raw = {
         'Business Name': 'The Grand Hotel',
         'Business Email': 'reservations@thegrandhotel.co.uk',
-        'Business WhatsApp': '+44 7700 900001',
+        'Business WhatsApp': '+44 7123 456781',
         'Postcode': 'SW1A 1AA',
         'Owner Name': 'Sarah Jenkins',
       };
@@ -298,12 +288,12 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
       expect(row.isCannotImport).toBe(false);
       expect(row.data.business_name).toBe('The Grand Hotel');
       expect(row.data.email).toBe('reservations@thegrandhotel.co.uk');
-      expect(row.data.whatsapp_number).toBe('+447700900001');
+      expect(row.data.whatsapp_number).toBe('+447123456781');
       expect(row.data.postcode).toBe('SW1A 1AA');
       expect(row.data.contact_name).toBe('Sarah Jenkins');
       expect(row.isCleanData).toBe(true);
       expect(row.isMissingData).toBe(true);
-      expect(row.problems).toContain('category');
+      expect(row.data.business_type).toBe('Hotel');
       expect(row.problems).toContain('service');
     });
   });

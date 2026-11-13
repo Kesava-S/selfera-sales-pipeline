@@ -170,11 +170,14 @@ export function LeadsManagement({
   }
 
   const selectedRows = rows.filter(r => selected.includes(r.opportunity_id))
+  const deleteCount = new Set(selectedRows.map(r => r.business_id)).size
+  const uniqueLeadNames = Array.from(new Set(selectedRows.map(r => r.business_name).filter(Boolean)))
+  const leadSummary = uniqueLeadNames.slice(0, 3).join(', ') + (uniqueLeadNames.length > 3 ? ` and ${uniqueLeadNames.length - 3} more` : '')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteSelected = () => {
     const ids = Array.from(new Set(selectedRows.map(r => r.business_id)))
     run(() => deleteLeadsEverywhere(ids), d => {
-      toast.success(`${d?.deleted ?? ids.length} lead(s) deleted with everything connected to them.`)
+      toast.success(ids.length === 1 ? 'Lead deleted successfully.' : `${d?.deleted ?? ids.length} leads deleted successfully.`)
       setConfirmDelete(false)
       setSelected([])
     }, { key: 'delete' })
@@ -687,15 +690,18 @@ export function LeadsManagement({
         onConfirm={deleteSelected}
         isPending={isPending('delete')}
         variant="danger"
-        title={`Delete ${new Set(selectedRows.map(r => r.business_id)).size} lead(s)?`}
-        confirmText="Delete everywhere"
+        title={deleteCount === 1 ? 'Delete Lead?' : `Delete ${deleteCount} Leads?`}
+        confirmText="Delete"
         message={
-          <div className="space-y-2 text-left">
-            <p className="font-medium text-slate-800">
-              {selectedRows.slice(0, 3).map(r => r.business_name).join(', ')}{selectedRows.length > 3 ? ` and ${selectedRows.length - 3} more` : ''}
+          <div className="space-y-1.5 text-center">
+            {leadSummary && (
+              <p className="font-semibold text-slate-800 text-sm">
+                {leadSummary}
+              </p>
+            )}
+            <p className="text-slate-500 text-xs">
+              Are you sure you want to permanently delete {deleteCount === 1 ? 'this lead' : 'these leads'}? This action cannot be undone.
             </p>
-            <p>Removes the lead and its pitches, conversations, campaign history, bookings and Client Audience. <b>This can&apos;t be undone.</b></p>
-            <p className="text-xs text-slate-500">Opt-outs are kept, so they&apos;re never contacted again.</p>
           </div>
         }
       />

@@ -3,13 +3,17 @@ import { SkeletonPage, Skeleton } from '@/components/Skeleton'
 // Shown instantly while conversation loads; the sidebar and top bar stay usable
 export default function ThreadLoading() {
   return (
-    <SkeletonPage label="Loading conversation">
+    <SkeletonPage label="Loading conversation" className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="space-y-2">
           <Skeleton className="h-6 w-56" />
           <Skeleton className="h-4 w-40" />
         </div>
         <Skeleton className="h-9 w-24" />
+      </div>
+      {/* Step row: First contact, Follow-up 1, Follow-up 2, Final check */}
+      <div className="card flex flex-wrap gap-4 !px-4 !py-2.5">
+        {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-4 w-24" />)}
       </div>
       <div className="card space-y-4">
         {[['w-2/3', ''], ['w-1/2', 'ml-auto'], ['w-3/5', ''], ['w-2/5', 'ml-auto']].map(([w, side], i) => (

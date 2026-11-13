@@ -60,8 +60,8 @@ BEGIN
             END IF;
 
             v_type := nullif(trim(x->>'business_type'), '');
-            IF v_type IS NOT NULL AND v_type NOT IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN
-                v_type := "sales-pipe".canonical_business_type(v_type);
+            IF v_type IS NULL OR v_type NOT IN ('Hotel', 'Restaurant or cafe', 'Pub', 'Property management') THEN
+                v_type := coalesce("sales-pipe".canonical_business_type(coalesce(v_type, v_name)), 'Restaurant or cafe');
             END IF;
 
             -- Website normalization

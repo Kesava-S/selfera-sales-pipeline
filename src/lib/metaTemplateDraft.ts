@@ -65,7 +65,7 @@ export function checkDraft(d: TemplateDraft): string[] {
     if (!b.text.trim()) out.push('Every button needs a label.')
     if (b.text.length > 25) out.push(`Button "${b.text}" is longer than 25 characters.`)
     if (b.type === 'URL' && !/^https:\/\//.test(b.url)) out.push(`Button "${b.text}" needs a link starting with https://.`)
-    if (b.type === 'PHONE_NUMBER' && !/^\+\d{8,15}$/.test(b.phone_number)) out.push(`Button "${b.text}" needs a phone number like +447911123456.`)
+    if (b.type === 'PHONE_NUMBER' && !/^\+\d{8,15}$/.test(b.phone_number)) out.push(`Button "${b.text}" needs a phone number with its country code, like +<country code><number>.`)
   }
   return out
 }

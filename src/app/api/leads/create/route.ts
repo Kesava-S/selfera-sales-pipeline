@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseAndValidatePhone } from '@/lib/contact'
-import { getPipelineSetting, getSalesLists } from '@/lib/dynamicData'
+import { getPipelineSetting, getSalesLists, applyPhoneDefaults } from '@/lib/dynamicData'
 
 export async function POST(request: Request) {
   try {
@@ -35,9 +35,10 @@ export async function POST(request: Request) {
     const cleanEmail = email?.trim() || null
     let normalizedWhatsapp: string | null = null
     if (whatsapp_number?.trim()) {
+      await applyPhoneDefaults()
       const pCheck = parseAndValidatePhone(whatsapp_number.trim())
       if (!pCheck.valid) {
-        return NextResponse.json({ error: pCheck.error || 'WhatsApp number must include country code (e.g. +44, 44, or 0...)' }, { status: 400 })
+        return NextResponse.json({ error: `WhatsApp: ${pCheck.error}` }, { status: 400 })
       }
       normalizedWhatsapp = pCheck.normalized
     }

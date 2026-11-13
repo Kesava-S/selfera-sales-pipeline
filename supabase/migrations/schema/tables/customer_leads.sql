@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS "sales-pipe"."customer_leads" (
     "id" uuid DEFAULT gen_random_uuid() NOT NULL,
     "business_id" uuid NOT NULL,
-    "country" text DEFAULT 'UK'::text NOT NULL,
+    "country" text,
     "first_name" text,
     "last_name" text,
     "email" text,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS "sales-pipe"."customer_leads" (
 -- Keys and checks
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_pkey" PRIMARY KEY (id);
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_birthday_month_check" CHECK (((birthday_month IS NULL) OR ((birthday_month >= 1) AND (birthday_month <= 12))));
-ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_country_check" CHECK ((country = ANY (ARRAY['UK'::text, 'India'::text])));
+ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_country_check" CHECK (((country IS NULL) OR (country ~ '^[A-Z]{2}$'::text)));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_email_check" CHECK (((email IS NULL) OR (email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'::text)));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_email_status_check" CHECK ((email_status = ANY (ARRAY['valid'::text, 'risky'::text, 'invalid'::text, 'disposable'::text, 'unknown'::text])));
 ALTER TABLE "sales-pipe"."customer_leads" ADD CONSTRAINT "customer_leads_has_identity" CHECK (((COALESCE(btrim(first_name), ''::text) <> ''::text) OR (email IS NOT NULL) OR (phone IS NOT NULL) OR (phone2 IS NOT NULL)));

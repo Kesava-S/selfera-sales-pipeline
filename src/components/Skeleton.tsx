@@ -223,3 +223,33 @@ export function CampaignsPageSkeleton({ rows = 4 }: { rows?: number }) {
     </>
   )
 }
+
+// A list of rows inside one card (notifications, integrations, replies)
+export function RowListSkeleton({ rows = 6, icon = true, action = true }: { rows?: number; icon?: boolean; action?: boolean }) {
+  return (
+    <div className="card divide-y divide-slate-100 overflow-hidden !p-0">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-4">
+          {icon && <Skeleton className="h-9 w-9 shrink-0 !rounded-xl" />}
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className={`h-4 ${['w-56', 'w-44', 'w-64', 'w-48'][i % 4]} max-w-full`} />
+            <Skeleton className={`h-3 ${['w-80', 'w-64', 'w-72', 'w-52'][i % 4]} max-w-full`} />
+          </div>
+          {action && <Skeleton className="hidden h-8 w-24 shrink-0 !rounded-[8px] sm:block" />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Campaign replies (email and WhatsApp): title, status tabs, filter, replies
+export function RepliesPageSkeleton() {
+  return (
+    <>
+      <PageHeaderSkeleton />
+      <TabsSkeleton count={3} />
+      <Skeleton className="h-5 w-40" />
+      <RowListSkeleton rows={5} icon={false} />
+    </>
+  )
+}

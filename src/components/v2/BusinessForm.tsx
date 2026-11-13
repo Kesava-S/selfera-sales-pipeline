@@ -70,7 +70,7 @@ export function BusinessForm({
     }
     if (v.whatsapp_number && typeof v.whatsapp_number === 'string' && v.whatsapp_number.trim()) {
       const w = parseAndValidatePhone(v.whatsapp_number.trim())
-      if (!w.valid) e.whatsapp_number = w.error ? w.error.replace(/^Phone/, 'WhatsApp') : 'Must include country code (e.g. +44, 44, or 0...)'
+      if (!w.valid) e.whatsapp_number = w.error || 'Not a valid phone number'
     }
 
     setErrors(e)

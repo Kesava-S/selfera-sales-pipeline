@@ -79,6 +79,8 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
   const key = process.env.GOOGLE_PLACES_API_KEY
   if (!key) throw new Error('Google Places is not set up: add GOOGLE_PLACES_API_KEY to .env.local.')
   const lists = await getSalesLists()
+  // Searches lean towards the default country from Settings, if one is set
+  const region = lists.phone?.country
 
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
@@ -92,7 +94,7 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
         'places.rating', 'places.userRatingCount', 'places.types', 'places.primaryTypeDisplayName', 'places.businessStatus',
       ].join(','),
     },
-    body: JSON.stringify({ textQuery: query, regionCode: 'GB', maxResultCount: 5 }),
+    body: JSON.stringify({ textQuery: query, ...(region ? { regionCode: region } : {}), maxResultCount: 5 }),
     signal: AbortSignal.timeout(10_000),
   })
   const json = await res.json().catch(() => ({}))

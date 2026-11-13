@@ -4,7 +4,7 @@ import { SkeletonPage, PageHeaderSkeleton, CardGridSkeleton } from '@/components
 export default function CustomerLeadsLoading() {
   return (
     <SkeletonPage label="Loading client audience">
-      <PageHeaderSkeleton actions={1} />
+      <PageHeaderSkeleton />
       <CardGridSkeleton count={6} />
     </SkeletonPage>
   )

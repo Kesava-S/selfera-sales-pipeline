@@ -1,5 +1,6 @@
 'use client'
 
+import { exampleNumber } from '@/lib/contact'
 import { useState, useEffect, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -1127,7 +1128,7 @@ export function MissingDataTab({
                                 <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-0.5">Business WhatsApp</span>
                                 <input
                                   className="input !py-1 text-xs w-full"
-                                  placeholder="07... or +44..."
+                                  placeholder={exampleNumber()}
                                   value={editSecondary}
                                   onChange={e => setEditSecondary(e.target.value)}
                                   onKeyDown={e => {
@@ -1421,18 +1422,18 @@ export function MissingDataTab({
         open={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
         locked={bulkActionBusy}
-        title={`Delete ${selected.length} leads?`}
+        title={selected.length === 1 ? 'Delete Lead?' : `Delete ${selected.length} Leads?`}
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Permanently delete {selected.length} leads?
+            Are you sure you want to permanently delete {selected.length === 1 ? 'this lead' : 'these leads'}? This action cannot be undone.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)} disabled={bulkActionBusy}>
               Cancel
             </button>
             <button className="btn btn-primary !bg-rose-600 hover:!bg-rose-700" disabled={bulkActionBusy} onClick={handleDelete}>
-              {bulkActionBusy && <Spinner />} {bulkActionBusy ? 'Deleting…' : 'Delete permanently'}
+              {bulkActionBusy && <Spinner />} {bulkActionBusy ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>

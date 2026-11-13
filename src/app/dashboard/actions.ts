@@ -11,6 +11,7 @@ import crypto from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
 import { parseAndValidatePhone } from '@/lib/contact'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import { emailSendBlocked } from '@/lib/emailBlock'
 import { INVITE_ROLES, type InviteRole, type Role } from '@/lib/config'
 
@@ -164,8 +165,9 @@ export async function updateBusiness(businessId: string, fields: Record<string, 
   if (typeof clean.room_count === 'string') clean.room_count = parseInt(clean.room_count as string) || null
 
   if (typeof clean.whatsapp_number === 'string' && clean.whatsapp_number) {
+    await applyPhoneDefaults()
     const waCheck = parseAndValidatePhone(clean.whatsapp_number as string)
-    if (!waCheck.valid) return { ok: false, error: waCheck.error ? `WhatsApp: ${waCheck.error}` : 'WhatsApp must include country code (e.g. +44, 44, or 0...)' } as ActionResult
+    if (!waCheck.valid) return { ok: false, error: `WhatsApp: ${waCheck.error}` } as ActionResult
     clean.whatsapp_number = waCheck.normalized
   }
 
@@ -663,8 +665,10 @@ export async function sendTestWhatsAppCampaign({
   message: string
   templateName?: string | null
 }): Promise<ActionResult> {
-  if (!to || to.replace(/\D/g, '').length < 7) {
-    return { ok: false, error: 'Enter a valid phone number with country code (e.g. +44 7123 456789 or +91 98765 43210).' }
+  await applyPhoneDefaults()
+  const toCheck = parseAndValidatePhone(to)
+  if (!to || !toCheck.valid || !toCheck.normalized) {
+    return { ok: false, error: toCheck.valid ? 'Enter a phone number.' : toCheck.error }
   }
   try {
     const { isWhatsAppConfigured, sendWhatsAppMessage } = await import('@/lib/whatsapp')

@@ -7,7 +7,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { actsAsSales } from '@/lib/config'
 import type { ActionResult } from '@/app/dashboard/actions'
-import { cleanCustomer, type CleanCustomer, type Country, type CustomerInput, COUNTRIES } from '@/lib/customerLeads'
+import { cleanCustomer, type CleanCustomer, type CustomerInput } from '@/lib/customerLeads'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import type { EmailCheck, EmailStatus } from '@/lib/emailCheck'
 
 const EMAIL_STATUSES: EmailStatus[] = ['valid', 'risky', 'invalid', 'disposable', 'unknown']
@@ -43,7 +44,6 @@ const done = (businessId: string) => {
   revalidatePath(`/dashboard/audience/${businessId}`)
 }
 
-const validCountry = (c: unknown): Country => (COUNTRIES.includes(c as Country) ? (c as Country) : 'UK')
 
 // ---------- One customer (form) ----------
 
@@ -51,12 +51,13 @@ export async function saveCustomerLead(
   businessId: string,
   id: string | null,
   input: CustomerInput,
-  opts: { country: Country; consent: boolean },
+  opts: { consent: boolean },
 ): Promise<ActionResult<{ id: string; problems: string[] }>> {
   const s = await staff()
   if ('error' in s) return { ok: false, error: s.error }
   if (!(await isWon(s.supabase, businessId))) return { ok: false, error: NOT_WON }
-  const { row, problems } = cleanCustomer(input, validCountry(opts.country))
+  await applyPhoneDefaults()
+  const { row, problems } = cleanCustomer(input)
   if (!row) return { ok: false, error: 'Add a name, an email or a phone number.' }
 
   const consent = opts.consent
@@ -118,13 +119,13 @@ export type ImportChunkResult = { batchId: string; created: number; updated: num
 export async function importCustomerLeads(
   businessId: string,
   rows: { row: number; input: CustomerInput }[],
-  opts: { country: Country; consent: boolean; duplicates: 'skip' | 'update'; fileName: string; batchId: string | null; emailChecks?: Record<string, EmailCheck> },
+  opts: { consent: boolean; duplicates: 'skip' | 'update'; fileName: string; batchId: string | null; emailChecks?: Record<string, EmailCheck> },
 ): Promise<ActionResult<ImportChunkResult>> {
   const s = await staff()
   if ('error' in s) return { ok: false, error: s.error }
   if (!opts.consent) return { ok: false, error: 'Confirm the client says these customers agreed to marketing.' }
   if (rows.length > 1000) return { ok: false, error: 'Too many rows in one go.' }
-  const country = validCountry(opts.country)
+  await applyPhoneDefaults()
   const supabase = s.supabase
 
   let batchId = opts.batchId
@@ -141,7 +142,7 @@ export async function importCustomerLeads(
   let skipped = 0
   const clean: { row: number; data: CleanCustomer }[] = []
   for (const r of rows) {
-    const { row } = cleanCustomer(r.input, country)
+    const { row } = cleanCustomer(r.input)
     if (row) clean.push({ row: r.row, data: row })
     else skipped++
   }

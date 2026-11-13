@@ -6,20 +6,20 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
-import { AlertTriangle, ArrowRight, CheckCircle2, Download, MessageCircle, Phone, Upload } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Download, Mail, MessageCircle, Phone, Upload, XCircle } from 'lucide-react'
 import { importCustomerLeads } from '@/app/dashboard/audience/actions'
 import {
-  autoMapColumns, cleanCustomer, missingFor, COUNTRIES, CSV_FIELDS, PHONE_TYPE_LABEL,
-  type CleanCustomer, type Country, type CustomerInput,
+  autoMapColumns, cleanCustomer, missingFor, CSV_FIELDS, PHONE_TYPE_LABEL,
+  type CleanCustomer, type CustomerInput,
 } from '@/lib/customerLeads'
 import { ErrorNote, InfoTip, Modal, Spinner, toast } from '@/components/ui'
-import { EmailCheckBadge, EmailCheckSummary, LeftOutLabel, LeftOutSummary, emailWorks, leftOutReason, useEmailListCheck } from '@/components/EmailCheck'
+import { LeftOutLabel, LeftOutSummary, EmailCheckSummary, emailWorks, leftOutReason, useEmailListCheck } from '@/components/EmailCheck'
 
 const MAX_ROWS = 5000
 const CHUNK = 500
 type Field = keyof CustomerInput
 
-const SAMPLE = 'First name,Last name,Email,Mobile,Landline,Town,Postcode,Last visit,Tags\nPriya,Shah,priya@example.com,07911 123456,,Leeds,LS1 4AP,14/09/2026,regular\n'
+const SAMPLE = 'name,email,phone_number,postcode,city\nPriya Shah,priya@example.com,07911 123456,LS1 4AP,Leeds\nJohn Smith,john@example.com,07123 456789,SW1A 1AA,London\n'
 
 export function CustomerImportModal({ open, onClose, businessId, businessName }: { open: boolean; onClose: () => void; businessId: string; businessName: string }) {
   const router = useRouter()
@@ -28,7 +28,6 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
   const [headers, setHeaders] = useState<string[]>([])
   const [raw, setRaw] = useState<Record<string, string>[]>([])
   const [map, setMap] = useState<Partial<Record<Field, string>>>({})
-  const [country, setCountry] = useState<Country>('UK')
   const [consent, setConsent] = useState(false)
   const [duplicates, setDuplicates] = useState<'skip' | 'update'>('skip')
   const [busy, setBusy] = useState(false)
@@ -73,7 +72,7 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
     let dupes = 0
     const phones = { mobile: 0, landline: 0, other: 0, invalid: 0, none: 0 }
     inputs.forEach((input, i) => {
-      const { row, problems } = cleanCustomer(input, country)
+      const { row, problems } = cleanCustomer(input)
       if (!row) { empty++; return }
       const key = row.email || row.phone_e164
       if (key && seen.has(key)) dupes++
@@ -87,7 +86,7 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
       rows.push({ row: i + 2, data: row, problems, missing: missingFor({ ...row, consent_confirmed: true }) })
     })
     return { rows, empty, dupes, phones, ready: rows.filter(r => !r.missing.length).length }
-  }, [step, inputs, country])
+  }, [step, inputs])
 
   // Email check (QuickEmailVerification) runs here, before anything is saved
   const checkEmails = useMemo(() => (check ? check.rows.map(r => r.data.email).filter(Boolean) as string[] : null), [check])
@@ -106,8 +105,9 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
   const readyToImport = check ? check.rows.filter(r => !r.missing.length && !leftOutRows.has(r.row)).length : 0
 
   const hasName = Boolean(map.first_name)
-  const hasContact = Boolean(map.email || map.phone || map.phone2)
-  const canProceed = hasName && hasContact
+  const hasEmail = Boolean(map.email)
+  const hasPhone = Boolean(map.phone)
+  const canProceed = hasName && hasEmail && hasPhone
 
   const runImport = async () => {
     setBusy(true); setError(null); setProgress(0)
@@ -122,7 +122,7 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
           const c = e ? emailCheck.results[e] : null
           return c ? [[e, c]] : []
         }))
-        const res = await importCustomerLeads(businessId, chunk, { country, consent, duplicates, fileName, batchId, emailChecks })
+        const res = await importCustomerLeads(businessId, chunk, { consent, duplicates, fileName, batchId, emailChecks })
         if (!res.ok) throw new Error(res.error)
         const d = res.data!
         batchId = d.batchId
@@ -157,12 +157,8 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
 
       {step === 1 && (
         <div className="space-y-4">
-          <div>
-            <label className="label">Where are these customers?</label>
-            <select className="input !w-auto" value={country} onChange={e => setCountry(e.target.value as Country)}>
-              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <p className="mt-1 text-xs text-slate-500">Numbers without +44 or +91 are read as this country. Numbers with a code keep their own.</p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
+            Phone numbers are checked for any country. Numbers without a country code are read as your default country (Settings).
           </div>
           <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center hover:border-primary hover:bg-primary-bg">
             <Upload size={28} className="text-slate-400" />
@@ -175,29 +171,27 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
       )}
 
       {step === 2 && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            <b>{fileName}</b> · {raw.length.toLocaleString('en-GB')} rows. Match each field to a column in your file. Required fields are marked with an asterisk (<span className="text-red-500 font-bold">*</span>). At least one contact method (Email or Phone) is required.
+            <b>{fileName}</b> · {raw.length.toLocaleString('en-GB')} rows. Match each field to a column in your file. Required fields are marked with an asterisk (<span className="text-red-500 font-bold">*</span>).
           </p>
-          <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {CSV_FIELDS.map(f => (
-              <div key={f.key} className="flex items-center gap-2">
-                <span className="w-40 shrink-0 text-sm font-medium text-slate-700">
+              <div key={f.key} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50/50 p-2.5">
+                <span className="text-sm font-medium text-slate-700">
                   {f.label}
                   {f.required && <span className="text-red-500 font-bold ml-0.5">*</span>}
                 </span>
-                <select className="input !py-1.5" value={map[f.key] ?? ''} onChange={e => setMap({ ...map, [f.key]: e.target.value || undefined })}>
-                  <option value="">Not in file</option>
+                <select className="input !py-1.5 !w-48" value={map[f.key] ?? ''} onChange={e => setMap({ ...map, [f.key]: e.target.value || undefined })}>
+                  <option value="">{f.required ? 'Select column...' : 'Not in file'}</option>
                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
               </div>
             ))}
           </div>
-          {(!hasName || !hasContact) && (
+          {(!hasName || !hasEmail || !hasPhone) && (
             <p className="text-sm text-amber-700">
-              {!hasName
-                ? 'Please match the First name column.'
-                : 'Please match at least one contact column (Email or Phone / mobile).'}
+              Please match all required columns: Name*, Email*, and Phone number (WhatsApp)*.
             </p>
           )}
           <div className="flex justify-between gap-2 pt-2">
@@ -232,22 +226,56 @@ export function CustomerImportModal({ open, onClose, businessId, businessName }:
           <LeftOutSummary count={leftOut.length} />
 
           <div className="table-wrap max-h-64 overflow-y-auto">
-            <table className="table">
-              <thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Phone</th><th>Check</th></tr></thead>
+            <table className="table text-xs w-full">
+              <thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Phone (WhatsApp)</th><th>Location</th><th>Check</th></tr></thead>
               <tbody>
                 {[...leftOut, ...check.rows.filter(r => !leftOutRows.has(r.row))].slice(0, 50).map(r => (
                   <tr key={r.row} className={leftOutRows.has(r.row) ? 'opacity-70' : ''}>
                     <td className="text-xs text-slate-400">{r.row}</td>
-                    <td>{[r.data.first_name, r.data.last_name].filter(Boolean).join(' ') || <span className="italic text-slate-400">No name</span>}</td>
-                    <td className="text-xs">{r.data.email ? <><div>{r.data.email}</div><EmailCheckBadge check={emailCheck.results[r.data.email.trim().toLowerCase()]} running={emailCheck.running} /></> : '-'}</td>
+                    <td className="font-medium text-slate-800">{[r.data.first_name, r.data.last_name].filter(Boolean).join(' ') || <span className="italic text-slate-400">No name</span>}</td>
                     <td className="text-xs">
-                      {r.data.phone || r.data.phone2 || '-'}
-                      {(r.data.phone_type || r.data.phone2_type) && <span className={`ml-1 font-semibold ${(r.data.phone_type ?? r.data.phone2_type) === 'invalid' ? 'text-red-600' : (r.data.phone_type ?? r.data.phone2_type) === 'mobile' ? 'text-sky-700' : 'text-slate-500'}`}>{PHONE_TYPE_LABEL[(r.data.phone_type ?? r.data.phone2_type)!].replace(' (free-phone, etc.)', '')}</span>}
-                      {r.data.country !== country && <span className="ml-1 text-violet-700">{r.data.country}</span>}
+                      {r.data.email ? (
+                        <div className="inline-flex items-center gap-1.5 text-slate-800">
+                          <Mail size={12} className="text-sky-600 shrink-0" />
+                          <span>{r.data.email}</span>
+                          {emailCheck.running && emailCheck.results[r.data.email.trim().toLowerCase()] === undefined ? (
+                            <Spinner size={10} />
+                          ) : emailCheck.results[r.data.email.trim().toLowerCase()]?.status === 'invalid' ||
+                            emailCheck.results[r.data.email.trim().toLowerCase()]?.status === 'disposable' ? (
+                            <XCircle size={12} className="text-rose-500 shrink-0" />
+                          ) : emailCheck.results[r.data.email.trim().toLowerCase()]?.status === 'risky' ? (
+                            <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+                          ) : (
+                            <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                          )}
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="text-xs">
+                      {r.data.phone || r.data.phone_e164 ? (
+                        <div className="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-800">
+                          <MessageCircle size={12} className="text-emerald-600 shrink-0" />
+                          <span>{r.data.phone_e164 || r.data.phone}</span>
+                          {r.data.phone_type === 'mobile' ? (
+                            <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                          ) : r.data.phone_type === 'landline' ? (
+                            <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+                          ) : (
+                            <XCircle size={12} className="text-rose-500 shrink-0" />
+                          )}
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="text-xs text-slate-600">
+                      {[r.data.postcode, r.data.town].filter(Boolean).join(', ') || <span className="text-slate-300">-</span>}
                     </td>
                     <td className="text-xs">
                       {leftOutRows.has(r.row) ? <><LeftOutLabel /><div className="text-[11px] text-slate-500">{reasonFor(r)}</div></>
-                        : r.missing.length ? <span className="text-amber-700">Missing: {r.missing.join(', ')}</span> : <span className="text-emerald-700">Ready</span>}
+                        : r.missing.length ? <span className="text-amber-700 font-semibold">Missing: {r.missing.join(', ')}</span> : <span className="text-emerald-700 font-semibold inline-flex items-center gap-1"><CheckCircle2 size={12} /> Ready</span>}
                       {r.problems.length > 0 && <div className="text-red-600">{r.problems.join('; ')}</div>}
                     </td>
                   </tr>

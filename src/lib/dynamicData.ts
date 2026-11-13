@@ -1,3 +1,4 @@
+import { setPhoneDefaults } from '@/lib/contact'
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -143,10 +144,11 @@ export async function getDynamicPlatforms(): Promise<DynamicPlatform[]> {
  * Cached across requests for 5 minutes with fallback to static defaults.
  */
 const fetchSalesLists = async (): Promise<SalesLists> => {
-  const [services, platforms, categories] = await Promise.all([
+  const [services, platforms, categories, phone] = await Promise.all([
     getDynamicServices(),
     getDynamicPlatforms(),
     getDynamicCategories(),
+    fetchPipelineSetting('phone_defaults'),
   ])
   return {
     services: services.map(s => s.name),
@@ -160,12 +162,24 @@ const fetchSalesLists = async (): Promise<SalesLists> => {
       icon_name: c.icon_name,
       synonyms: c.synonyms || [],
     })),
+    phone: {
+      country: typeof phone?.country === 'string' ? phone.country : null,
+      first: Array.isArray(phone?.first) ? phone.first.filter((c: unknown) => typeof c === 'string') : [],
+    },
   }
+}
+
+// Server code that reads phone numbers calls this first, so numbers without a
+// country code are read as the default country from Settings
+export async function applyPhoneDefaults(): Promise<void> {
+  const lists = await getSalesLists()
+  setPhoneDefaults(lists.phone.country)
 }
 
 export const getSalesLists = unstable_cache(
   fetchSalesLists,
-  ['sales-lists'],
+  // v2: lists now carry the phone defaults
+  ['sales-lists-v2'],
   { revalidate: 300, tags: ['sales-lists'] }
 )
 

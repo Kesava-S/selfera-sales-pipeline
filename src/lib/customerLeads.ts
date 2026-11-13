@@ -1,12 +1,11 @@
 // Client Audience: shared types, phone checks and CSV fields.
 // Used by both the screens (preview) and the server actions (which decide).
 
-import { parsePhoneNumberFromString } from 'libphonenumber-js/max'
 import type { EmailStatus } from '@/lib/emailCheck'
+import { checkNumber } from '@/lib/contact'
 
-export type Country = 'UK' | 'India'
-export const COUNTRIES: Country[] = ['UK', 'India']
-const REGION: Record<Country, 'GB' | 'IN'> = { UK: 'GB', India: 'IN' }
+// A customer's country is read from their phone number (two-letter code, e.g. "GB"); null when unknown
+export type Country = string
 
 export type PhoneType = 'mobile' | 'landline' | 'mobile_or_landline' | 'other' | 'invalid'
 export type WhatsAppStatus = 'unknown' | 'likely' | 'confirmed' | 'not_on_whatsapp' | 'no_mobile'
@@ -29,22 +28,13 @@ export const WHATSAPP_LABEL: Record<WhatsAppStatus, string> = {
 
 export type PhoneCheck = { e164: string | null; type: PhoneType; country: Country | null }
 
-// What kind of number this is. Numbers without +44 / +91 are read as the given country.
-export function checkPhone(raw: string | null | undefined, country: Country): PhoneCheck | null {
-  const value = raw?.trim()
-  if (!value) return null
-  const p = parsePhoneNumberFromString(value.replace(/^00/, '+'), REGION[country])
-  if (!p || !p.isValid()) return { e164: null, type: 'invalid', country: null }
-  // +44 also covers Guernsey, Jersey and the Isle of Man
-  const found: Country | null = p.countryCallingCode === '44' ? 'UK' : p.countryCallingCode === '91' ? 'India' : null
-  if (!found) return { e164: p.number, type: 'invalid', country: null }
-  const t = p.getType()
-  const type: PhoneType =
-    t === 'MOBILE' ? 'mobile'
-      : t === 'FIXED_LINE' ? 'landline'
-        : t === 'FIXED_LINE_OR_MOBILE' ? 'mobile_or_landline'
-          : 'other'
-  return { e164: p.number, type, country: found }
+// What kind of number this is (any country). Numbers without a country code are
+// read as the default country from Settings.
+export function checkPhone(raw: string | null | undefined): PhoneCheck | null {
+  const c = checkNumber(raw)
+  if (c.kind === 'empty') return null
+  if (!c.valid) return { e164: null, type: 'invalid', country: null }
+  return { e164: c.e164, type: c.kind === 'invalid' ? 'invalid' : c.kind, country: c.country }
 }
 
 // Meta has no lookup for whether a number is on WhatsApp: a mobile is "likely"
@@ -65,7 +55,7 @@ export type CustomerLead = {
   email_role?: boolean | null
   id: string
   business_id: string
-  country: Country
+  country: Country | null
   first_name: string | null
   last_name: string | null
   email: string | null
@@ -123,18 +113,11 @@ export type CustomerInput = {
 }
 
 export const CSV_FIELDS: { key: keyof CustomerInput; label: string; hints: string[]; required?: boolean }[] = [
-  { key: 'first_name', label: 'First name', hints: ['first name', 'firstname', 'first', 'forename', 'given name', 'name', 'full name', 'customer name', 'customer'], required: true },
-  { key: 'last_name', label: 'Last name', hints: ['last name', 'lastname', 'surname', 'family name'] },
+  { key: 'first_name', label: 'Name', hints: ['name', 'full name', 'customer name', 'customer', 'first name', 'firstname', 'given name', 'forename'], required: true },
   { key: 'email', label: 'Email', hints: ['email', 'e-mail', 'email address', 'mail'], required: true },
-  { key: 'phone', label: 'Phone / mobile', hints: ['mobile', 'phone', 'mobile number', 'phone number', 'whatsapp', 'cell', 'contact number', 'tel', 'telephone'], required: true },
-  { key: 'phone2', label: 'Second phone', hints: ['landline', 'home phone', 'work phone', 'phone 2', 'second phone', 'other phone', 'alternate phone'] },
-  { key: 'town', label: 'Town / city', hints: ['town', 'city', 'area', 'location'] },
-  { key: 'postcode', label: 'Postcode / PIN', hints: ['postcode', 'post code', 'zip', 'pincode', 'pin code', 'pin'] },
-  { key: 'last_purchase_on', label: 'Last visit / purchase', hints: ['last visit', 'last purchase', 'last order', 'visit date', 'purchase date', 'last booking'] },
-  { key: 'purchased', label: 'What they bought', hints: ['purchased', 'product', 'service', 'bought', 'item'] },
-  { key: 'birthday_month', label: 'Birthday month', hints: ['birthday', 'birthday month', 'dob', 'date of birth'] },
-  { key: 'tags', label: 'Tags', hints: ['tags', 'tag', 'segment', 'group', 'type'] },
-  { key: 'notes', label: 'Notes', hints: ['notes', 'note', 'comments', 'comment'] },
+  { key: 'phone', label: 'Phone number (WhatsApp)', hints: ['phone number (whatsapp)', 'phone number(whatsapp)', 'whatsapp', 'phone number', 'phone', 'mobile number', 'mobile', 'cell', 'contact number', 'tel', 'telephone'], required: true },
+  { key: 'postcode', label: 'Postcode', hints: ['postcode', 'post code', 'zip', 'zipcode', 'postal code'], required: false },
+  { key: 'town', label: 'City', hints: ['city', 'town', 'area', 'location'], required: false },
 ]
 
 const norm = (s: string) => s.toLowerCase().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim()
@@ -211,7 +194,7 @@ export type CleanCustomer = {
   phone2_e164: string | null
   phone2_type: PhoneType | null
   whatsapp_status: WhatsAppStatus
-  country: Country
+  country: Country | null
   town: string | null
   postcode: string | null
   last_purchase_on: string | null
@@ -222,7 +205,7 @@ export type CleanCustomer = {
 }
 
 // Tidies one customer and works out the phone details. Null when there is nothing to save.
-export function cleanCustomer(input: CustomerInput, country: Country): { row: CleanCustomer | null; problems: string[] } {
+export function cleanCustomer(input: CustomerInput): { row: CleanCustomer | null; problems: string[] } {
   const problems: string[] = []
   const [first_name, last_name] = names(input.first_name, input.last_name)
   let email = text(input.email)?.toLowerCase() ?? null
@@ -230,10 +213,10 @@ export function cleanCustomer(input: CustomerInput, country: Country): { row: Cl
 
   const phone = text(input.phone)
   const phone2 = text(input.phone2)
-  const p1 = checkPhone(phone, country)
-  const p2 = checkPhone(phone2, country)
-  if (p1?.type === 'invalid') problems.push(`"${phone}" is not a valid ${country} number`)
-  if (p2?.type === 'invalid') problems.push(`"${phone2}" is not a valid ${country} number`)
+  const p1 = checkPhone(phone)
+  const p2 = checkPhone(phone2)
+  if (p1?.type === 'invalid') problems.push(`"${phone}" is not a valid phone number`)
+  if (p2?.type === 'invalid') problems.push(`"${phone2}" is not a valid phone number`)
 
   if (!first_name && !email && !phone && !phone2) return { row: null, problems: ['Empty row'] }
 
@@ -248,8 +231,8 @@ export function cleanCustomer(input: CustomerInput, country: Country): { row: Cl
       phone, phone_e164: p1?.type === 'invalid' ? null : p1?.e164 ?? null, phone_type: p1?.type ?? null,
       phone2, phone2_e164: p2?.type === 'invalid' ? null : p2?.e164 ?? null, phone2_type: p2?.type ?? null,
       whatsapp_status: whatsappFrom(p1, p2),
-      // A number with +44 / +91 decides the country; otherwise the one picked
-      country: p1?.country ?? p2?.country ?? country,
+      // Read from the phone number
+      country: p1?.country ?? p2?.country ?? null,
       town: text(input.town),
       postcode: text(input.postcode)?.toUpperCase() ?? null,
       last_purchase_on,

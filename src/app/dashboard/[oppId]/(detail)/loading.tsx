@@ -12,11 +12,12 @@ export default function BusinessLoading() {
           </div>
           <Skeleton className="h-4 w-72 max-w-[70vw]" />
         </div>
-        <div className="flex gap-2">
-          {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-9 w-32 !rounded-[10px]" />)}
+        {/* Six action buttons, wrapping under the title like the real page */}
+        <div className="flex flex-wrap gap-2">
+          {['w-32', 'w-28', 'w-40', 'w-28', 'w-28', 'w-28'].map((w, i) => <Skeleton key={i} className={`h-9 ${w} !rounded-[10px]`} />)}
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 2xl:grid-cols-4">
         <div className="space-y-6">
           {Array.from({ length: 2 }, (_, i) => (
             <div key={i} className="card space-y-4">
@@ -30,8 +31,9 @@ export default function BusinessLoading() {
             </div>
           ))}
         </div>
-        <div className="space-y-6 lg:col-span-2">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2 2xl:col-span-3">
+          <Skeleton className="h-5 w-24" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {Array.from({ length: 3 }, (_, i) => (
               <div key={i} className="card space-y-3 !p-4">
                 <Skeleton className="h-5 w-28" />

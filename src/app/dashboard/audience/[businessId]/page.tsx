@@ -5,6 +5,7 @@ import { actsAsSales } from '@/lib/config'
 import { BreadcrumbSetter } from '@/components/BreadcrumbSetter'
 import { CustomersView, type CustomerFilters, type CustomerTab } from '@/components/customers/CustomersView'
 import { EmptyState } from '@/components/ui'
+import { isCountryCode } from '@/lib/contact'
 import type { CustomerLead } from '@/lib/customerLeads'
 import { AudienceCampaigns, type AudienceCampaignRow } from '@/components/customers/AudienceCampaigns'
 
@@ -58,7 +59,7 @@ export default async function ClientCustomersPage({
     tab: TABS.includes(sp.tab as CustomerTab) ? (sp.tab as CustomerTab) : 'all',
     q: sp.q?.trim() || '',
     phone: ['mobile', 'landline', 'invalid', 'none'].includes(sp.phone || '') ? sp.phone! : '',
-    country: sp.country === 'UK' || sp.country === 'India' ? sp.country : '',
+    country: isCountryCode(sp.country) ? sp.country : '',
   }
   const page = Math.max(1, Number(sp.page) || 1)
 
@@ -104,6 +105,10 @@ export default async function ClientCustomersPage({
   const tags = [...new Set((tagRows || []).flatMap(r => (r as { tags: string[] }).tags))].sort((a, z) => a.localeCompare(z))
   const settings = { dpaSignedOn: client?.dpa_signed_on ?? null, senderName: client?.sender_name ?? '', replyTo: client?.reply_to ?? '' }
 
+  // Countries found in this client's customer numbers (for the country filters)
+  const { data: countryRows } = await supabase.from('customer_leads').select('country').eq('business_id', businessId).not('country', 'is', null).limit(5000)
+  const countries = [...new Set((countryRows || []).map(r => r.country as string))].sort()
+
   return (
     <>
       <BreadcrumbSetter
@@ -125,6 +130,7 @@ export default async function ClientCustomersPage({
         isAdmin={profile.role === 'admin'}
         meId={profile.id}
         pendingImports={batches || []}
+        countries={countries}
       >
         {view === 'campaigns' && (
           <AudienceCampaigns
@@ -134,6 +140,7 @@ export default async function ClientCustomersPage({
             settings={settings}
             campaigns={campaigns}
             tags={tags}
+            countries={countries}
           />
         )}
       </CustomersView>

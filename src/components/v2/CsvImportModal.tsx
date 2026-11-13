@@ -15,12 +15,13 @@ import {
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
-  ArrowRight,
   Phone,
   Mail,
   MessageSquare,
   Copy,
   Lightbulb,
+  XCircle,
+  HelpCircle,
 } from 'lucide-react'
 import { useLists } from '@/components/ListsContext'
 import {
@@ -60,7 +61,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   const [progress, setProgress] = useState('')
   const [progressPercent, setProgressPercent] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [previewFilter, setPreviewFilter] = useState<'all' | 'ready' | 'missing' | 'left_out'>('all')
+  const [previewFilter, setPreviewFilter] = useState<'all' | 'ready' | 'missing' | 'left_out' | 'invalid_wa'>('all')
   const [result, setResult] = useState<{
     batchId?: string
     created: number
@@ -227,6 +228,22 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
     [builtRows]
   )
   const duplicatesCount = matches.length
+  const whatsAppRows = useMemo(
+    () => builtRows.filter(r => r.data.whatsapp_number || r.data.owner_whatsapp || r.phoneInfo?.normalized),
+    [builtRows]
+  )
+  const whatsAppValidCount = useMemo(
+    () => builtRows.filter(r => r.phoneInfo?.isWhatsApp).length,
+    [builtRows]
+  )
+  const whatsAppInvalidCount = useMemo(
+    () => builtRows.filter(r => (r.data.whatsapp_number || r.data.owner_whatsapp) && r.phoneInfo?.type === 'invalid').length,
+    [builtRows]
+  )
+  const whatsAppLandlineCount = useMemo(
+    () => builtRows.filter(r => (r.data.whatsapp_number || r.data.owner_whatsapp) && r.phoneInfo?.type === 'landline').length,
+    [builtRows]
+  )
   const whatsAppReadyCount = useMemo(
     () => builtRows.filter(r => !r.isCannotImport && r.phoneInfo?.isWhatsApp).length,
     [builtRows]
@@ -240,6 +257,9 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
 
   const filteredRows = (() => {
     if (previewFilter === 'left_out') return leftOutRows
+    if (previewFilter === 'invalid_wa') {
+      return builtRows.filter(r => (r.data.whatsapp_number || r.data.owner_whatsapp) && r.phoneInfo?.type === 'invalid')
+    }
     const importable = builtRows.filter(r => !r.isCannotImport && !noContact(r))
     if (previewFilter === 'ready') return importable.filter(r => r.isReady && !duplicateIdxSet.has(r.idx))
     if (previewFilter === 'missing') return importable.filter(r => r.isMissingData && !duplicateIdxSet.has(r.idx))
@@ -279,6 +299,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           services: r.services,
           branches: r.data.branches,
           ...r.data,
+          business_type: r.data.business_type || lists.categories[0]?.name || 'Restaurant or cafe',
           email_check: emailCheckFor(r.emailInfo?.email) ?? null,
         }
       })
@@ -339,7 +360,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
       const errMsg = `${e instanceof Error ? e.message : 'Import failed'}. Any rows saved before this failure were kept.`
       setError(errMsg)
       toast.error(errMsg)
-      if (total.created + total.updated + total.pitches > 0) {
+      if (total.ready + total.missing > 0 || total.created + total.updated + total.pitches > 0) {
         setResult(total)
       }
     } finally {
@@ -595,6 +616,37 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             </div>
           </div>
 
+          {/* WhatsApp Check Summary */}
+          {whatsAppRows.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                  <MessageSquare size={14} className="text-emerald-600" />
+                  WhatsApp Numbers
+                  <InfoTip align="left" text="Checked for valid country code and mobile format. Only verified mobile numbers are marked WhatsApp Ready." />
+                </span>
+                <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                  <CheckCircle2 size={12} /> {whatsAppValidCount} valid
+                </span>
+                {whatsAppInvalidCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFilter(f => (f === 'invalid_wa' ? 'all' : 'invalid_wa'))}
+                    className="inline-flex items-center gap-1 text-rose-600 font-medium hover:underline cursor-pointer"
+                    title="Click to filter invalid WhatsApp numbers in preview"
+                  >
+                    <XCircle size={12} /> {whatsAppInvalidCount} invalid
+                  </button>
+                )}
+                {whatsAppLandlineCount > 0 && (
+                  <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                    <AlertTriangle size={12} /> {whatsAppLandlineCount} landline (no WA)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           <EmailCheckSummary c={emailCheck} />
 
           {/* Duplicates Resolution Section (if any) */}
@@ -730,6 +782,19 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     Left out ({leftOutCount})
                   </button>
                 )}
+                {whatsAppInvalidCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFilter(f => (f === 'invalid_wa' ? 'all' : 'invalid_wa'))}
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                      previewFilter === 'invalid_wa'
+                        ? 'bg-rose-700 text-white shadow-xs'
+                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                    }`}
+                  >
+                    Invalid WA ({whatsAppInvalidCount})
+                  </button>
+                )}
               </div>
               <span className="text-slate-500 text-[11px]">
                 {previewFilter !== 'all' ? (
@@ -750,9 +815,9 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                     <th className="w-12 text-center">Row</th>
                     <th className="w-1/4">Business</th>
                     <th className="w-20">Postcode</th>
-                    <th className="w-1/4">Contact (WA / Email)</th>
+                    <th className="w-1/3">Contact (WA / Email)</th>
                     <th className="w-1/6">Services</th>
-                    <th className="w-1/6">Status</th>
+                    <th className="w-28">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -782,46 +847,90 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                             {r.data.postcode || <span className="text-slate-300">-</span>}
                           </td>
                           <td>
-                            <div className="flex flex-col gap-0.5">
-                              {r.phoneInfo?.isWhatsApp ? (
-                                <span
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 truncate"
-                                  title={r.phoneInfo.label}
-                                >
-                                  <MessageSquare size={12} className="text-emerald-600 shrink-0" />
-                                  <span className="truncate">{r.data.whatsapp_number || r.phoneInfo.normalized}</span>
-                                </span>
-                              ) : r.phoneInfo?.type === 'landline' ? (
-                                <span
-                                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 truncate"
-                                  title="Landline (Cannot receive WhatsApp)"
-                                >
-                                  <Phone size={12} className="text-slate-400 shrink-0" />
-                                  <span className="truncate">{r.data.whatsapp_number || r.phoneInfo.normalized} (No WA)</span>
-                                </span>
+                            <div className="flex flex-col gap-1 text-xs">
+                              {/* WhatsApp: displayed by icons only, no badge background */}
+                              {r.data.whatsapp_number || r.data.owner_whatsapp || r.phoneInfo?.normalized ? (
+                                r.phoneInfo?.isWhatsApp ? (
+                                  <div
+                                    className="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-800"
+                                    title={r.phoneInfo.label || 'WhatsApp Ready'}
+                                  >
+                                    <MessageSquare size={13} className="text-emerald-600 shrink-0" />
+                                    <span className="truncate">
+                                      {r.phoneInfo.normalized || r.data.whatsapp_number || r.data.owner_whatsapp}
+                                    </span>
+                                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                  </div>
+                                ) : r.phoneInfo?.type === 'landline' ? (
+                                  <div
+                                    className="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-600"
+                                    title={r.phoneInfo.label || 'Landline (Cannot receive WhatsApp)'}
+                                  >
+                                    <Phone size={13} className="text-amber-500 shrink-0" />
+                                    <span className="truncate">
+                                      {r.data.whatsapp_number || r.data.owner_whatsapp}
+                                    </span>
+                                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="inline-flex items-center gap-1.5 font-mono text-[11px] text-rose-600"
+                                    title={r.phoneInfo?.label || 'Invalid phone number format'}
+                                  >
+                                    <MessageSquare size={13} className="text-rose-500 shrink-0" />
+                                    <span className="truncate">
+                                      {r.data.whatsapp_number || r.data.owner_whatsapp}
+                                    </span>
+                                    <XCircle size={13} className="text-rose-500 shrink-0" />
+                                  </div>
+                                )
                               ) : null}
 
-                              {r.emailInfo?.isValid ? (
-                                <span
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 truncate"
-                                  title="Valid email address"
+                              {/* Email: displayed by icons only, no badge background */}
+                              {r.emailInfo?.hasEmail ? (
+                                <div
+                                  className={`inline-flex items-center gap-1.5 text-[11px] ${
+                                    emailCheckFor(r.emailInfo.email)?.status === 'invalid' ||
+                                    emailCheckFor(r.emailInfo.email)?.status === 'disposable' ||
+                                    !r.emailInfo.isValid
+                                      ? 'text-rose-600'
+                                      : 'text-slate-800'
+                                  }`}
+                                  title={
+                                    emailCheckFor(r.emailInfo.email)?.reason ||
+                                    (!r.emailInfo.isValid ? 'Invalid email syntax' : 'Email valid')
+                                  }
                                 >
-                                  <Mail size={12} className="text-sky-600 shrink-0" />
-                                  <span className="truncate max-w-[130px]">{r.emailInfo.email}</span>
-                                  <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
-                                </span>
-                              ) : r.emailInfo?.hasEmail ? (
-                                <span
-                                  className="inline-flex items-center gap-1.5 text-xs text-amber-700 truncate"
-                                  title="Invalid email syntax"
-                                >
-                                  <Mail size={12} className="text-amber-500 shrink-0" />
-                                  <span className="truncate max-w-[130px]">{r.emailInfo.email}</span>
-                                  <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
-                                </span>
+                                  <Mail
+                                    size={13}
+                                    className={
+                                      emailCheckFor(r.emailInfo.email)?.status === 'invalid' ||
+                                      emailCheckFor(r.emailInfo.email)?.status === 'disposable' ||
+                                      !r.emailInfo.isValid
+                                        ? 'text-rose-500 shrink-0'
+                                        : emailCheckFor(r.emailInfo.email)?.status === 'risky'
+                                        ? 'text-amber-500 shrink-0'
+                                        : 'text-sky-600 shrink-0'
+                                    }
+                                  />
+                                  <span className="truncate max-w-[150px]">{r.emailInfo.email}</span>
+                                  {emailCheck.running && emailCheckFor(r.emailInfo.email) === undefined ? (
+                                    <Spinner size={10} />
+                                  ) : !r.emailInfo.isValid ||
+                                    emailCheckFor(r.emailInfo.email)?.status === 'invalid' ||
+                                    emailCheckFor(r.emailInfo.email)?.status === 'disposable' ? (
+                                    <XCircle size={13} className="text-rose-500 shrink-0" />
+                                  ) : emailCheckFor(r.emailInfo.email)?.status === 'risky' ? (
+                                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                                  ) : emailCheckFor(r.emailInfo.email)?.status === 'unknown' ? (
+                                    <HelpCircle size={13} className="text-slate-400 shrink-0" />
+                                  ) : (
+                                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                  )}
+                                </div>
                               ) : null}
 
-                              {!r.phoneInfo?.normalized && !r.data.whatsapp_number && !r.emailInfo?.hasEmail && (
+                              {!r.data.whatsapp_number && !r.data.owner_whatsapp && !r.emailInfo?.hasEmail && (
                                 <span className="text-slate-400 italic text-xs">None</span>
                               )}
                             </div>
@@ -922,94 +1031,37 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
               <p className="text-xs text-slate-500">Do not close this window until the import completes.</p>
             </div>
           ) : result ? (
-            <div className="space-y-6">
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5 text-center">
-                <CheckCircle2 size={36} className="mx-auto text-emerald-600 mb-2" />
-                <h3 className="text-lg font-bold text-slate-900">Import complete</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {result.created + result.updated + result.pitches} lead
-                  {result.created + result.updated + result.pitches === 1 ? '' : 's'} imported from <b>{fileName}</b>.
-                </p>
-              </div>
-
-              {/* Destination Breakdown */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
-                  <div className="text-3xl font-bold text-emerald-800">{result.ready}</div>
-                  <div className="font-semibold text-slate-800 mt-1">Sent to Approval queue</div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    All 10 required checks passed. Ready for review and outreach approval.
-                  </p>
-                  <button
-                    className="btn btn-primary mt-4 w-full justify-center !py-2 text-sm"
-                    onClick={() => {
-                      close()
-                      router.push('/dashboard/leads?tab=review')
-                    }}
-                  >
-                    Open Approval queue <ArrowRight size={14} />
-                  </button>
+            (() => {
+              const importedCount = (result.ready + result.missing) || (result.created + result.updated + result.pitches)
+              return (
+                <div className="space-y-6 text-center py-6">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-slate-900">Import successfully</h3>
+                    <p className="text-sm text-slate-600">
+                      {importedCount > 0 ? (
+                        <>
+                          {importedCount.toLocaleString('en-GB')} lead{importedCount === 1 ? '' : 's'} imported from <b>{fileName}</b>.
+                        </>
+                      ) : (
+                        <>Import completed from <b>{fileName}</b>.</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      className="btn btn-primary px-6 py-2 text-sm"
+                      onClick={close}
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
-
-                <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-                  <div className="text-3xl font-bold text-amber-800">{result.missing}</div>
-                  <div className="font-semibold text-slate-800 mt-1">In Missing data</div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Incomplete fields highlighted with red borders. Fix details inline to send them to the Approval queue.
-                  </p>
-                  <button
-                    className="btn btn-secondary mt-4 w-full justify-center !py-2 text-sm"
-                    onClick={() => {
-                      close()
-                      router.push('/dashboard/leads?tab=missing')
-                    }}
-                  >
-                    Open Missing data <ArrowRight size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Extra summary metrics */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                    Clean data: <b>{cleanDataCount} ({cleanPercent}%)</b>
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span>WhatsApp: <b>{whatsAppReadyCount}</b></span>
-                  <span className="text-slate-300">•</span>
-                  <span>Email: <b>{emailReadyCount}</b></span>
-                  {result.updated > 0 && (
-                    <>
-                      <span className="text-slate-300">•</span>
-                      <span>Updated: {result.updated}</span>
-                    </>
-                  )}
-                  {result.pitches > 0 && (
-                    <>
-                      <span className="text-slate-300">•</span>
-                      <span>New pitches: {result.pitches}</span>
-                    </>
-                  )}
-                  {result.skipped > 0 && (
-                    <>
-                      <span className="text-slate-300">•</span>
-                      <span>Skipped: {result.skipped}{result.leftOut ? ` (${result.leftOut} with no WhatsApp or working email)` : ''}</span>
-                    </>
-                  )}
-                  {result.failed > 0 && (
-                    <>
-                      <span className="text-slate-300">•</span>
-                      <span className="text-rose-600">Failed: {result.failed}</span>
-                    </>
-                  )}
-                </div>
-                <button className="text-primary font-semibold hover:text-primary-hover" onClick={close}>
-                  Close
-                </button>
-              </div>
-            </div>
+              )
+            })()
           ) : (
             <div className="space-y-4">
               <ErrorNote error={error || 'An unexpected error occurred during import.'} />

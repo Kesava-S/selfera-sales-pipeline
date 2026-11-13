@@ -1,5 +1,6 @@
 'use client'
 
+import { exampleNumber } from '@/lib/contact'
 import { useState, useMemo, useCallback } from 'react'
 import {
   MessageSquare,
@@ -365,7 +366,7 @@ export function WhatsAppCampaignsView({
     return {
       business_name: 'The Crown Hotel',
       contact_name: 'Alex Morgan',
-      whatsapp_number: '+44 7960 722425',
+      whatsapp_number: exampleNumber(),
     }
   }, [activeSelectedDb])
 
@@ -1304,12 +1305,12 @@ export function WhatsAppCampaignsView({
                 /* Mode B: Paste */
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                   <p className="text-xs text-slate-500">
-                    Paste contacts (one per line). Format: <code>Business Name, +447123456789, Contact Name</code> or simply <code>+447123456789</code>
+                    Paste contacts (one per line). Format: <code>Business Name, {exampleNumber('e164')}, Contact Name</code> or simply <code>+447123456789</code>
                   </p>
                   <textarea
                     rows={4}
                     className="input font-mono !text-xs"
-                    placeholder="Grand Hotel, +447960722425, John Doe&#10;Cafe Nero, +447911123456"
+                    placeholder={`Grand Hotel, ${exampleNumber('e164')}, John Doe`}
                     value={pasteInput}
                     onChange={e => setPasteInput(e.target.value)}
                   />
@@ -1410,7 +1411,7 @@ export function WhatsAppCampaignsView({
               <input
                 type="tel"
                 className="input"
-                placeholder="+44 7960 722425"
+                placeholder={exampleNumber()}
                 value={testPhone}
                 onChange={e => {
                   setTestPhone(e.target.value)

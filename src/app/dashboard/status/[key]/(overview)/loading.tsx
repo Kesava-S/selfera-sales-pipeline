@@ -1,11 +1,12 @@
-import { SkeletonPage, PageHeaderSkeleton, CardGridSkeleton } from '@/components/Skeleton'
+import { SkeletonPage } from '@/components/Skeleton'
+import { StatusOverviewSkeleton } from '@/components/StatusSkeletons'
 
-// Shown instantly while pipeline status loads; the sidebar and top bar stay usable
+// Shown instantly while a status page loads; its shape follows the status
+// (Off-target leads has its own layout)
 export default function StatusLoading() {
   return (
     <SkeletonPage label="Loading pipeline status">
-      <PageHeaderSkeleton />
-      <CardGridSkeleton count={4} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" />
+      <StatusOverviewSkeleton />
     </SkeletonPage>
   )
 }

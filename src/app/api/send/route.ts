@@ -3,7 +3,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getSendRule, needsPecrConfirm } from '@/lib/sending'
 import { getDynamicApiPlatforms } from '@/lib/integrations'
-import { ukToInternational } from '@/lib/contact'
+import { internationalDigits } from '@/lib/contact'
+import { applyPhoneDefaults } from '@/lib/dynamicData'
 import { sendEmail } from '@/lib/mailer'
 import { isWhatsAppConfigured, sendWhatsAppMessage } from '@/lib/whatsapp'
 import { isDualWriteEnabled, replicateRpcToSecondary } from '@/lib/dual-write'
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
 
   const to =
     thread.platform === 'Email' ? b?.email
-      : thread.platform === 'WhatsApp' ? ukToInternational(b?.whatsapp_number)
+      : thread.platform === 'WhatsApp' ? (await applyPhoneDefaults(), internationalDigits(b?.whatsapp_number))
         : thread.external_thread_id || (thread.platform === 'Instagram' ? b?.instagram : b?.facebook)
   if (!to) return NextResponse.json({ error: `No ${thread.platform} contact saved for this business.` }, { status: 422 })
 
