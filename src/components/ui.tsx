@@ -2,6 +2,7 @@
 
 // Small shared pieces used across the dashboard
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 export { Preloader, LogoPreloader, ButtonSpinner, CircleLoader } from '@/components/Preloader'
@@ -139,7 +140,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
   useScrollLock(mounted)
 
   if (!mounted) return null
-  return (
+  const content = (
     <div
       className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs ${closing ? 'motion-backdrop-out' : 'motion-backdrop-in'}`}
       onMouseDown={requestClose}
@@ -165,6 +166,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
       </div>
     </div>
   )
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content
 }
 
 // ---------- Confirm Modal ----------
@@ -216,7 +218,7 @@ export function ConfirmModal({
     },
   }[variant]
 
-  return (
+  const content = (
     <div
       className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 sm:p-4 backdrop-blur-xs ${closing ? 'motion-backdrop-out' : 'motion-backdrop-in'}`}
       onMouseDown={isPending ? undefined : onClose}
@@ -273,6 +275,8 @@ export function ConfirmModal({
       </div>
     </div>
   )
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content
 }
 
 // ---------- Run a server action with loading + error ----------
