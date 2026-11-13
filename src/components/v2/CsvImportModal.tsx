@@ -20,6 +20,7 @@ import {
   Mail,
   MessageSquare,
   Copy,
+  Lightbulb,
 } from 'lucide-react'
 import { useLists } from '@/components/ListsContext'
 import {
@@ -160,11 +161,8 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
 
   const mappingProblems = [
     !map.business_name && 'Match the "Business name" column.',
-    !map.business_type && 'Match the "Category" column.',
-    !defaultServices.length &&
-      (map.services
-        ? 'Select at least one fallback service (mandatory for any rows with empty services).'
-        : 'Select the services to pitch (mandatory for all rows).'),
+    !map.business_email && 'Match the "Business email" column.',
+    !map.business_whatsapp && 'Match the "Business WhatsApp" column.',
   ].filter(Boolean) as string[]
 
   // ---------- Transition to Step 3: Check Duplicates ----------
@@ -372,7 +370,7 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
   const STEPS = ['Upload', 'Match columns', 'Check', 'Import']
 
   return (
-    <Modal open={open} onClose={close} locked={busy} title="Import leads from CSV" wide>
+    <Modal open={open} onClose={close} locked={busy} title="Import leads from CSV" wide="xl">
       {/* Stepper Header */}
       <ol className="mb-6 flex flex-wrap items-center gap-2 text-sm">
         {STEPS.map((s, i) => {
@@ -382,17 +380,16 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
           return (
             <li
               key={s}
-              className={`flex items-center gap-2 rounded-full px-3 py-1 font-semibold transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold transition-colors shrink-0 ${
                 isActive
                   ? 'bg-primary text-white shadow-sm'
                   : isDone
-                  ? 'bg-emerald-50 text-emerald-700'
+                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer'
                   : 'bg-slate-100 text-slate-500'
               }`}
+              onClick={() => isDone && !busy && setStep(stepNum as 1 | 2 | 3 | 4)}
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold">
-                {stepNum}
-              </span>
+              <span className="font-bold tabular-nums">{stepNum}</span>
               <span>{s}</span>
             </li>
           )
@@ -463,23 +460,19 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             ))}
           </div>
 
-          {/* Services Selection / Fallback (Mandatory) */}
+          {/* Services Selection: Tip / Suggestion */}
           <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-1">
               <label className="label">
-                {map.services
-                  ? 'Services fallback (applied when row has empty service)'
-                  : 'Services to pitch (applies to all rows)'}
+                Services to pitch (applies to all rows)
                 <span className="text-red-500 font-bold ml-0.5">*</span>
               </label>
-              {defaultServices.length === 0 && (
-                <span className="text-xs font-semibold text-rose-600">Selection required</span>
-              )}
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                <Lightbulb size={12} className="text-amber-600 shrink-0" /> Tip: pick at least one
+              </span>
             </div>
             <p className="text-xs text-slate-500">
-              {map.services
-                ? 'Mandatory fallback: Used for rows where the CSV services column is blank or unrecognised, ensuring all leads are outreach-ready.'
-                : 'Since no services column is mapped from your CSV, these services will be assigned to all imported leads.'}
+              Select the services to assign to all imported leads in this batch.
             </p>
             <ChipSelect options={lists.services} value={defaultServices} onChange={setDefaultServices} />
           </div>
@@ -521,7 +514,14 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
             </button>
             <button
               className="btn btn-primary"
-              disabled={!raw.length || mappingProblems.length > 0 || checkingDuplicates}
+              disabled={!raw.length || mappingProblems.length > 0 || defaultServices.length === 0 || checkingDuplicates}
+              title={
+                defaultServices.length === 0
+                  ? 'Select at least one service to pitch to continue'
+                  : mappingProblems.length > 0
+                  ? 'Map all required columns to continue'
+                  : undefined
+              }
               onClick={goToCheckStep}
             >
               {checkingDuplicates ? (
@@ -618,31 +618,31 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                 </div>
               </div>
 
-              <div className="table-wrap max-h-56 overflow-y-auto">
-                <table className="table text-xs">
+              <div className="table-wrap max-h-56 overflow-y-auto overflow-x-hidden">
+                <table className="table text-xs w-full table-fixed [&_th]:!px-3 [&_th]:!py-2 [&_td]:!px-3 [&_td]:!py-2">
                   <thead>
                     <tr>
-                      <th>Row</th>
-                      <th>In file</th>
-                      <th>Existing business</th>
-                      <th>Action</th>
+                      <th className="w-12 text-center">Row</th>
+                      <th className="w-1/3">In file</th>
+                      <th className="w-1/3">Existing business</th>
+                      <th className="w-36">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {matches.map(m => (
                       <tr key={m.idx}>
-                        <td className="text-slate-500">{m.idx + 2}</td>
-                        <td className="font-semibold">{builtRows[m.idx]?.data.business_name}</td>
-                        <td>
-                          {m.business_name}
-                          <span className="block text-[11px] text-slate-500">
+                        <td className="text-slate-500 text-center">{m.idx + 2}</td>
+                        <td className="font-semibold truncate" title={builtRows[m.idx]?.data.business_name}>{builtRows[m.idx]?.data.business_name}</td>
+                        <td className="truncate">
+                          <span className="font-medium" title={m.business_name}>{m.business_name}</span>
+                          <span className="block text-[11px] text-slate-500 truncate">
                             matched by {m.matched_by}
                             {m.open_pitches ? ` (${m.open_pitches} open pitch)` : ''}
                           </span>
                         </td>
                         <td>
                           <select
-                            className="input !py-1 text-xs"
+                            className="input !py-1 text-xs w-full"
                             value={choices[m.idx]}
                             onChange={e => setChoices(c => ({ ...c, [m.idx]: e.target.value as Choice }))}
                           >
@@ -743,16 +743,16 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                 )}
               </span>
             </div>
-            <div className="table-wrap max-h-72 overflow-y-auto">
-              <table className="table text-xs">
+            <div className="table-wrap max-h-72 overflow-y-auto overflow-x-hidden">
+              <table className="table text-xs w-full table-fixed [&_th]:!px-3 [&_th]:!py-2.5 [&_td]:!px-3 [&_td]:!py-2">
                 <thead>
                   <tr>
-                    <th>Row</th>
-                    <th>Business</th>
-                    <th>Category</th>
-                    <th>Contact (WA / Email)</th>
-                    <th>Services</th>
-                    <th>Status</th>
+                    <th className="w-12 text-center">Row</th>
+                    <th className="w-1/4">Business</th>
+                    <th className="w-20">Postcode</th>
+                    <th className="w-1/4">Contact (WA / Email)</th>
+                    <th className="w-1/6">Services</th>
+                    <th className="w-1/6">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -768,48 +768,55 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                       const leftOut = noContact(r)
                       return (
                         <tr key={r.idx} className={leftOut ? 'opacity-70' : r.isMissingData ? 'bg-amber-50/40' : ''}>
-                          <td className="text-slate-500">{r.line}</td>
+                          <td className="text-slate-500 text-center">{r.line}</td>
                           <td className="font-semibold">
-                            {r.data.business_name}
-                            {leftOut && <div className="mt-0.5 text-[11px] font-normal text-slate-500">{leftOutReason(r)}</div>}
+                            <div className="truncate" title={r.data.business_name}>{r.data.business_name}</div>
+                            {r.data.contact_name && (
+                              <div className="text-[11px] font-normal text-slate-500 truncate" title={r.data.contact_name}>
+                                {r.data.contact_name}
+                              </div>
+                            )}
+                            {leftOut && <div className="mt-0.5 text-[11px] font-normal text-slate-500 truncate">{leftOutReason(r)}</div>}
                           </td>
-                          <td>{r.data.business_type || <i className="text-slate-400">Missing</i>}</td>
+                          <td className="text-slate-600 font-mono text-[11px] truncate">
+                            {r.data.postcode || <span className="text-slate-300">-</span>}
+                          </td>
                           <td>
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-0.5">
                               {r.phoneInfo?.isWhatsApp ? (
                                 <span
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700"
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 truncate"
                                   title={r.phoneInfo.label}
                                 >
-                                  <MessageSquare size={13} className="text-emerald-600 shrink-0" />
-                                  <span>{r.data.whatsapp_number || r.phoneInfo.normalized}</span>
+                                  <MessageSquare size={12} className="text-emerald-600 shrink-0" />
+                                  <span className="truncate">{r.data.whatsapp_number || r.phoneInfo.normalized}</span>
                                 </span>
                               ) : r.phoneInfo?.type === 'landline' ? (
                                 <span
-                                  className="inline-flex items-center gap-1.5 text-xs text-slate-500"
+                                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 truncate"
                                   title="Landline (Cannot receive WhatsApp)"
                                 >
-                                  <Phone size={13} className="text-slate-400 shrink-0" />
-                                  <span>{r.data.whatsapp_number || r.phoneInfo.normalized || 'Landline'} (No WA)</span>
+                                  <Phone size={12} className="text-slate-400 shrink-0" />
+                                  <span className="truncate">{r.data.whatsapp_number || r.phoneInfo.normalized} (No WA)</span>
                                 </span>
                               ) : null}
 
                               {r.emailInfo?.isValid ? (
                                 <span
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700"
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 truncate"
                                   title="Valid email address"
                                 >
-                                  <Mail size={13} className="text-sky-600 shrink-0" />
-                                  <span className="truncate max-w-[220px]">{r.emailInfo.email}</span>
+                                  <Mail size={12} className="text-sky-600 shrink-0" />
+                                  <span className="truncate max-w-[130px]">{r.emailInfo.email}</span>
                                   <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
                                 </span>
                               ) : r.emailInfo?.hasEmail ? (
                                 <span
-                                  className="inline-flex items-center gap-1.5 text-xs text-amber-700"
+                                  className="inline-flex items-center gap-1.5 text-xs text-amber-700 truncate"
                                   title="Invalid email syntax"
                                 >
-                                  <Mail size={13} className="text-amber-500 shrink-0" />
-                                  <span className="truncate max-w-[220px]">{r.emailInfo.email}</span>
+                                  <Mail size={12} className="text-amber-500 shrink-0" />
+                                  <span className="truncate max-w-[130px]">{r.emailInfo.email}</span>
                                   <EmailCheckBadge check={emailCheckFor(r.emailInfo.email)} running={emailCheck.running} />
                                 </span>
                               ) : null}
@@ -819,30 +826,32 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                               )}
                             </div>
                           </td>
-                          <td>{r.services.join(', ') || <i className="text-slate-400">None</i>}</td>
+                          <td className="text-slate-600">
+                            <div className="truncate" title={r.services.join(', ')}>
+                              {r.services.join(', ') || <i className="text-slate-400">None</i>}
+                            </div>
+                          </td>
                           <td>
                             {leftOut ? (
                               <LeftOutLabel />
                             ) : isDup ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 whitespace-nowrap">
                                 <Copy size={12} className="text-blue-600 shrink-0" />
                                 Duplicate ({choices[r.idx]})
                               </span>
                             ) : r.isReady ? (
-                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs">
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold text-xs whitespace-nowrap">
                                 <CheckCircle2 size={13} className="text-emerald-600 shrink-0" /> Ready
                               </span>
                             ) : (
-                              <div className="flex flex-wrap gap-1.5">
-                                {r.problems.map(p => (
-                                  <span
-                                    key={p}
-                                    className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800"
-                                  >
-                                    <AlertTriangle size={11} className="text-amber-600 shrink-0" />
-                                    {PROBLEM_LABELS[p] || p}
-                                  </span>
-                                ))}
+                              <div className="flex flex-col gap-0.5">
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 whitespace-nowrap">
+                                  <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+                                  Missing {r.problems.length} detail{r.problems.length === 1 ? '' : 's'}
+                                </span>
+                                <span className="text-[10px] text-amber-700/80 truncate block" title={r.problems.map(p => PROBLEM_LABELS[p] || p).join(', ')}>
+                                  {r.problems.map(p => PROBLEM_LABELS[p] || p).join(', ')}
+                                </span>
                               </div>
                             )}
                           </td>
@@ -922,7 +931,6 @@ export function CsvImportModal({ open, onClose }: { open: boolean; onClose: () =
                   {result.created + result.updated + result.pitches === 1 ? '' : 's'} imported from <b>{fileName}</b>.
                 </p>
               </div>
-
 
               {/* Destination Breakdown */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

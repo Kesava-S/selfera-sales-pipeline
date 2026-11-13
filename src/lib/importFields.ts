@@ -51,21 +51,25 @@ export const PROBLEM_LABELS: Record<string, string> = {
   gaps: 'Gaps found',
 }
 
-export const FIELDS: { key: FieldKey; label: string; required?: boolean; synonyms: string[] }[] = [
+export const MATCH_FIELDS: { key: FieldKey; label: string; required?: boolean; synonyms: string[] }[] = [
   { key: 'business_name', label: 'Business name', required: true, synonyms: ['business_name', 'business', 'name', 'business name', 'company', 'company name', 'hotel', 'venue'] },
+  { key: 'business_email', label: 'Business email', required: true, synonyms: ['business_email', 'email', 'business email', 'e-mail', 'mail', 'email address'] },
+  { key: 'business_whatsapp', label: 'Business WhatsApp', required: true, synonyms: ['business_whatsapp', 'whatsapp_number', 'whatsapp', 'wa', 'business whatsapp', 'wa number', 'mobile', 'phone', 'telephone', 'tel', 'phone_number', 'phone number', 'mobile_number', 'mobile number', 'contact_number', 'contact number', 'cell', 'cell_number'] },
+  { key: 'postcode', label: 'Postcode', synonyms: ['postcode', 'post code', 'zip', 'postal code'] },
+  { key: 'owner_name', label: 'Owner name', synonyms: ['owner_name', 'contact_name', 'owner', 'contact', 'manager', 'contact name', 'owner contact name'] },
+]
+
+export const ALL_FIELDS: { key: FieldKey; label: string; required?: boolean; synonyms: string[] }[] = [
+  ...MATCH_FIELDS,
   { key: 'website', label: 'Website', synonyms: ['website', 'existing_website', 'site', 'url', 'web', 'link'] },
   { key: 'no_site', label: 'No site (tick / yes)', synonyms: ['no_site', 'has_no_website', 'no site', 'no_website', 'no website', 'without website'] },
   { key: 'address', label: 'Address', synonyms: ['address', 'location', 'street', 'full address', 'area', 'town', 'borough', 'city', 'neighbourhood'] },
-  { key: 'postcode', label: 'Postcode', synonyms: ['postcode', 'post code', 'zip', 'postal code'] },
   { key: 'branches', label: 'Branches (Name | Address | Postcode; ...)', synonyms: ['branches', 'branch list', 'locations', 'group branches'] },
-  { key: 'business_type', label: 'Category', required: true, synonyms: ['business_type', 'category', 'type', 'business type', 'sector', 'industry'] },
+  { key: 'business_type', label: 'Category', synonyms: ['business_type', 'category', 'type', 'business type', 'sector', 'industry'] },
   { key: 'services', label: 'Services to pitch (from CSV)', synonyms: ['services', 'services_to_pitch', 'service_to_pitch', 'service', 'pitch', 'offer', 'services pitched'] },
-  { key: 'owner_name', label: 'Owner name', synonyms: ['owner_name', 'contact_name', 'owner', 'contact', 'manager', 'contact name', 'owner contact name'] },
   { key: 'owner_email', label: 'Owner email', synonyms: ['owner_email', 'owner email', 'owner e-mail'] },
   { key: 'owner_whatsapp', label: 'Owner WhatsApp', synonyms: ['owner_whatsapp', 'owner whatsapp', 'owner mobile', 'owner phone', 'owner_contact', 'owner contact'] },
   { key: 'owner_social', label: 'Owner social / LinkedIn', synonyms: ['owner_social', 'owner social', 'owner linkedin', 'owner socials', 'owner social link', 'linkedin', 'business_linkedin', 'li'] },
-  { key: 'business_email', label: 'Business email', synonyms: ['business_email', 'email', 'business email', 'e-mail', 'mail', 'email address'] },
-  { key: 'business_whatsapp', label: 'Business WhatsApp', synonyms: ['business_whatsapp', 'whatsapp_number', 'whatsapp', 'wa', 'business whatsapp', 'wa number', 'mobile', 'phone', 'telephone', 'tel', 'phone_number', 'phone number', 'mobile_number', 'mobile number', 'contact_number', 'contact number', 'cell', 'cell_number'] },
   { key: 'instagram', label: 'Instagram', synonyms: ['instagram', 'business_instagram', 'ig', 'insta', 'instagram handle'] },
   { key: 'facebook', label: 'Facebook', synonyms: ['facebook', 'business_facebook', 'fb', 'facebook page'] },
   { key: 'tech_partner_type', label: 'Tech partner type (Agency/DIY/None)', synonyms: ['tech_partner_type', 'tech partner type', 'partner type'] },
@@ -77,12 +81,14 @@ export const FIELDS: { key: FieldKey; label: string; required?: boolean; synonym
   { key: 'maps_link', label: 'Google Maps link', synonyms: ['maps_link', 'maps', 'google maps'] },
 ]
 
+export const FIELDS = MATCH_FIELDS
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-export function autoMap(headers: string[]): Partial<Record<FieldKey, string>> {
+export function autoMap(headers: string[], fields = FIELDS): Partial<Record<FieldKey, string>> {
   const map: Partial<Record<FieldKey, string>> = {}
   const used = new Set<string>()
-  for (const f of FIELDS) {
+  for (const f of fields) {
     const h = headers.find(h => !used.has(h) && f.synonyms.some(s => norm(s) === norm(h)))
     if (h) {
       map[f.key] = h
@@ -399,26 +405,8 @@ export function buildRow(
 
 export const TEMPLATE_HEADERS = [
   'business_name',
-  'website',
-  'no_site',
-  'address',
-  'postcode',
-  'branches',
-  'business_type',
-  'services',
-  'owner_name',
-  'owner_email',
-  'owner_whatsapp',
-  'owner_social',
   'business_email',
   'business_whatsapp',
-  'instagram',
-  'facebook',
-  'tech_partner_type',
-  'tech_partner_name',
-  'gaps_found',
-  'source',
-  'company_type',
-  'notes',
-  'maps_link',
+  'postcode',
+  'owner_name',
 ]

@@ -160,7 +160,7 @@ export function Modal({ title, open, onClose, children, wide, locked }: { title:
               <X size={18} />
             </button>
           </div>
-          <div className="overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+          <div className="overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 sm:px-6 sm:py-5">{children}</div>
         </div>
       </div>
     </div>

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ALL_FIELDS,
+  MATCH_FIELDS,
+  TEMPLATE_HEADERS,
   autoMap,
   buildRow,
   clean,
@@ -13,15 +16,51 @@ import {
 import { DEFAULT_LISTS } from '@/lib/lists';
 
 describe('CSV lead import field parsers and validators (src/lib/importFields.ts)', () => {
+  describe('TEMPLATE_HEADERS & MATCH_FIELDS', () => {
+    it('contains exactly the 5 target match columns with required flags', () => {
+      expect(TEMPLATE_HEADERS).toEqual([
+        'business_name',
+        'business_email',
+        'business_whatsapp',
+        'postcode',
+        'owner_name',
+      ]);
+      expect(MATCH_FIELDS.map(f => f.key)).toEqual([
+        'business_name',
+        'business_email',
+        'business_whatsapp',
+        'postcode',
+        'owner_name',
+      ]);
+      expect(MATCH_FIELDS.filter(f => f.required).map(f => f.key)).toEqual([
+        'business_name',
+        'business_email',
+        'business_whatsapp',
+      ]);
+      expect(MATCH_FIELDS.find(f => f.key === 'postcode')?.required).toBeFalsy();
+      expect(MATCH_FIELDS.find(f => f.key === 'owner_name')?.required).toBeFalsy();
+    });
+  });
+
   describe('autoMap', () => {
     it('maps diverse CSV header synonyms to normalized internal field keys', () => {
-      const headers = ['Company Name', 'Web', 'Category', 'Post code', 'Pitch'];
+      const headers = ['Company Name', 'Business Email', 'WhatsApp', 'Post code', 'Owner Name'];
       const mapped = autoMap(headers);
+
+      expect(mapped.business_name).toBe('Company Name');
+      expect(mapped.business_email).toBe('Business Email');
+      expect(mapped.business_whatsapp).toBe('WhatsApp');
+      expect(mapped.postcode).toBe('Post code');
+      expect(mapped.owner_name).toBe('Owner Name');
+    });
+
+    it('maps extended fields when ALL_FIELDS is provided', () => {
+      const headers = ['Company Name', 'Web', 'Category', 'Pitch'];
+      const mapped = autoMap(headers, ALL_FIELDS);
 
       expect(mapped.business_name).toBe('Company Name');
       expect(mapped.website).toBe('Web');
       expect(mapped.business_type).toBe('Category');
-      expect(mapped.postcode).toBe('Post code');
       expect(mapped.services).toBe('Pitch');
     });
 
@@ -241,6 +280,31 @@ describe('CSV lead import field parsers and validators (src/lib/importFields.ts)
       expect(row.phoneInfo.type).toBe('landline');
       expect(row.emailInfo.hasEmail).toBe(false);
       expect(row.isCleanData).toBe(false);
+    });
+  });
+
+  describe('buildRow with 5 limited match columns', () => {
+    it('properly extracts the 5 fields and marks lead for background completion', () => {
+      const raw = {
+        'Business Name': 'The Grand Hotel',
+        'Business Email': 'reservations@thegrandhotel.co.uk',
+        'Business WhatsApp': '+44 7700 900001',
+        'Postcode': 'SW1A 1AA',
+        'Owner Name': 'Sarah Jenkins',
+      };
+      const map = autoMap(Object.keys(raw));
+      const row = buildRow(raw, map, {}, [], 0, DEFAULT_LISTS);
+
+      expect(row.isCannotImport).toBe(false);
+      expect(row.data.business_name).toBe('The Grand Hotel');
+      expect(row.data.email).toBe('reservations@thegrandhotel.co.uk');
+      expect(row.data.whatsapp_number).toBe('+447700900001');
+      expect(row.data.postcode).toBe('SW1A 1AA');
+      expect(row.data.contact_name).toBe('Sarah Jenkins');
+      expect(row.isCleanData).toBe(true);
+      expect(row.isMissingData).toBe(true);
+      expect(row.problems).toContain('category');
+      expect(row.problems).toContain('service');
     });
   });
 });
