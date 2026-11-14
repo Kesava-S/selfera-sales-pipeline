@@ -57,6 +57,12 @@ function ProgressBar() {
     emit()
   }, [url])
 
+  // Reset main content scroll position on page change
+  useEffect(() => {
+    const el = document.querySelector('.main-content')
+    if (el) el.scrollTop = 0
+  }, [pathname])
+
   if (loading && shown !== 'loading') setShown('loading')
   if (!loading && shown === 'loading') setShown('done')
 

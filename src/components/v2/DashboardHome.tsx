@@ -70,7 +70,7 @@ export function DashboardHome({
       )}
 
       {/* Status boxes */}
-      <section>
+      <section data-tour="dash-pipeline">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">Pipeline Status</h2>
           <span className="text-xs text-slate-500">Click any status to explore by business category</span>
@@ -115,7 +115,7 @@ export function DashboardHome({
       )}
 
       {/* Due today */}
-      <section>
+      <section data-tour="dash-due">
         <h2 className="mb-3 text-base font-semibold text-slate-900">Due today</h2>
         <div className="card !p-0">
           <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 px-3 pt-2">

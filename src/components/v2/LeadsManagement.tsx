@@ -210,18 +210,19 @@ export function LeadsManagement({
           <p className="text-sm text-slate-500">Every business and pitch. New leads wait in the review queue until approved.</p>
         </div>
         {canIntake && (
-          <div className="flex flex-wrap gap-2">
+          <div data-tour="leads-actions" className="flex flex-wrap gap-2">
+            <button data-tour="leads-import" className="btn btn-secondary" onClick={() => setShowImport(true)}><Upload size={16} /> Import CSV</button>
             {isAdmin && (
               <button
                 type="button"
+                data-tour="leads-export"
                 className="btn btn-secondary"
                 onClick={() => setShowExport(true)}
               >
                 <Download size={16} /> Export CSV{selected.length ? ` (${selected.length})` : ''}
               </button>
             )}
-            <button className="btn btn-secondary" onClick={() => setShowImport(true)}><Upload size={16} /> Import CSV</button>
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add business</button>
+            <button data-tour="leads-add" className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add business</button>
           </div>
         )}
       </div>
@@ -234,7 +235,7 @@ export function LeadsManagement({
       )}
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200">
+      <div data-tour="leads-tabs" className="flex gap-2 border-b border-slate-200">
         {[
           { key: 'all', label: 'All', count: allCount },
           { key: 'review', label: 'Approval queue', count: reviewCount },
@@ -242,6 +243,7 @@ export function LeadsManagement({
         ].map(t => (
           <button
             key={t.key}
+            data-tour={`leads-tab-${t.key}`}
             onClick={() =>
               go({
                 tab: t.key === 'all' ? undefined : t.key,
@@ -303,7 +305,7 @@ export function LeadsManagement({
       ) : (
         <>
           {tab === 'all' && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4">
+            <div data-tour="leads-categories" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-4">
               {lists.categories.map(cat => {
                 const count = typeCounts[cat.name] ?? 0
                 // Older links used plural names ("Hotels"); those still match
@@ -357,7 +359,7 @@ export function LeadsManagement({
           )}
 
           {/* Filters */}
-          <div className="card flex flex-wrap items-center gap-2 !p-3">
+          <div data-tour="leads-filters" className="card flex flex-wrap items-center gap-2 !p-3">
             <form
               className="relative min-w-56 flex-1"
               onSubmit={e => { e.preventDefault(); go({ q: (new FormData(e.currentTarget).get('q') as string) || undefined }) }}
@@ -407,10 +409,11 @@ export function LeadsManagement({
 
       {/* Bulk bar */}
       {selected.length > 0 && (
-        <div className="sticky top-[66px] z-10 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary-bg px-3 py-2 text-sm">
+        <div data-tour="bulk-bar" className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary-bg px-3 py-2 text-sm">
           <b>{selected.length} selected</b>
           {tab === 'review' && canIntake && (
             <button
+              data-tour="bulk-approve"
               className="btn btn-primary btn-sm"
               disabled={pending || selectedRows.some(r => readiness(r))}
               title={selectedRows.some(r => readiness(r)) ? 'Some selected leads are missing details' : ''}
@@ -421,9 +424,10 @@ export function LeadsManagement({
           )}
           {isAdmin && (
             <>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setBulk('assign'); setBulkValue('') }}><UserPlus size={15} /> Assign</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setBulk('services'); setBulkServicesValue([]) }}><Layers size={15} /> Change services</button>
+              <button data-tour="bulk-assign" className="btn btn-secondary btn-sm" onClick={() => { setBulk('assign'); setBulkValue('') }}><UserPlus size={15} /> Assign</button>
+              <button data-tour="bulk-services" className="btn btn-secondary btn-sm" onClick={() => { setBulk('services'); setBulkServicesValue([]) }}><Layers size={15} /> Change services</button>
               <button
+                data-tour="bulk-archive"
                 className="btn btn-secondary btn-sm"
                 disabled={pending}
                 onClick={() => run(
@@ -440,15 +444,24 @@ export function LeadsManagement({
               {tab === 'all' && (() => {
                 const ids = Array.from(new Set(selectedRows.map(r => r.business_id)))
                 const allMarked = selectedRows.length > 0 && selectedRows.every(r => r.off_target_at)
-                return <OffTargetButton businessIds={ids} marked={allMarked} onDone={() => setSelected([])}
-                  names={`${selectedRows.slice(0, 3).map(r => r.business_name).join(', ')}${selectedRows.length > 3 ? ` and ${selectedRows.length - 3} more` : ''}`} />
+                return (
+                  <div data-tour="bulk-offtarget">
+                    <OffTargetButton businessIds={ids} marked={allMarked} onDone={() => setSelected([])}
+                      names={`${selectedRows.slice(0, 3).map(r => r.business_name).join(', ')}${selectedRows.length > 3 ? ` and ${selectedRows.length - 3} more` : ''}`} />
+                  </div>
+                )
               })()}
-              <button className="btn btn-secondary btn-sm !text-red-700" disabled={pending} onClick={() => setConfirmDelete(true)}>
+              <button
+                data-tour="bulk-delete"
+                className="btn btn-secondary btn-sm !text-red-700"
+                disabled={pending}
+                onClick={() => setConfirmDelete(true)}
+              >
                 <Trash2 size={15} /> Delete
               </button>
             </>
           )}
-          <button className="btn btn-ghost btn-sm ml-auto" onClick={() => setSelected([])}>Clear selection</button>
+          <button data-tour="bulk-clear" className="btn btn-ghost btn-sm ml-auto" onClick={() => setSelected([])}>Clear selection</button>
         </div>
       )}
 
@@ -474,13 +487,13 @@ export function LeadsManagement({
             <span>{total.toLocaleString('en-GB')} {tab === 'review' ? 'waiting for review' : 'pitches'}</span>
             {tab === 'all' && <ColumnPicker columns={LEAD_COLUMNS} state={cols} />}
           </div>
-          <div className="table-wrap">
+          <div data-tour="leads-table" className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   {(isAdmin || (tab === 'review' && canIntake)) && (
                     <th className="w-8">
-                      <input type="checkbox" checked={allOnPage} onChange={() => setSelected(allOnPage ? [] : rows.map(r => r.opportunity_id))} aria-label="Select all on this page" />
+                      <input type="checkbox" data-tour="leads-table-select-all" checked={allOnPage} onChange={() => setSelected(allOnPage ? [] : rows.map(r => r.opportunity_id))} aria-label="Select all on this page" />
                     </th>
                   )}
                   <th className="w-8" />
@@ -517,7 +530,7 @@ export function LeadsManagement({
                     <Fragment key={r.opportunity_id}>
                       <tr className={r.archived ? 'opacity-60' : ''}>
                         {(isAdmin || (tab === 'review' && canIntake)) && (
-                          <td><input type="checkbox" checked={selected.includes(r.opportunity_id)} onChange={() => toggle(r.opportunity_id)} aria-label={`Select ${r.business_name}`} /></td>
+                          <td><input type="checkbox" data-tour="leads-table-checkbox" checked={selected.includes(r.opportunity_id)} onChange={() => toggle(r.opportunity_id)} aria-label={`Select ${r.business_name}`} /></td>
                         )}
                         <td>
                           <button className="btn btn-ghost btn-sm !p-1" onClick={() => setExpanded(isOpen ? null : r.opportunity_id)} aria-label="Show details">

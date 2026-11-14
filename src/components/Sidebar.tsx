@@ -70,6 +70,7 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
             <Link
               key={item.href}
               href={item.href}
+              data-tour-nav={item.href}
               onClick={() => {
                 close()
                 if (pathname !== item.href) setPendingHref(item.href)

@@ -3,6 +3,8 @@ import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
 import { NavigationProgress } from '@/components/NavigationProgress'
 import { BreadcrumbProvider } from '@/components/BreadcrumbContext'
+import { TourProvider } from '@/components/tour/TourContext'
+import { ProductTour } from '@/components/tour/ProductTour'
 import { AccountNotSetup } from '@/components/v2/AccountNotSetup'
 import { requireProfile, requireUser, getDashboardStatusCounts } from '@/lib/auth'
 import { getSalesLists } from '@/lib/dynamicData'
@@ -27,14 +29,17 @@ export default async function DashboardLayout({ children }: Readonly<{ children:
 
   return (
     <BreadcrumbProvider>
-      <NavigationProgress />
-      <div className="app-layout">
-        <Sidebar userProfile={profile} reviewCount={profile.role === 'consultant' ? 0 : reviewCount} />
-        <div className="main-wrapper">
-          <Topbar userProfile={profile} email={user.email ?? ''} />
-          <main className="main-content"><ListsProvider lists={lists}>{children}</ListsProvider></main>
+      <TourProvider userProfile={profile}>
+        <NavigationProgress />
+        <div className="app-layout">
+          <Sidebar userProfile={profile} reviewCount={profile.role === 'consultant' ? 0 : reviewCount} />
+          <div className="main-wrapper">
+            <Topbar userProfile={profile} email={user.email ?? ''} />
+            <main className="main-content"><ListsProvider lists={lists}>{children}</ListsProvider></main>
+          </div>
         </div>
-      </div>
+        <ProductTour />
+      </TourProvider>
     </BreadcrumbProvider>
   )
 }

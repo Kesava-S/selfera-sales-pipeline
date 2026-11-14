@@ -48,7 +48,7 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
   }, [clients, q])
 
   return (
-    <div className="space-y-6">
+    <div data-tour="aud-roster" className="space-y-6">
       <PageHeader title="Client Audience" text="Customers of our Won clients, for marketing on the client's behalf.">
         <InfoTip align="right" text="A lead marked Won in Lead Management is added here automatically. Add its customers by form or CSV." />
       </PageHeader>

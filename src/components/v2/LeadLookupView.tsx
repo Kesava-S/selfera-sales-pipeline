@@ -147,7 +147,7 @@ export function LeadLookupView({ leads: initialLeads, config }: { leads: LookupL
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 2xl:grid-cols-4">
         {/* 1. Choose a lead */}
-        <section className="card flex max-h-[720px] flex-col !p-0 lg:col-span-1 2xl:col-span-1">
+        <section data-tour="lookup-leads" className="card flex max-h-[720px] flex-col !p-0 lg:col-span-1 2xl:col-span-1">
           <div className="space-y-2 border-b border-slate-100 p-4">
             <h2 className="!text-base">1. Choose a lead</h2>
             <input className="input" placeholder="Filter by name, area or postcode" value={filter} onChange={e => setFilter(e.target.value)} aria-label="Filter leads" />
@@ -179,7 +179,7 @@ export function LeadLookupView({ leads: initialLeads, config }: { leads: LookupL
 
         <div className="space-y-6 lg:col-span-2 2xl:col-span-3">
           {/* 2. Search */}
-          <section className="card space-y-3">
+          <section data-tour="lookup-search" className="card space-y-3">
             <h2 className="!text-base">2. Search{lead ? ` for ${lead.business_name}` : ''}</h2>
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={e => { e.preventDefault(); runSearch() }}>
               <input className="input flex-1" placeholder="Business name and town or postcode, e.g. The Crown Hotel Munnar" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search for a business" />

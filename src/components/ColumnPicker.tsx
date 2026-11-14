@@ -51,8 +51,8 @@ export function ColumnPicker({ columns, state }: { columns: ColumnDef[]; state: 
 
   const extra = state.shown.filter(k => !columns.find(c => c.key === k)?.default).length
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(v => !v)} aria-expanded={open}>
+    <div className="relative" ref={ref} data-tour="leads-columns">
+      <button type="button" data-tour="leads-columns-btn" className="btn btn-secondary btn-sm" onClick={() => setOpen(v => !v)} aria-expanded={open}>
         <Columns3 size={14} /> Columns{extra ? ` (+${extra})` : ''}
       </button>
       {open && (

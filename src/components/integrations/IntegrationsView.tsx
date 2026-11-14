@@ -151,7 +151,7 @@ export function IntegrationsView({
       </div>
 
       {/* Channels List */}
-      <div className="card p-0 divide-y divide-slate-100 overflow-hidden shadow-xs border border-slate-200">
+      <div data-tour="integ-list" className="card p-0 divide-y divide-slate-100 overflow-hidden shadow-xs border border-slate-200">
         {filteredChannels.map(channel => {
           const isConnected = channel.status === 'connected'
           const isTesting = testingId === channel.id

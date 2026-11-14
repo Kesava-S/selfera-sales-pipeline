@@ -129,7 +129,7 @@ export function TemplatesHome({
       </div>
 
       {/* Level 1: Business Types / Categories */}
-      <div>
+      <div data-tour="tmpl-categories">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">1. Business categories</h2>
           <span className="text-xs text-slate-500">
@@ -268,7 +268,7 @@ export function TemplatesHome({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+          <div data-tour="tmpl-channels" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
             {PLATFORMS.map(p => {
               const readyCount = count(selected, p)
 

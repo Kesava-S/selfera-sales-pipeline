@@ -501,7 +501,7 @@ function TeamManagement({ me, initialMembers = [] }: { me: Profile; initialMembe
       </div>
 
       {/* Team Members Table */}
-      <div className="table-wrap overflow-hidden">
+      <div data-tour="settings-team" className="table-wrap overflow-hidden">
         <table className="table">
           <thead>
             <tr>
@@ -840,7 +840,7 @@ function Timing({ cadence }: { cadence: { step_name: string; days_delay: number 
   }
 
   return (
-    <section className="card flex flex-col justify-between h-full space-y-4">
+    <section data-tour="settings-cadence" className="card flex flex-col justify-between h-full space-y-4">
       <div className="space-y-3">
         <div>
           <h2 className="font-semibold text-base text-slate-900">Follow-up timing</h2>
@@ -898,7 +898,7 @@ function AudienceTiming({ cadence }: { cadence: { step_name: string; days_delay:
   const PRESETS = [7, 14, 21, 30]
 
   return (
-    <section className="card flex flex-col justify-between h-full space-y-4">
+    <section data-tour="settings-cadence" className="card flex flex-col justify-between h-full space-y-4">
       <div className="space-y-3">
         <div>
           <h2 className="font-semibold text-base text-slate-900">Client Audience campaign timing</h2>

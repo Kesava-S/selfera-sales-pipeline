@@ -41,7 +41,7 @@ export function InsightsView({ data, loadError, params, isAdmin, staff }: {
       <h1 className="text-2xl font-semibold">Insights</h1>
 
       {/* Filters */}
-      <div className="card flex flex-wrap items-center gap-2 !p-3">
+      <div data-tour="insights-filters" className="card flex flex-wrap items-center gap-2 !p-3">
         <input type="date" className="input !w-auto" value={params.from} max={params.to} onChange={e => e.target.value && go({ from: e.target.value })} aria-label="From" />
         <span className="text-sm text-muted">to</span>
         <input type="date" className="input !w-auto" value={params.to} min={params.from} onChange={e => e.target.value && go({ to: e.target.value })} aria-label="To" />
@@ -66,7 +66,7 @@ export function InsightsView({ data, loadError, params, isAdmin, staff }: {
       {!loadError && data && t && !empty && (
         <>
           {/* Five numbers */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div data-tour="insights-metrics" className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <Stat label="Reached" value={t.reached} />
             <Stat label="Reply rate" value={`${pct(t.replied, t.reached)}%`} sub={`${t.replied} replied`} />
             <Stat label="Interested" value={t.interested} />
@@ -75,7 +75,7 @@ export function InsightsView({ data, loadError, params, isAdmin, staff }: {
           </div>
 
           {/* Funnel */}
-          <div className="card space-y-2">
+          <div data-tour="insights-funnel" className="card space-y-2">
             <h2 className="font-semibold">Funnel</h2>
             {[
               ['Reached', t.reached], ['Replied', t.replied], ['Interested', t.interested],

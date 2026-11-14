@@ -520,7 +520,7 @@ export function MissingDataTab({
   return (
     <div className="space-y-5">
       {/* 1. Top: 4 Property Type Boxes */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div data-tour="missing-categories" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {lists.categories.map(cat => {
           const count = typeCountsMap[cat.name] ?? 0
           const isSelected = activeType === cat.name
@@ -565,7 +565,7 @@ export function MissingDataTab({
 
       {/* 2. Problem Chips & Import Dropdown */}
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div data-tour="missing-problems" className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-semibold text-slate-500 mr-1">Problems:</span>
           {problems.map(p => {
             const isChipSelected = activeProblem === p.problem
@@ -592,7 +592,7 @@ export function MissingDataTab({
         </div>
 
         {/* Import Batch Dropdown */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div data-tour="missing-batches" className="flex items-center gap-2 shrink-0">
           <span className="text-xs font-semibold text-slate-500">Import:</span>
           <select
             className="input !py-1 text-xs"
@@ -695,7 +695,7 @@ export function MissingDataTab({
             )}
           </div>
 
-          <div className="relative rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+          <div data-tour="missing-table" className="relative rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
             {/* Top indeterminate loading bar */}
             {isPending && (
               <div className="absolute top-0 left-0 right-0 z-30 h-1 overflow-hidden bg-primary/20">

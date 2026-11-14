@@ -3,12 +3,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronRight, ChevronDown, LogOut, Menu } from 'lucide-react'
+import { ArrowLeft, ChevronRight, ChevronDown, LogOut, Menu, HelpCircle, Compass, MousePointer } from 'lucide-react'
 import { useBreadcrumbs } from '@/components/BreadcrumbContext'
 import { NotificationBell } from '@/components/NotificationBell'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 import { usePresence } from '@/components/usePresence'
 import { useSkeletonShowing } from '@/components/NavigationProgress'
+import { useTour } from '@/components/tour/TourContext'
 
 export function Topbar({ userProfile, email }: { userProfile: { id: string; full_name: string; role: string; display_role?: string }; email: string }) {
   const pathname = usePathname()
@@ -17,12 +18,19 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
   // While the next page's skeleton shows, its breadcrumb isn't known yet; don't show the old page's
   const loadingPage = useSkeletonShowing()
   const [open, setOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const helpRef = useRef<HTMLDivElement>(null)
   const menu = usePresence(open, 120)
+  const helpMenu = usePresence(helpOpen, 120)
+  const { currentModuleTour, startTour, openBrowseModal } = useTour()
 
   useEffect(() => {
-    const onClick = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false)
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (helpRef.current && !helpRef.current.contains(e.target as Node)) setHelpOpen(false)
+    }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
@@ -79,6 +87,59 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
 
       <div className="flex shrink-0 items-center gap-2">
         <NotificationBell userId={userProfile.id} />
+
+        {/* Application Guide & Tour Button */}
+        <div ref={helpRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setHelpOpen(o => !o)}
+            aria-expanded={helpOpen}
+            className="btn btn-ghost btn-sm relative !p-2 transition-transform active:scale-95"
+            title="Application Guide & Tour"
+            aria-label="Application Guide & Tour"
+          >
+            <HelpCircle size={19} className="text-slate-600" />
+          </button>
+          {helpMenu.mounted && (
+            <div
+              className={`absolute right-0 top-[calc(100%+8px)] z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl ${
+                helpMenu.closing ? 'motion-dropdown-out' : 'motion-dropdown-in'
+              }`}
+            >
+              <div className="px-2.5 py-1.5 border-b border-slate-100">
+                <div className="text-xs font-bold text-slate-900">Module Tour</div>
+                <div className="text-[11px] text-slate-500">Interactive walkthrough</div>
+              </div>
+              <div className="mt-1 space-y-0.5">
+                {currentModuleTour && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHelpOpen(false)
+                      startTour()
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-100 transition-colors"
+                  >
+                    <MousePointer size={14} className="text-primary shrink-0" />
+                    <span className="truncate">Tour: {currentModuleTour.title}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHelpOpen(false)
+                    openBrowseModal()
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                >
+                  <Compass size={14} className="text-slate-400 shrink-0" />
+                  <span>All Module Tours</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div ref={ref} className="relative">
           <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-50 active:scale-[0.98]">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold uppercase text-white">

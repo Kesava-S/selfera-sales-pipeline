@@ -507,7 +507,7 @@ export function WhatsAppCampaignsView({
   return (
     <div className="space-y-6">
       {/* Top Banner / Header (Identical to Email Campaigns) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div data-tour="wa-header" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">WhatsApp Campaigns</h1>
@@ -527,7 +527,7 @@ export function WhatsAppCampaignsView({
         </div>
 
         {/* View Switcher / New Action */}
-        <div className="flex items-center gap-2">
+        <div data-tour="wa-actions" className="flex items-center gap-2">
           <RepliesLink channel="whatsapp" />
           {!isCreatingCampaign && (
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
@@ -881,7 +881,7 @@ export function WhatsAppCampaignsView({
           </div>
 
           {/* RIGHT: Live Preview (Matched to Email Campaigns View with Phone/Chat Layout) */}
-          <div className="lg:col-span-5 2xl:col-span-4 sticky top-20 space-y-4">
+          <div className="lg:col-span-5 2xl:col-span-4 sticky top-4 space-y-4">
             <div className="card p-0 overflow-hidden shadow-sm border border-slate-200">
               <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
