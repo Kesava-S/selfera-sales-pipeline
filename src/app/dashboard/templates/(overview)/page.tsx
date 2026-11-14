@@ -50,6 +50,7 @@ export default async function TemplatesPage({
     if (!seenKeys.has(c.name)) {
       seenKeys.add(c.name)
       categories.push({
+        id: c.id,
         key: c.name,
         label: c.name,
         desc: c.description || `${c.name} specific outreach templates`,

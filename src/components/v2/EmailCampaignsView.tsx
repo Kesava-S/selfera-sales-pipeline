@@ -362,20 +362,27 @@ export function EmailCampaignsView({
     }
   }, [activeSelectedDb])
 
+  const senderPreview = userEmail ? userEmail.split('@')[0].split('.')[0] : 'Selfera'
+  const senderCapitalized = senderPreview.charAt(0).toUpperCase() + senderPreview.slice(1)
+
   // Formatted preview content
   const previewSubject = useMemo(() => {
     return (subject || 'Subject line preview')
-      .replace(/\{business_name\}/g, sampleLead.business_name || 'your business')
-      .replace(/\{contact_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{business_name\}|\{client_name\}|\{business\}/g, sampleLead.business_name || 'your business')
+      .replace(/\{contact_name\}|\{first_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{sender_name\}|\{sender\}/g, senderCapitalized)
+      .replace(/\{area\}|\{city\}/g, 'London')
       .replace(/\{service\}/g, service || 'our services')
-  }, [subject, sampleLead, service])
+  }, [subject, sampleLead, service, senderCapitalized])
 
   const previewBody = useMemo(() => {
     return (body || 'Type your message body on the left to see live preview...')
-      .replace(/\{business_name\}/g, sampleLead.business_name || 'your business')
-      .replace(/\{contact_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{business_name\}|\{client_name\}|\{business\}/g, sampleLead.business_name || 'your business')
+      .replace(/\{contact_name\}|\{first_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{sender_name\}|\{sender\}/g, senderCapitalized)
+      .replace(/\{area\}|\{city\}/g, 'London')
       .replace(/\{service\}/g, service || 'our services')
-  }, [body, sampleLead, service])
+  }, [body, sampleLead, service, senderCapitalized])
 
   // Save campaign handler
   // onSaved runs only after the server confirms (used by Review & Launch)
@@ -805,6 +812,20 @@ export function EmailCampaignsView({
                         className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
                       >
                         {'{contact_name}'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertVariable('sender_name')}
+                        className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
+                      >
+                        {'{sender_name}'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertVariable('area')}
+                        className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
+                      >
+                        {'{area}'}
                       </button>
                       <button
                         type="button"

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Plus,
   Pencil,
+  Trash2,
   Globe,
   Hotel,
   Utensils,
@@ -37,6 +38,8 @@ import {
   setTemplateActive,
   revertTemplate,
   createBusinessCategory,
+  updateBusinessCategory,
+  deleteBusinessCategory,
 } from '@/app/dashboard/actions'
 import { PlatformIcon, Modal, useAction, ErrorNote, Spinner } from '@/components/ui'
 
@@ -70,6 +73,19 @@ function CategoryIconDisplay({
   return <Icon size={size} className={className} />
 }
 
+const AVAILABLE_ICONS = [
+  { name: 'Building2', label: 'Building' },
+  { name: 'Briefcase', label: 'Office' },
+  { name: 'Store', label: 'Store' },
+  { name: 'Utensils', label: 'Dining' },
+  { name: 'Hotel', label: 'Hotel' },
+  { name: 'Beer', label: 'Pub/Bar' },
+  { name: 'Coffee', label: 'Cafe' },
+  { name: 'Dumbbell', label: 'Fitness' },
+  { name: 'Scissors', label: 'Salon' },
+  { name: 'Sparkles', label: 'Services' },
+]
+
 const STEP_SUBTITLES: Record<string, string> = {
   'First contact': 'Initial outreach · Step 1',
   'Follow-up 1': 'Follow-up 1 · Step 2 (3 days)',
@@ -95,6 +111,8 @@ export function TemplatesHome({
 }) {
   const router = useRouter()
   const [showAddCategory, setShowAddCategory] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<TemplateCategory | null>(null)
+  const [deletingCategory, setDeletingCategory] = useState<TemplateCategory | null>(null)
 
   const count = (bType: string, platform?: string) =>
     templates.filter(
@@ -126,9 +144,10 @@ export function TemplatesHome({
             const isGeneral = c.key === 'General'
 
             return (
-              <button
-                type="button"
+              <div
                 key={c.key}
+                role="button"
+                tabIndex={0}
                 onClick={() =>
                   router.replace(
                     isSelected
@@ -137,11 +156,22 @@ export function TemplatesHome({
                     { scroll: false }
                   )
                 }
-                className={`card card-link flex items-center justify-between !p-4 text-left transition-all ${
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    router.replace(
+                      isSelected
+                        ? '/dashboard/templates'
+                        : `/dashboard/templates?type=${slug(c.key)}`,
+                      { scroll: false }
+                    )
+                  }
+                }}
+                className={`card card-link group relative flex items-center justify-between !p-4 text-left transition-all cursor-pointer ${
                   isSelected ? '!border-primary ring-2 ring-primary/20 bg-primary/5' : ''
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 pr-2">
                   <div
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
                       isSelected
@@ -164,13 +194,47 @@ export function TemplatesHome({
                     </p>
                   </div>
                 </div>
-                <ChevronRight
-                  size={18}
-                  className={`text-slate-400 shrink-0 transition-transform ${
-                    isSelected ? 'rotate-90 text-primary' : ''
-                  }`}
-                />
-              </button>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {isAdmin && !isGeneral && (
+                    <div
+                      className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setEditingCategory(c)
+                        }}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-800 transition-colors"
+                        title="Edit category"
+                        aria-label={`Edit ${c.label}`}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setDeletingCategory(c)
+                        }}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                        title="Delete category"
+                        aria-label={`Delete ${c.label}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
+                  <ChevronRight
+                    size={18}
+                    className={`text-slate-400 shrink-0 transition-transform ${
+                      isSelected ? 'rotate-90 text-primary' : ''
+                    }`}
+                  />
+                </div>
+              </div>
             )
           })}
 
@@ -239,6 +303,20 @@ export function TemplatesHome({
       )}
 
       {showAddCategory && <AddCategoryModal onClose={() => setShowAddCategory(false)} />}
+
+      {editingCategory && (
+        <EditCategoryModal
+          category={editingCategory}
+          onClose={() => setEditingCategory(null)}
+        />
+      )}
+
+      {deletingCategory && (
+        <DeleteCategoryModal
+          category={deletingCategory}
+          onClose={() => setDeletingCategory(null)}
+        />
+      )}
     </div>
   )
 }
@@ -670,19 +748,6 @@ function AddCategoryModal({ onClose }: { onClose: () => void }) {
   const { run, pending, error } = useAction()
   const router = useRouter()
 
-  const AVAILABLE_ICONS = [
-    { name: 'Building2', label: 'Building' },
-    { name: 'Briefcase', label: 'Office' },
-    { name: 'Store', label: 'Store' },
-    { name: 'Utensils', label: 'Dining' },
-    { name: 'Hotel', label: 'Hotel' },
-    { name: 'Beer', label: 'Pub/Bar' },
-    { name: 'Coffee', label: 'Cafe' },
-    { name: 'Dumbbell', label: 'Fitness' },
-    { name: 'Scissors', label: 'Salon' },
-    { name: 'Sparkles', label: 'Services' },
-  ]
-
   return (
     <Modal title="Add business category" open onClose={onClose} locked={pending}>
       <form
@@ -758,6 +823,159 @@ function AddCategoryModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+// ---------- Edit category modal ----------
+function EditCategoryModal({
+  category,
+  onClose,
+}: {
+  category: TemplateCategory
+  onClose: () => void
+}) {
+  const [name, setName] = useState(category.label)
+  const [description, setDescription] = useState(
+    category.desc && !category.desc.endsWith('outreach templates') ? category.desc : ''
+  )
+  const [iconName, setIconName] = useState(category.iconName || 'Building2')
+  const { run, pending, error } = useAction()
+  const router = useRouter()
+
+  return (
+    <Modal title={`Edit business category: ${category.label}`} open onClose={onClose} locked={pending}>
+      <form
+        className="space-y-4"
+        onSubmit={e => {
+          e.preventDefault()
+          if (!name.trim()) return
+          run(
+            () =>
+              updateBusinessCategory({
+                id: category.id,
+                oldName: category.key,
+                name: name.trim(),
+                description: description.trim(),
+                icon_name: iconName,
+              }),
+            () => {
+              onClose()
+              router.refresh()
+            },
+            { success: `Category "${name}" updated.` }
+          )
+        }}
+      >
+        <ErrorNote error={error} />
+        <div>
+          <label className="label">
+            Category Name <span className="text-rose-500 font-bold ml-0.5">*</span>
+          </label>
+          <input
+            className="input w-full"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Dental Clinics, Gyms & Fitness, Real Estate"
+            required
+            autoFocus
+          />
+        </div>
+
+        <div>
+          <label className="label">Description (optional)</label>
+          <input
+            className="input w-full"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="e.g. Dental and orthodontic clinics"
+          />
+        </div>
+
+        <div>
+          <label className="label">Category Icon</label>
+          <div className="grid grid-cols-5 gap-2">
+            {AVAILABLE_ICONS.map(i => {
+              const isSel = iconName === i.name
+              return (
+                <button
+                  type="button"
+                  key={i.name}
+                  onClick={() => setIconName(i.name)}
+                  className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs transition-all ${
+                    isSel
+                      ? 'border-primary bg-primary/10 text-primary font-semibold ring-1 ring-primary'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <CategoryIconDisplay iconName={i.name} size={18} />
+                  <span className="truncate w-full text-center text-[10px]">{i.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={pending || !name.trim()}>
+            {pending && <Spinner />} Save Changes
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// ---------- Delete category modal ----------
+function DeleteCategoryModal({
+  category,
+  onClose,
+}: {
+  category: TemplateCategory
+  onClose: () => void
+}) {
+  const { run, pending, error } = useAction()
+  const router = useRouter()
+
+  return (
+    <Modal title="Delete Category" open onClose={onClose} locked={pending}>
+      <div className="space-y-4">
+        <ErrorNote error={error} />
+        <p className="text-sm text-slate-700">
+          Are you sure you want to delete <strong className="text-slate-900">&ldquo;{category.label}&rdquo;</strong>?
+        </p>
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={pending}
+            onClick={() => {
+              run(
+                () =>
+                  deleteBusinessCategory({
+                    id: category.id,
+                    name: category.key,
+                  }),
+                () => {
+                  onClose()
+                  router.replace('/dashboard/templates')
+                  router.refresh()
+                },
+                { success: `Category "${category.label}" deleted.` }
+              )
+            }}
+          >
+            {pending && <Spinner />} Delete Category
+          </button>
+        </div>
+      </div>
     </Modal>
   )
 }

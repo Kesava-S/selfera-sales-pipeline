@@ -351,6 +351,135 @@ export async function createBusinessCategory(data: {
   return { ok: true, data: inserted?.id }
 }
 
+export async function updateBusinessCategory(data: {
+  id?: string
+  oldName: string
+  name: string
+  description?: string
+  icon_name?: string
+}): Promise<ActionResult> {
+  const name = (data.name || '').trim()
+  const oldName = (data.oldName || '').trim()
+  if (!name) return { ok: false, error: 'Category name is required.' }
+  if (oldName.toLowerCase() === 'general') {
+    return { ok: false, error: 'The General baseline category cannot be modified.' }
+  }
+
+  const supabase = createServiceClient()
+
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+  let updateQuery = supabase
+    .from('business_categories')
+    .update({
+      name,
+      slug,
+      description: data.description?.trim() || null,
+      icon_name: data.icon_name?.trim() || 'Building2',
+      updated_at: new Date().toISOString(),
+    })
+
+  if (data.id) {
+    updateQuery = updateQuery.eq('id', data.id)
+  } else {
+    updateQuery = updateQuery.eq('name', oldName)
+  }
+
+  const { error } = await updateQuery
+
+  if (error) {
+    if (error.code === '23505') {
+      return { ok: false, error: 'A category with this name or slug already exists.' }
+    }
+    return { ok: false, error: friendly(error.message) }
+  }
+
+  // If the category name changed, update templates and businesses
+  if (name !== oldName) {
+    const { data: matchedTemplates } = await supabase
+      .from('templates')
+      .select('id, business_types')
+      .contains('business_types', [oldName])
+
+    if (matchedTemplates && matchedTemplates.length > 0) {
+      for (const t of matchedTemplates) {
+        const updatedTypes = (t.business_types || []).map((bt: string) => (bt === oldName ? name : bt))
+        await supabase
+          .from('templates')
+          .update({ business_types: updatedTypes })
+          .eq('id', t.id)
+      }
+    }
+
+    await supabase
+      .from('businesses')
+      .update({ business_type: name })
+      .eq('business_type', oldName)
+  }
+
+  revalidatePath('/dashboard/templates')
+  revalidatePath('/dashboard/leads')
+  return { ok: true }
+}
+
+export async function deleteBusinessCategory(data: {
+  id?: string
+  name: string
+}): Promise<ActionResult> {
+  const name = (data.name || '').trim()
+  if (!name) return { ok: false, error: 'Category name is required.' }
+  if (name.toLowerCase() === 'general') {
+    return { ok: false, error: 'The General baseline category cannot be deleted.' }
+  }
+
+  const supabase = createServiceClient()
+
+  // 1. Delete from business_categories
+  if (data.id) {
+    const { error } = await supabase
+      .from('business_categories')
+      .delete()
+      .eq('id', data.id)
+    if (error) return { ok: false, error: friendly(error.message) }
+  } else {
+    const { error } = await supabase
+      .from('business_categories')
+      .delete()
+      .eq('name', name)
+    if (error) return { ok: false, error: friendly(error.message) }
+  }
+
+  // 2. Delete or detach custom template overrides for this category
+  const { data: customTemplates } = await supabase
+    .from('templates')
+    .select('id, business_types')
+    .contains('business_types', [name])
+
+  if (customTemplates && customTemplates.length > 0) {
+    for (const t of customTemplates) {
+      const remainingTypes = (t.business_types || []).filter((bt: string) => bt !== name)
+      if (remainingTypes.length === 0) {
+        await supabase.from('templates').delete().eq('id', t.id)
+      } else {
+        await supabase.from('templates').update({ business_types: remainingTypes }).eq('id', t.id)
+      }
+    }
+  }
+
+  // 3. Clear category from any leads in businesses table that were using it
+  await supabase
+    .from('businesses')
+    .update({ business_type: null })
+    .eq('business_type', name)
+
+  revalidatePath('/dashboard/templates')
+  revalidatePath('/dashboard/leads')
+  return { ok: true }
+}
+
 // ---------- Settings ----------
 export async function setMyName(fullName: string) {
   return rpc('set_my_name', { p_full_name: fullName })
@@ -542,10 +671,23 @@ export async function sendTestEmailCampaign({
     if (!(await isSmtpConfigured())) {
       return { ok: false, error: 'SMTP is not configured in .env.local (SMTP_PASS is required).' }
     }
+    const cleanSub = (subject || '')
+      .replace(/\{business_name\}|\{client_name\}|\{business\}/g, 'Krish Homestays')
+      .replace(/\{contact_name\}|\{first_name\}/g, 'Alex')
+      .replace(/\{sender_name\}|\{sender\}/g, 'Selfera')
+      .replace(/\{area\}|\{city\}/g, 'London')
+      .replace(/\{service\}/g, 'our services')
+    const cleanBody = (body || '')
+      .replace(/\{business_name\}|\{client_name\}|\{business\}/g, 'Krish Homestays')
+      .replace(/\{contact_name\}|\{first_name\}/g, 'Alex')
+      .replace(/\{sender_name\}|\{sender\}/g, 'Selfera')
+      .replace(/\{area\}|\{city\}/g, 'London')
+      .replace(/\{service\}/g, 'our services')
+
     await sendEmail({
       to,
-      subject: `[TEST] ${subject}`,
-      body,
+      subject: `[TEST] ${cleanSub}`,
+      body: cleanBody,
     })
     return { ok: true }
   } catch (err: unknown) {

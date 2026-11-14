@@ -39,6 +39,7 @@ export const TEMPLATE_BUSINESS_TYPES = [
 ] as const
 
 export type TemplateCategory = {
+  id?: string
   key: string
   label: string
   desc: string

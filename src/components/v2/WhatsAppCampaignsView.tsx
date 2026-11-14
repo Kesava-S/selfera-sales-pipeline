@@ -373,8 +373,10 @@ export function WhatsAppCampaignsView({
   // Formatted preview content
   const previewMessage = useMemo(() => {
     return (message || 'Type your message body on the left to see live preview...')
-      .replace(/\{business_name\}/g, sampleLead.business_name || 'your business')
-      .replace(/\{contact_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{business_name\}|\{client_name\}|\{business\}/g, sampleLead.business_name || 'your business')
+      .replace(/\{contact_name\}|\{first_name\}/g, sampleLead.contact_name || 'there')
+      .replace(/\{sender_name\}|\{sender\}/g, 'Selfera')
+      .replace(/\{area\}|\{city\}/g, 'London')
       .replace(/\{service\}/g, service || 'our services')
   }, [message, sampleLead, service])
 
@@ -789,6 +791,20 @@ export function WhatsAppCampaignsView({
                         className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
                       >
                         {'{contact_name}'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertVariable('sender_name')}
+                        className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
+                      >
+                        {'{sender_name}'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertVariable('area')}
+                        className="px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono transition-colors"
+                      >
+                        {'{area}'}
                       </button>
                       <button
                         type="button"
