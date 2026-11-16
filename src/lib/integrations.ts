@@ -177,6 +177,7 @@ export async function saveChannelIntegrationDb(
       console.error('[Integrations] Save error in "sales-pipe".integrations:', error.message)
       return { ok: false, error: error.message }
     }
+    if (channelId === 'whatsapp') clearWhatsAppConfigCache()
 
     if (isDualWriteEnabled()) {
       replicateTableMutationToSecondary({
@@ -669,7 +670,7 @@ export async function getDynamicEmailConfig(): Promise<{
 /**
  * Helper to fetch runtime WhatsApp credentials and template configuration
  */
-export async function getWhatsAppConfig(): Promise<{
+type WhatsAppConfig = {
   phone_number_id: string
   access_token: string
   waba_id: string
@@ -678,7 +679,27 @@ export async function getWhatsAppConfig(): Promise<{
   default_template_name: string
   default_template_lang: string
   templates: string[]
-}> {
+}
+
+// The webhook reads these settings on every Meta update (and every rejected request),
+// so keep them for a minute per server instance. Saving Integrations clears it.
+const WHATSAPP_CONFIG_TTL_MS = 60_000
+let whatsAppConfigCache: { at: number; value: Promise<WhatsAppConfig> } | null = null
+
+export function clearWhatsAppConfigCache() {
+  whatsAppConfigCache = null
+}
+
+export function getWhatsAppConfig(): Promise<WhatsAppConfig> {
+  if (whatsAppConfigCache && Date.now() - whatsAppConfigCache.at < WHATSAPP_CONFIG_TTL_MS) {
+    return whatsAppConfigCache.value
+  }
+  const value = loadWhatsAppConfig()
+  whatsAppConfigCache = { at: Date.now(), value }
+  return value
+}
+
+async function loadWhatsAppConfig(): Promise<WhatsAppConfig> {
   try {
     const supabase = createServiceClient()
     const { data } = await supabase

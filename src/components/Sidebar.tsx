@@ -3,20 +3,22 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch, Contact, Plug } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Sliders, BarChart2, LogOut, Mail, MessageSquare, ScanSearch, Contact, Plug, Compass } from 'lucide-react'
 import { LogoutConfirmModal } from '@/components/LogoutConfirmModal'
 
 // roles: who sees the item (everyone when not set). Consultants don't run campaigns or Client Audience.
 const SALES_SIDE = ['admin', 'sales', 'sales_consultant']
 const NAV: { href: string; label: string; icon: typeof Mail; roles?: string[] }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  // Lead Discovery / Scraping Engine (top of funnel prospect sourcing before pipeline)
+  { href: '/dashboard/discovery', label: 'Lead Discovery', icon: Compass, roles: SALES_SIDE },
   { href: '/dashboard/leads', label: 'Lead Management', icon: Users },
   // Google Places + Companies House lookups to fill in a lead's missing details
   { href: '/dashboard/lookup', label: 'Lead Lookup', icon: ScanSearch },
-  // Customers of our client businesses, for marketing on their behalf
-  { href: '/dashboard/audience', label: 'Client Audience', icon: Contact, roles: SALES_SIDE },
   { href: '/dashboard/campaigns', label: 'Email Campaigns', icon: Mail, roles: SALES_SIDE },
   { href: '/dashboard/whatsapp-campaigns', label: 'WhatsApp Campaigns', icon: MessageSquare, roles: SALES_SIDE },
+  // Customers of our client businesses, for marketing on their behalf (placed after whatsapp campaigns)
+  { href: '/dashboard/audience', label: 'Client Audience', icon: Contact, roles: SALES_SIDE },
   { href: '/dashboard/insights', label: 'Insights', icon: BarChart2 },
   { href: '/dashboard/templates', label: 'Templates', icon: FileText },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug },
@@ -27,7 +29,7 @@ const NAV: { href: string; label: string; icon: typeof Mail; roles?: string[] }[
 const LEAD_PAGE = /^\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/|$)/i
 const sectionOf = (path: string) => (LEAD_PAGE.test(path) ? '/dashboard/leads' : path)
 
-const SECTION_PREFIXES = ['/dashboard/leads', '/dashboard/lookup', '/dashboard/audience', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/insights', '/dashboard/templates', '/dashboard/integrations', '/dashboard/settings']
+const SECTION_PREFIXES = ['/dashboard/discovery', '/dashboard/leads', '/dashboard/lookup', '/dashboard/campaigns', '/dashboard/whatsapp-campaigns', '/dashboard/audience', '/dashboard/insights', '/dashboard/templates', '/dashboard/integrations', '/dashboard/settings']
 
 export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name: string; role: string; display_role?: string }; reviewCount: number }) {
   const pathname = sectionOf(usePathname())
@@ -53,7 +55,7 @@ export function Sidebar({ userProfile, reviewCount }: { userProfile: { full_name
           <span className="text-xl font-extrabold leading-tight tracking-tight text-slate-900">
             Selfera<span className="text-primary">.</span>
           </span>
-          <span className="text-xs font-semibold text-slate-500">Sales Pipeline</span>
+          <span className="text-xs font-semibold text-slate-500">Marketing</span>
         </div>
       </Link>
 

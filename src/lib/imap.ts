@@ -100,7 +100,13 @@ export async function syncEmailReplies(options?: {
     secure,
     auth: { user, pass },
     logger: false,
+    // Never hang a scheduled run: give up on a slow mail server
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   })
+  // Stop starting new messages well before the route's time limit; the rest wait for the next run
+  const deadline = Date.now() + 20_000
 
   const errors: string[] = []
   let totalChecked = 0
@@ -131,7 +137,13 @@ export async function syncEmailReplies(options?: {
     // Limit to latest N messages
     const targetUids = uids.slice(-maxMessages)
 
+    // Messages we skip are marked read too, or they come back (and are downloaded again) on every run
+    const markSeen = async (uid: number) => {
+      if (markAsSeen) await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true }).catch(() => {})
+    }
+
     for (const uid of targetUids) {
+      if (Date.now() > deadline) break
       totalChecked++
       try {
         const msg = await client.fetchOne(String(uid), { source: true, envelope: true }, { uid: true })
@@ -139,10 +151,11 @@ export async function syncEmailReplies(options?: {
 
         const parsed = await simpleParser(msg.source)
         const fromAddress = parsed.from?.value?.[0]?.address?.trim().toLowerCase()
-        if (!fromAddress) continue
+        if (!fromAddress) { await markSeen(uid); continue }
 
         // Skip emails sent from our own address
         if (fromAddress === user.toLowerCase()) {
+          await markSeen(uid)
           continue
         }
 
@@ -172,6 +185,7 @@ export async function syncEmailReplies(options?: {
 
         if (existing) {
           // Already in database from previous sync, skip duplicate processing
+          await markSeen(uid)
           continue
         }
 
@@ -221,9 +235,7 @@ export async function syncEmailReplies(options?: {
         }
 
         // Mark as seen in Gmail if requested
-        if (markAsSeen) {
-          await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true })
-        }
+        await markSeen(uid)
       } catch (err: any) {
         errors.push(`UID ${uid}: ${err?.message || String(err)}`)
       }

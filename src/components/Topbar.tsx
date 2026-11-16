@@ -14,7 +14,7 @@ import { useTour } from '@/components/tour/TourContext'
 export function Topbar({ userProfile, email }: { userProfile: { id: string; full_name: string; role: string; display_role?: string }; email: string }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { breadcrumbs } = useBreadcrumbs()
+  const { breadcrumbs, triggerCustomBack, setCustomBack } = useBreadcrumbs()
   // While the next page's skeleton shows, its breadcrumb isn't known yet; don't show the old page's
   const loadingPage = useSkeletonShowing()
   const [open, setOpen] = useState(false)
@@ -25,6 +25,17 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
   const menu = usePresence(open, 120)
   const helpMenu = usePresence(helpOpen, 120)
   const { currentModuleTour, startTour, openBrowseModal } = useTour()
+
+  useEffect(() => {
+    setCustomBack(null)
+  }, [pathname, setCustomBack])
+
+  const handleBack = () => {
+    if (triggerCustomBack()) {
+      return
+    }
+    router.back()
+  }
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -47,7 +58,7 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
           <Menu size={20} />
         </button>
         {pathname !== '/dashboard' && (
-          <button onClick={() => router.back()} className="btn btn-secondary btn-sm hidden min-[901px]:inline-flex" aria-label="Back">
+          <button onClick={handleBack} className="btn btn-secondary btn-sm hidden min-[901px]:inline-flex" aria-label="Back">
             <ArrowLeft size={15} /> Back
           </button>
         )}
@@ -62,7 +73,7 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
             <span className="text-base font-extrabold leading-tight tracking-tight text-slate-900">
               Selfera<span className="text-primary">.</span>
             </span>
-            <span className="text-[10px] font-semibold text-slate-500 -mt-0.5">Sales Pipeline</span>
+            <span className="text-[10px] font-semibold text-slate-500 -mt-0.5">Marketing</span>
           </div>
         </Link>
 
@@ -74,7 +85,16 @@ export function Topbar({ userProfile, email }: { userProfile: { id: string; full
             <React.Fragment key={i}>
               {i > 0 && <ChevronRight size={14} className="shrink-0 text-slate-400" />}
               {c.href && i < arr.length - 1 ? (
-                <Link href={c.href} className="shrink-0 rounded px-1 font-semibold text-slate-500 hover:text-slate-900">
+                <Link
+                  href={c.href}
+                  onClick={(e) => {
+                    if (c.onClick) {
+                      e.preventDefault()
+                      c.onClick()
+                    }
+                  }}
+                  className="shrink-0 rounded px-1 font-semibold text-slate-500 hover:text-slate-900"
+                >
                   {c.label}
                 </Link>
               ) : (

@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: Props) {
   const { id } = await params
   const name = id.charAt(0).toUpperCase() + id.slice(1)
   return {
-    title: `${name} Integration | Selfera Sales Pipeline`,
+    title: `${name} Integration | Selfera Marketing`,
     description: `Configure and test ${name} integration for sandbox and realtime environments.`,
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import {
   Mail,
   Plus,
@@ -36,6 +36,7 @@ import { Modal, useAction, ErrorNote, Spinner, toast } from '@/components/ui'
 import { CampaignProgress } from '@/components/v2/CampaignProgress'
 import { RepliesLink } from '@/components/v2/CampaignReplies'
 import { useLists } from '@/components/ListsContext'
+import { useBreadcrumbs } from '@/components/BreadcrumbContext'
 
 export type DatabaseContact = {
   id?: string
@@ -155,6 +156,21 @@ export function EmailCampaignsView({
     return databases.find(d => d.id === selectedDatabaseId) || databases[0] || null
   }, [databases, selectedDatabaseId])
 
+  const { setBreadcrumbs, setCustomBack } = useBreadcrumbs()
+
+  const cancelCampaignEdit = useCallback(() => {
+    setIsCreatingCampaign(false)
+    setEditingCampaign(null)
+    setCustomBack(null)
+    setBreadcrumbs([
+      { label: 'Dashboard', href: '/dashboard' },
+      { label: 'Email Campaigns' },
+    ])
+    if (typeof window !== 'undefined' && (window.location.search.includes('action=create') || window.location.search.includes('action=edit'))) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [setBreadcrumbs, setCustomBack])
+
   // Start new campaign
   const startNewCampaign = () => {
     setEditingCampaign(null)
@@ -167,6 +183,15 @@ export function EmailCampaignsView({
       'Hi {contact_name},\n\nI noticed the great work {business_name} is doing.\n\nWe help businesses streamline customer bookings, follow ups, and inquiries into a unified queue so you never miss a client.\n\nWould you be open to a quick 5-minute chat this week?\n\nBest regards,\nSales Team'
     )
     setIsCreatingCampaign(true)
+    setCustomBack(cancelCampaignEdit)
+    setBreadcrumbs([
+      { label: 'Dashboard', href: '/dashboard' },
+      { label: 'Email Campaigns', href: '/dashboard/campaigns', onClick: cancelCampaignEdit },
+      { label: 'New Campaign' },
+    ])
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ campaignView: 'create' }, '', window.location.pathname + '?action=create')
+    }
   }
 
   // Edit existing campaign
@@ -179,12 +204,38 @@ export function EmailCampaignsView({
     setPreheader(c.preheader || '')
     setBody(c.body)
     setIsCreatingCampaign(true)
+    setCustomBack(cancelCampaignEdit)
+    setBreadcrumbs([
+      { label: 'Dashboard', href: '/dashboard' },
+      { label: 'Email Campaigns', href: '/dashboard/campaigns', onClick: cancelCampaignEdit },
+      { label: `Edit: ${c.name}` },
+    ])
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ campaignView: 'edit', id: c.id }, '', window.location.pathname + `?action=edit&id=${c.id}`)
+    }
   }
 
-  const cancelCampaignEdit = () => {
-    setIsCreatingCampaign(false)
-    setEditingCampaign(null)
-  }
+  useEffect(() => {
+    const handlePopState = () => {
+      if (isCreatingCampaign) {
+        setIsCreatingCampaign(false)
+        setEditingCampaign(null)
+        setCustomBack(null)
+        setBreadcrumbs([
+          { label: 'Dashboard', href: '/dashboard' },
+          { label: 'Email Campaigns' },
+        ])
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [isCreatingCampaign, setBreadcrumbs, setCustomBack])
+
+  useEffect(() => {
+    return () => {
+      setCustomBack(null)
+    }
+  }, [setCustomBack])
 
   // Open modal to create database
   const openCreateDatabase = () => {
@@ -452,7 +503,7 @@ export function EmailCampaignsView({
             if (exists) return prev.map(c => (c.id === updatedCampaign.id ? updatedCampaign : c))
             return [updatedCampaign, ...prev]
           })
-          setIsCreatingCampaign(false)
+          cancelCampaignEdit()
           toast.success(status === 'draft' ? 'Campaign draft saved.' : 'Campaign saved.')
           onSaved?.(updatedCampaign)
         }
@@ -518,10 +569,10 @@ export function EmailCampaignsView({
       {/* Top Banner / Header */}
       <div data-tour="email-header" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-baseline gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Email Campaigns</h1>
-            <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700 border border-sky-200">
-              Email Only
+            <span className="text-xs font-semibold text-slate-500">
+              Email Broadcast
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
@@ -1526,7 +1577,7 @@ export function EmailCampaignsView({
                     onClick={() => {
                       setLaunchModalOpen(false)
                       setLaunchSuccessInfo(null)
-                      setIsCreatingCampaign(false)
+                      cancelCampaignEdit()
                     }}
                   >
                     Done

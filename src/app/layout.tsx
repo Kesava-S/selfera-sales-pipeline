@@ -10,7 +10,7 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Selfera. | Sales Pipeline',
+  title: 'Selfera Marketing',
   description: 'Automation for UK small businesses - bookings, follow ups, operations and sales cadence workflows.',
   icons: {
     icon: '/logo.png',

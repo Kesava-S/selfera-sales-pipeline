@@ -11,8 +11,8 @@ import { getSalesLists } from '@/lib/dynamicData'
 import { ListsProvider } from '@/components/ListsContext'
 
 export const metadata: Metadata = {
-  title: 'Selfera. | Sales Pipeline',
-  description: 'Selfera sales pipeline',
+  title: 'Selfera Marketing',
+  description: 'Selfera Marketing platform',
   icons: { icon: '/logo.png' },
 }
 

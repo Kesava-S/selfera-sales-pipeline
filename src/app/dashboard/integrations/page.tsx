@@ -6,7 +6,7 @@ import { getDynamicChannels } from '@/lib/integrations'
 export const dynamic = 'force-dynamic'
 
 export const metadata = {
-  title: 'Integrations | Selfera Sales Pipeline',
+  title: 'Integrations | Selfera Marketing',
   description: 'Manage real-time communication channels and API integrations.',
 }
 

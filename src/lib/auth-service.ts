@@ -18,7 +18,7 @@ export interface UserAccessValidationResult {
   } | null
 }
 
-const NO_ACCESS = "You don't have access to the Sales Pipeline. Ask an admin to give you access in the Admin Panel."
+const NO_ACCESS = "You don't have access to Selfera Marketing. Ask an admin to give you access in the Admin Panel."
 
 export async function validateAndSyncUserAccess(opts: {
   userId: string

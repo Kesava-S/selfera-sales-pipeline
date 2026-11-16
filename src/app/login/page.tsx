@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { LoginForm } from './LoginForm'
 
 export const metadata = {
-  title: 'Sign In | Selfera Sales Pipeline',
+  title: 'Sign In | Selfera Marketing',
   description: 'Sign in to your Selfera workspace',
 }
 
@@ -27,7 +27,7 @@ export default async function LoginPage({
           </h2>
 
           <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-            Sales Pipeline
+            Marketing
           </p>
 
           <h1 className="mt-6 text-2xl font-bold tracking-tight text-slate-900">

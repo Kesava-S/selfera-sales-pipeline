@@ -23,7 +23,7 @@ export function ServerErrorView({
               Selfera<span className="text-primary">.</span>
             </span>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Sales Pipeline
+              Marketing
             </span>
           </div>
         </div>
