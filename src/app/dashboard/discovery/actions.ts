@@ -314,10 +314,10 @@ async function searchSerpApi(
 
     if (smeOnly) {
       const smes = mapped.filter((p) => p.is_sme)
-      if (smes.length > 0) return smes.slice(0, 12)
+      if (smes.length > 0) return smes
     }
 
-    return mapped.slice(0, 10)
+    return mapped
   } catch (err: any) {
     console.warn('SerpApi search failed:', err?.message)
     return []
@@ -574,9 +574,26 @@ export async function discoverProspectsWithFirecrawl(params: DiscoveryQuery): Pr
           message: `Discovered ${finalProspects.length} verified businesses.`,
           serpApiBalance: balance,
         }
+      } else {
+        const balance = await getSerpApiBalance()
+        return {
+          success: true,
+          isLive: true,
+          prospects: [],
+          message: 'No businesses found matching your search criteria.',
+          serpApiBalance: balance,
+        }
       }
     } catch (serpErr: any) {
-      console.warn('SerpApi lookup failed, attempting Google Places fallback:', serpErr?.message)
+      console.warn('SerpApi lookup failed:', serpErr?.message)
+      const balance = await getSerpApiBalance()
+      return {
+        success: false,
+        isLive: true,
+        prospects: [],
+        error: `SerpApi search failed: ${serpErr?.message || 'Network error'}`,
+        serpApiBalance: balance,
+      }
     }
   }
 
