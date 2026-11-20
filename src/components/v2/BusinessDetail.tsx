@@ -227,18 +227,17 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
                 />
               )}
               {b.existing_website && (
-                <li className="flex items-center gap-2 flex-wrap">
+                <li className="flex items-center gap-2">
                   <span className="shrink-0 text-slate-500"><Globe size={15} /></span>
-                  <span className="font-medium text-slate-800 break-words">{formatWebsiteDisplay(b.existing_website)}</span>
                   <a
                     href={websiteLink(b.existing_website) || '#'}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-1.5 py-0.5 text-xs font-medium transition-colors shrink-0"
-                    title={`Direct to website: ${b.existing_website}`}
+                    className="inline-flex items-center gap-1 text-primary hover:underline font-medium break-words"
+                    title={b.existing_website}
                   >
-                    <span>Direct in website</span>
-                    <ExternalLink size={10} />
+                    <span>{formatWebsiteDisplay(b.existing_website)}</span>
+                    <ExternalLink size={11} className="shrink-0" />
                   </a>
                 </li>
               )}

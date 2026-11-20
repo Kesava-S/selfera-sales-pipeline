@@ -1102,24 +1102,18 @@ export function LeadDiscoveryView({
                             Website
                           </span>
                           {p.existing_website ? (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span
-                                className="font-semibold text-slate-800 break-words"
-                                title={p.existing_website}
-                              >
+                            <a
+                              href={p.existing_website.startsWith('http') ? p.existing_website : `https://${p.existing_website}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 font-semibold text-slate-800 hover:text-primary transition-colors group break-words"
+                              title={p.existing_website}
+                            >
+                              <span className="group-hover:underline">
                                 {formatWebsiteDisplay(p.existing_website)}
                               </span>
-                              <a
-                                href={p.existing_website.startsWith('http') ? p.existing_website : `https://${p.existing_website}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium transition-colors shrink-0"
-                                title={`Direct to website: ${p.existing_website}`}
-                              >
-                                <span>Direct in website</span>
-                                <ExternalLink size={10} />
-                              </a>
-                            </div>
+                              <ExternalLink size={11} className="text-slate-400 group-hover:text-primary shrink-0 transition-colors" />
+                            </a>
                           ) : (
                             <span className="text-slate-400 italic">No website</span>
                           )}
@@ -1303,24 +1297,16 @@ export function LeadDiscoveryView({
                   <div className="sm:col-span-2">
                     <span className="text-slate-400 block text-[11px]">Official Website:</span>
                     {modalProspect.existing_website ? (
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span
-                          className="font-semibold text-slate-800 break-words"
-                          title={modalProspect.existing_website}
-                        >
-                          {formatWebsiteDisplay(modalProspect.existing_website)}
-                        </span>
-                        <a
-                          href={modalProspect.existing_website.startsWith('http') ? modalProspect.existing_website : `https://${modalProspect.existing_website}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-2 py-0.5 text-xs font-medium transition-colors shrink-0"
-                          title={`Direct to website: ${modalProspect.existing_website}`}
-                        >
-                          <span>Direct in website</span>
-                          <ExternalLink size={11} />
-                        </a>
-                      </div>
+                      <a
+                        href={modalProspect.existing_website.startsWith('http') ? modalProspect.existing_website : `https://${modalProspect.existing_website}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-primary hover:underline mt-0.5"
+                        title={modalProspect.existing_website}
+                      >
+                        <span>{formatWebsiteDisplay(modalProspect.existing_website)}</span>
+                        <ExternalLink size={12} className="shrink-0" />
+                      </a>
                     ) : (
                       <span className="text-rose-600 font-medium">No active website detected</span>
                     )}
