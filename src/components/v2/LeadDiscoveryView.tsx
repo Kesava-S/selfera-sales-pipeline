@@ -30,7 +30,9 @@ import {
 import {
   importDiscoveredProspects,
   discoverProspectsWithFirecrawl,
+  getSerpApiBalance,
   type DiscoveredProspect,
+  type SerpApiAccountInfo,
 } from '@/app/dashboard/discovery/actions'
 import { toast } from '@/components/ui'
 import type { ListCategory } from '@/lib/lists'
@@ -40,6 +42,7 @@ interface LeadDiscoveryViewProps {
   services: string[]
   existingBusinessCount: number
   isFirecrawlConfigured?: boolean
+  initialSerpApiBalance?: SerpApiAccountInfo | null
 }
 
 type ResultFilter = 'all' | 'growing-sme' | 'with-phone' | 'with-email' | 'with-website' | 'no-website' | 'with-owner'
@@ -82,6 +85,7 @@ export function LeadDiscoveryView({
   categories,
   services,
   existingBusinessCount,
+  initialSerpApiBalance,
 }: LeadDiscoveryViewProps) {
   // Search parameters (Default location fixed to London)
   const [query, setQuery] = useState('')
@@ -89,6 +93,25 @@ export function LeadDiscoveryView({
   const [postcode, setPostcode] = useState('')
   const [category, setCategory] = useState('All Categories')
   const [smeOnly, setSmeOnly] = useState(true)
+
+  // SerpApi Search Balance State
+  const [serpBalance, setSerpBalance] = useState<SerpApiAccountInfo | null>(initialSerpApiBalance || null)
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false)
+
+  const refreshBalance = async () => {
+    setIsRefreshingBalance(true)
+    try {
+      const bal = await getSerpApiBalance()
+      if (bal) {
+        setSerpBalance(bal)
+        toast.success(`SerpApi balance: ${bal.total_searches_left} searches remaining`)
+      }
+    } catch {
+      toast.error('Unable to fetch SerpApi balance')
+    } finally {
+      setIsRefreshingBalance(false)
+    }
+  }
 
   // Detailed SME Growth & Quality Filters
   const [showFilters, setShowFilters] = useState(false)
@@ -252,6 +275,9 @@ export function LeadDiscoveryView({
       if (res.success) {
         setProspects(res.prospects)
         setSelectedIds(new Set())
+        if (res.serpApiBalance) {
+          setSerpBalance(res.serpApiBalance)
+        }
         if (res.prospects.length > 0) {
           saveToHistory({
             id: `search-${Date.now()}`,
@@ -419,7 +445,39 @@ export function LeadDiscoveryView({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex flex-wrap shrink-0 items-center gap-2.5">
+          {serpBalance && (
+            <div
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 shadow-xs"
+              title={`SerpApi: ${serpBalance.total_searches_left} remaining of ${serpBalance.searches_per_month} searches (${serpBalance.plan_name}). Reset date: ${serpBalance.plan_renewal_date || 'Monthly'}`}
+            >
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    SerpApi Balance
+                  </span>
+                  <button
+                    type="button"
+                    onClick={refreshBalance}
+                    disabled={isRefreshingBalance}
+                    className="text-slate-400 hover:text-slate-700 transition-colors p-0.5 rounded cursor-pointer"
+                    title="Refresh SerpApi search balance"
+                  >
+                    <RefreshCw size={10} className={isRefreshingBalance ? 'animate-spin' : ''} />
+                  </button>
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className={`text-base font-bold ${serpBalance.total_searches_left <= 25 ? 'text-amber-600' : 'text-slate-900'}`}>
+                    {serpBalance.total_searches_left.toLocaleString()}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    / {serpBalance.searches_per_month} left
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <Link
             href="/dashboard/discovery/history"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900 transition-colors"
@@ -577,8 +635,16 @@ export function LeadDiscoveryView({
             )}
           </div>
 
-          <div className="text-[11px] text-slate-400 hidden sm:block">
-            SerpApi Maps search filtered for UK SMEs with verified contacts
+          <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1.5">
+            <span>SerpApi UK Maps SME Search</span>
+            {serpBalance && (
+              <>
+                <span className="text-slate-300">·</span>
+                <span className="font-medium text-slate-600">
+                  <span className="font-semibold text-slate-800">{serpBalance.total_searches_left}</span> searches remaining
+                </span>
+              </>
+            )}
           </div>
         </div>
 

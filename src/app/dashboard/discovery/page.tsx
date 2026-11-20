@@ -5,6 +5,7 @@ import { LeadDiscoveryView } from '@/components/v2/LeadDiscoveryView'
 import { getSalesLists } from '@/lib/dynamicData'
 import { AccountNotSetup } from '@/components/v2/AccountNotSetup'
 import { EmptyState } from '@/components/ui'
+import { getSerpApiBalance } from './actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,7 @@ export default async function LeadDiscoveryPage() {
   }
 
   const firecrawlConfigured = Boolean(process.env.FIRECRAWL_API_KEY)
+  const serpApiBalance = await getSerpApiBalance()
 
   return (
     <>
@@ -48,6 +50,7 @@ export default async function LeadDiscoveryPage() {
         services={lists.services || []}
         existingBusinessCount={businessCount}
         isFirecrawlConfigured={firecrawlConfigured}
+        initialSerpApiBalance={serpApiBalance}
       />
     </>
   )

@@ -57,12 +57,51 @@ export interface DiscoveryQuery {
   maxRating?: number
 }
 
+export interface SerpApiAccountInfo {
+  total_searches_left: number
+  searches_per_month: number
+  this_month_usage: number
+  plan_name: string
+  plan_renewal_date?: string
+}
+
 export interface DiscoveryResponse {
   success: boolean
   isLive: boolean
   prospects: DiscoveredProspect[]
   message?: string
   error?: string
+  serpApiBalance?: SerpApiAccountInfo | null
+}
+
+/**
+ * Fetch current SerpApi account balance and remaining searches.
+ */
+export async function getSerpApiBalance(): Promise<SerpApiAccountInfo | null> {
+  const serpKey = process.env.SERPAPI_API_KEY
+  if (!serpKey) return null
+
+  try {
+    const res = await fetch(`https://serpapi.com/account?api_key=${serpKey}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(6_000),
+    })
+
+    if (!res.ok) return null
+    const data = await res.json()
+    return {
+      total_searches_left: typeof data.total_searches_left === 'number' ? data.total_searches_left : (data.plan_searches_left ?? 0),
+      searches_per_month: typeof data.searches_per_month === 'number' ? data.searches_per_month : 0,
+      this_month_usage: typeof data.this_month_usage === 'number' ? data.this_month_usage : 0,
+      plan_name: data.plan_name || 'Free Plan',
+      plan_renewal_date: data.plan_renewal_date,
+    }
+  } catch (err) {
+    console.warn('[SerpApi] Failed to fetch account balance:', err)
+    return null
+  }
 }
 
 /**
@@ -526,11 +565,14 @@ export async function discoverProspectsWithFirecrawl(params: DiscoveryQuery): Pr
           ? (serpProspects.filter((p) => p.is_sme).length > 0 ? serpProspects.filter((p) => p.is_sme) : serpProspects)
           : serpProspects
 
+        const balance = await getSerpApiBalance()
+
         return {
           success: true,
           isLive: true,
           prospects: finalProspects,
           message: `Discovered ${finalProspects.length} verified businesses.`,
+          serpApiBalance: balance,
         }
       }
     } catch (serpErr: any) {
