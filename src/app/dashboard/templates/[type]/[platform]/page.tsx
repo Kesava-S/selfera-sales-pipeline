@@ -16,9 +16,12 @@ export default async function TemplateSlotsPage({
 }) {
   const p = await params
   const type = decodeURIComponent(p.type)
-  const platform = decodeURIComponent(p.platform)
+  const rawPlatform = decodeURIComponent(p.platform)
+  const platform = PLATFORMS.find(
+    (pl) => pl.toLowerCase() === rawPlatform.toLowerCase()
+  )
 
-  if (!type || !type.trim() || !PLATFORMS.includes(platform as any)) {
+  if (!type || !type.trim() || !platform) {
     notFound()
   }
 

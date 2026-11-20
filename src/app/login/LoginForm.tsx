@@ -172,6 +172,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
               id="email"
               name="email"
               type="text"
+              aria-label="Email Address"
               autoComplete="email"
               value={email}
               onChange={e => handleEmailChange(e.target.value)}
@@ -210,6 +211,7 @@ export function LoginForm({ initialError }: { initialError?: string }) {
               id="password"
               name="password"
               type={showPassword ? 'text' : 'password'}
+              aria-label="Password"
               autoComplete="current-password"
               value={password}
               onChange={e => handlePasswordChange(e.target.value)}
