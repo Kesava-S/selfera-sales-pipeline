@@ -132,7 +132,7 @@ export async function POST(request: Request) {
         // Delivery receipts for messages we sent: sent -> delivered -> read, or failed
         const statuses = (value.statuses || []) as MetaStatus[]
         if (statuses.length) {
-          console.log(`[WhatsApp Webhook] 📋 Received ${statuses.length} status update(s):`, statuses.map(s => `${s.id}: ${s.status}`).join(', '))
+          console.log(`[WhatsApp Webhook] Received ${statuses.length} status update(s):`, statuses.map(s => `${s.id}: ${s.status}`).join(', '))
           const statusArgs = {
             p_statuses: statuses.map(st => ({
               id: st.id,
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
           if (statusError) {
             console.error('[WhatsApp Webhook] record_whatsapp_status error:', statusError.message)
           } else {
-            console.log(`[WhatsApp Webhook] ✅ Updated ${updatedCount ?? 0} message delivery record(s) in database.`)
+            console.log(`[WhatsApp Webhook] Updated ${updatedCount ?? 0} message delivery record(s) in database.`)
           }
           if (!statusError && isDualWriteEnabled()) {
             replicateRpcToSecondary('record_whatsapp_status', statusArgs).catch(err => {
@@ -174,7 +174,7 @@ export async function POST(request: Request) {
           body = body.trim()
           if (!body || !from) continue
 
-          console.log(`[WhatsApp Webhook] 📩 Inbound message from ${from}: "${body}" (${messageId})`)
+          console.log(`[WhatsApp Webhook] Inbound message from ${from}: "${body}" (${messageId})`)
 
           const inboundArgs = {
             p_platform: 'WhatsApp',

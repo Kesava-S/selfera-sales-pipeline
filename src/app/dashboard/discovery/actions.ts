@@ -242,10 +242,10 @@ async function searchSerpApi(
         signal = 'No website detected on public profile'
         pitch = 'Pitches modern responsive website and online direct booking'
       } else if (rating && rating < 4.2) {
-        signal = `Low rating: ${rating}★ (${reviews || 0} reviews)`
+        signal = `Low rating: ${rating} / 5.0 (${reviews || 0} reviews)`
         pitch = 'Pitches automated customer review accelerator & retention'
       } else if (reviews && reviews > 50) {
-        signal = `Growing volume: ${reviews} reviews (${rating || '4.5'}★)`
+        signal = `Growing volume: ${reviews} reviews (${rating || '4.5'} / 5.0)`
         pitch = 'Pitches automated WhatsApp review concierge & workflow automation'
       }
 
@@ -601,10 +601,10 @@ export async function discoverProspectsWithFirecrawl(params: DiscoveryQuery): Pr
               signal = 'No website detected on public profile'
               pitch = 'Pitches modern responsive website and online direct booking'
             } else if (rating && rating < 4.2) {
-              signal = `Low rating: ${rating}★ (${reviews || 0} reviews)`
+              signal = `Low rating: ${rating} / 5.0 (${reviews || 0} reviews)`
               pitch = 'Pitches automated customer review accelerator & retention'
             } else if (reviews && reviews > 50) {
-              signal = `Growing volume: ${reviews} reviews (${rating || '4.5'}★)`
+              signal = `Growing volume: ${reviews} reviews (${rating || '4.5'} / 5.0)`
               pitch = 'Pitches automated WhatsApp review concierge & workflow automation'
             }
 

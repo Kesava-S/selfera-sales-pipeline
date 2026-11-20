@@ -24,6 +24,7 @@ import {
   Sparkles,
   History,
   Trash2,
+  TrendingUp,
 } from 'lucide-react'
 import {
   importDiscoveredProspects,
@@ -426,7 +427,7 @@ export function LeadDiscoveryView({
             }`}
             title={smeOnly ? 'Filtering for growing SMEs (5-150 reviews, excluding chains)' : 'Showing all businesses including large chains'}
           >
-            <span className="text-sm">🌱</span>
+            <TrendingUp size={13} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
             <span className="hidden sm:inline">Growing SMEs</span>
             <span className="sm:hidden">SMEs</span>
             <span className={`h-2 w-2 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
@@ -527,7 +528,7 @@ export function LeadDiscoveryView({
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  🌱 Growing SMEs ({filterCounts.growingSme})
+                  Growing SMEs ({filterCounts.growingSme})
                 </button>
                 <button
                   type="button"
@@ -674,7 +675,7 @@ export function LeadDiscoveryView({
                           </span>
                           {p.is_sme && (
                             <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 border border-emerald-200/60">
-                              <span>🌱</span> Growing SME
+                              <TrendingUp size={11} className="text-emerald-700" /> Growing SME
                             </span>
                           )}
                           {typeof p.company_age_years === 'number' && p.company_age_years > 0 && (
@@ -923,7 +924,7 @@ export function LeadDiscoveryView({
                   </span>
                   {modalProspect.is_sme && (
                     <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200/60 inline-flex items-center gap-1">
-                      <span>🌱</span> Growing SME
+                      <TrendingUp size={12} className="text-emerald-700" /> Growing SME
                     </span>
                   )}
                 </div>
