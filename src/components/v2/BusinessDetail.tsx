@@ -8,7 +8,7 @@ import {
   CheckCircle2, AlertTriangle, CalendarClock, Star, Lock, MailX, MessageSquareReply,
 } from 'lucide-react'
 import { CONFIG, OPEN_STAGES, actsAsConsultant, actsAsSales } from '@/lib/config'
-import { dueLabel, formatDate, formatDateTime } from '@/lib/format'
+import { dueLabel, formatDate, formatDateTime, formatWebsiteDisplay } from '@/lib/format'
 import { useTimeZone } from '@/lib/useTimeZone'
 import { facebookLink, instagramLink, mailtoLink, websiteLink, whatsappLink } from '@/lib/contact'
 import { addNote, approveLeads, assignConsultant, changeStage, dismissLateReply, handOver, newPitch, recordWin, removeOptOut, startThread } from '@/app/dashboard/actions'
@@ -226,7 +226,22 @@ export function BusinessDetail({ opp, otherPitches, people, me, emailBlock = nul
                   external
                 />
               )}
-              {b.existing_website && <Contact icon={<Globe size={15} />} href={websiteLink(b.existing_website)} text={b.existing_website} external />}
+              {b.existing_website && (
+                <li className="flex items-center gap-2 flex-wrap">
+                  <span className="shrink-0 text-slate-500"><Globe size={15} /></span>
+                  <span className="font-medium text-slate-800 break-words">{formatWebsiteDisplay(b.existing_website)}</span>
+                  <a
+                    href={websiteLink(b.existing_website) || '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-1.5 py-0.5 text-xs font-medium transition-colors shrink-0"
+                    title={`Direct to website: ${b.existing_website}`}
+                  >
+                    <span>Direct in website</span>
+                    <ExternalLink size={10} />
+                  </a>
+                </li>
+              )}
               {b.has_no_website && <li className="text-xs font-semibold text-slate-400">No website indicated</li>}
               {b.maps_link && <Contact icon={<MapPin size={15} />} href={b.maps_link} text="Google Maps" external />}
               {b.address && <li className="flex items-start gap-2 text-slate-600"><MapPin size={15} className="mt-0.5 shrink-0" />{[b.address, b.postcode].filter(Boolean).join(', ')}</li>}

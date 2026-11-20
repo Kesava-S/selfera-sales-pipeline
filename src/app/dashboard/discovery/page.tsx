@@ -33,6 +33,8 @@ export default async function LeadDiscoveryPage() {
     businessCount = 0
   }
 
+  const firecrawlConfigured = Boolean(process.env.FIRECRAWL_API_KEY)
+
   return (
     <>
       <BreadcrumbSetter
@@ -45,6 +47,7 @@ export default async function LeadDiscoveryPage() {
         categories={lists.categories || []}
         services={lists.services || []}
         existingBusinessCount={businessCount}
+        isFirecrawlConfigured={firecrawlConfigured}
       />
     </>
   )

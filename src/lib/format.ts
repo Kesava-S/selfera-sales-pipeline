@@ -53,3 +53,14 @@ export function formatWaiting(iso?: string | Date | null): string {
   const days = Math.floor(hours / 24)
   return `${days}d waiting`
 }
+
+export function formatWebsiteDisplay(url?: string | null): string {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
+    return parsed.hostname.replace(/^www\./i, '')
+  } catch {
+    return url.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0].split('?')[0]
+  }
+}
+

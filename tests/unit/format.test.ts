@@ -7,6 +7,7 @@ import {
   stepLabel,
   nextStepLabel,
   formatWaiting,
+  formatWebsiteDisplay,
 } from '@/lib/format';
 
 describe('format utilities (src/lib/format.ts)', () => {
@@ -136,6 +137,25 @@ describe('format utilities (src/lib/format.ts)', () => {
 
       const twoDaysAgo = new Date(now - 2 * 86400000).toISOString();
       expect(formatWaiting(twoDaysAgo)).toBe('2d waiting');
+    });
+  });
+
+  describe('formatWebsiteDisplay', () => {
+    it('returns empty string if url is missing or null', () => {
+      expect(formatWebsiteDisplay(null)).toBe('');
+      expect(formatWebsiteDisplay(undefined)).toBe('');
+      expect(formatWebsiteDisplay('')).toBe('');
+    });
+
+    it('strips protocol and www prefix returning clean hostname', () => {
+      expect(formatWebsiteDisplay('https://www.cadoganclinic.com/about-us?test=1')).toBe('cadoganclinic.com');
+      expect(formatWebsiteDisplay('http://maisongourmet.co.uk')).toBe('maisongourmet.co.uk');
+      expect(formatWebsiteDisplay('www.thecrowninn.com/rooms')).toBe('thecrowninn.com');
+    });
+
+    it('handles domains without protocol', () => {
+      expect(formatWebsiteDisplay('selfera.co.uk')).toBe('selfera.co.uk');
+      expect(formatWebsiteDisplay('subdomain.example.com/page')).toBe('subdomain.example.com');
     });
   });
 });

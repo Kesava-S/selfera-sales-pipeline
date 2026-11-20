@@ -440,10 +440,12 @@ export function LeadDiscoveryView({
       {/* Search Area with London default, Postcode & Category filters */}
       <form
         onSubmit={handleSearch}
-        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs"
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-xs"
       >
-        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2.5">
-          <div className="relative flex-1 min-w-[200px]">
+        {/* Row 1: Aligned Input Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 items-center">
+          {/* 1. Keyword search (4 cols on lg) */}
+          <div className="relative sm:col-span-2 lg:col-span-4">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -454,35 +456,35 @@ export function LeadDiscoveryView({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Location: London as fixed default */}
-            <div className="relative flex-1 sm:flex-initial sm:w-36 min-w-[120px]">
-              <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="City (default: London)"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              />
-            </div>
+          {/* 2. City: London as default (2 cols on lg) */}
+          <div className="relative sm:col-span-1 lg:col-span-2">
+            <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="City (default: London)"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
 
-            {/* Postcode Filter Input */}
-            <div className="relative flex-1 sm:flex-initial sm:w-28 min-w-[90px]">
-              <input
-                type="text"
-                value={postcode}
-                onChange={(e) => setPostcode(e.target.value)}
-                placeholder="Postcode (e.g. NW1)"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              />
-            </div>
+          {/* 3. Postcode (2 cols on lg) */}
+          <div className="relative sm:col-span-1 lg:col-span-2">
+            <input
+              type="text"
+              value={postcode}
+              onChange={(e) => setPostcode(e.target.value)}
+              placeholder="Postcode (e.g. NW1)"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
 
-            {/* Category Dropdown */}
+          {/* 4. Category Dropdown (2 cols on lg) */}
+          <div className="relative sm:col-span-1 lg:col-span-2">
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="h-10 flex-1 sm:flex-initial sm:w-40 min-w-[130px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
             >
               {availableCategories.map((c) => (
                 <option key={c} value={c}>
@@ -490,37 +492,73 @@ export function LeadDiscoveryView({
                 </option>
               ))}
             </select>
+          </div>
 
+          {/* 5. Actions: Reset & Search (2 cols on lg) */}
+          <div className="flex items-center gap-2 sm:col-span-1 lg:col-span-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={isSearching}
+              className="h-10 px-3 inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-50 transition-all shrink-0"
+              title="Reset search inputs and filters to default"
+            >
+              <RotateCcw size={13} className="text-slate-400" />
+              <span>Reset</span>
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSearching}
+              className="h-10 flex-1 min-w-[90px] inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold text-white shadow-xs hover:bg-primary-hover active:scale-[0.98] disabled:opacity-75 disabled:cursor-wait transition-all"
+            >
+              {isSearching ? (
+                <>
+                  <RefreshCw size={13} className="animate-spin" />
+                  <span>Searching...</span>
+                </>
+              ) : (
+                <>
+                  <Search size={13} />
+                  <span>Search</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Secondary Toolbar (Toggles & Filter Status) */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Growing SME Filter Toggle */}
             <button
               type="button"
               onClick={() => setSmeOnly(!smeOnly)}
-              className={`h-10 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold border transition-all shrink-0 ${
+              className={`h-8 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold border transition-all ${
                 smeOnly
                   ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-400/30'
-                  : 'border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
               title={smeOnly ? 'Filtering for growing SMEs (5-150 reviews, excluding chains)' : 'Showing all businesses including large chains'}
             >
-              <TrendingUp size={13} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
-              <span className="hidden sm:inline">Growing SMEs</span>
-              <span className="sm:hidden">SMEs</span>
-              <span className={`h-2 w-2 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              <TrendingUp size={12} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
+              <span>Growing SMEs Only</span>
+              <span className={`h-1.5 w-1.5 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </button>
 
             {/* More Filters Toggle */}
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className={`h-10 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold border transition-all shrink-0 ${
+              className={`h-8 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold border transition-all ${
                 showFilters || activeFilterCount > 0
                   ? 'border-sky-300 bg-sky-50 text-sky-800 shadow-2xs ring-1 ring-sky-400/30'
                   : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
               title="Toggle detailed filters for reviews, rating, age, and contact requirements"
             >
-              <SlidersHorizontal size={13} className={showFilters || activeFilterCount > 0 ? 'text-sky-700' : 'text-slate-500'} />
-              <span>Filters</span>
+              <SlidersHorizontal size={12} className={showFilters || activeFilterCount > 0 ? 'text-sky-700' : 'text-slate-500'} />
+              <span>More Filters</span>
               {activeFilterCount > 0 && (
                 <span className="rounded-full bg-sky-600 px-1.5 py-0.2 text-[10px] font-bold text-white">
                   {activeFilterCount}
@@ -528,47 +566,27 @@ export function LeadDiscoveryView({
               )}
             </button>
 
-            {/* Actions: Reset & Search buttons */}
-            <div className="flex items-center gap-2 ml-auto shrink-0">
-              {/* Reset button: resets inputs only, keeps extracted scrape data */}
+            {activeFilterCount > 0 && (
               <button
                 type="button"
-                onClick={handleReset}
-                disabled={isSearching}
-                className="h-10 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-50 transition-all shrink-0"
-                title="Reset search inputs and filters to default"
+                onClick={clearAllFilters}
+                className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline ml-1"
               >
-                <RotateCcw size={13} className="text-slate-400" />
-                <span>Reset</span>
+                Clear all filters ({activeFilterCount})
               </button>
+            )}
+          </div>
 
-              {/* Search Button */}
-              <button
-                type="submit"
-                disabled={isSearching}
-                className="h-10 min-w-[110px] inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white shadow-xs hover:bg-primary-hover active:scale-[0.98] disabled:opacity-75 disabled:cursor-wait transition-all shrink-0"
-              >
-                {isSearching ? (
-                  <>
-                    <RefreshCw size={14} className="animate-spin" />
-                    <span>Searching...</span>
-                  </>
-                ) : (
-                  <>
-                    <Search size={14} />
-                    <span>Search</span>
-                  </>
-                )}
-              </button>
-            </div>
+          <div className="text-[11px] text-slate-400 hidden sm:block">
+            SerpApi Maps search filtered for UK SMEs with verified contacts
           </div>
         </div>
 
         {/* Detailed SME & Quality Filters Panel */}
         {showFilters && (
-          <div className="w-full border-t border-slate-100 pt-3 mt-1 space-y-3 animate-in fade-in duration-150">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 p-3.5 space-y-3.5 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 SME Growth and Quality Filters
               </span>
               {activeFilterCount > 0 && (
@@ -577,12 +595,12 @@ export function LeadDiscoveryView({
                   onClick={clearAllFilters}
                   className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline"
                 >
-                  Clear all filters ({activeFilterCount})
+                  Reset all ({activeFilterCount})
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* 1. Review Count Range */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -652,38 +670,56 @@ export function LeadDiscoveryView({
             </div>
 
             {/* Verification & Must-Have Toggles */}
-            <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-700">
-              <span className="text-[11px] font-semibold text-slate-500">Contact Must-Haves:</span>
+            <div className="pt-2 border-t border-slate-200/60">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">
+                  Contact Must-Haves:
+                </span>
 
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={requirePhone}
-                  onChange={(e) => setRequirePhone(e.target.checked)}
-                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                />
-                <span>Must have Phone / WhatsApp</span>
-              </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-all ${
+                    requirePhone
+                      ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-2xs font-semibold'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={requirePhone}
+                      onChange={(e) => setRequirePhone(e.target.checked)}
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-3.5 w-3.5"
+                    />
+                    <span>Phone / WhatsApp</span>
+                  </label>
 
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={requireWebsite}
-                  onChange={(e) => setRequireWebsite(e.target.checked)}
-                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                />
-                <span>Must have Website</span>
-              </label>
+                  <label className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-all ${
+                    requireWebsite
+                      ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-2xs font-semibold'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={requireWebsite}
+                      onChange={(e) => setRequireWebsite(e.target.checked)}
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-3.5 w-3.5"
+                    />
+                    <span>Website</span>
+                  </label>
 
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={requireDirector}
-                  onChange={(e) => setRequireDirector(e.target.checked)}
-                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                />
-                <span>Verified Director / Owner on record</span>
-              </label>
+                  <label className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-all ${
+                    requireDirector
+                      ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-2xs font-semibold'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={requireDirector}
+                      onChange={(e) => setRequireDirector(e.target.checked)}
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-3.5 w-3.5"
+                    />
+                    <span>Director / Owner on record</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1015,12 +1051,24 @@ export function LeadDiscoveryView({
                             Website
                           </span>
                           {p.existing_website ? (
-                            <span
-                              className="font-semibold text-slate-800 block break-words"
-                              title={p.existing_website}
-                            >
-                              {formatWebsiteDisplay(p.existing_website)}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className="font-semibold text-slate-800 break-words"
+                                title={p.existing_website}
+                              >
+                                {formatWebsiteDisplay(p.existing_website)}
+                              </span>
+                              <a
+                                href={p.existing_website.startsWith('http') ? p.existing_website : `https://${p.existing_website}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium transition-colors shrink-0"
+                                title={`Direct to website: ${p.existing_website}`}
+                              >
+                                <span>Direct in website</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            </div>
                           ) : (
                             <span className="text-slate-400 italic">No website</span>
                           )}
@@ -1204,15 +1252,24 @@ export function LeadDiscoveryView({
                   <div className="sm:col-span-2">
                     <span className="text-slate-400 block text-[11px]">Official Website:</span>
                     {modalProspect.existing_website ? (
-                      <a
-                        href={modalProspect.existing_website}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
-                      >
-                        {formatWebsiteDisplay(modalProspect.existing_website)}
-                        <ExternalLink size={12} />
-                      </a>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span
+                          className="font-semibold text-slate-800 break-words"
+                          title={modalProspect.existing_website}
+                        >
+                          {formatWebsiteDisplay(modalProspect.existing_website)}
+                        </span>
+                        <a
+                          href={modalProspect.existing_website.startsWith('http') ? modalProspect.existing_website : `https://${modalProspect.existing_website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-2 py-0.5 text-xs font-medium transition-colors shrink-0"
+                          title={`Direct to website: ${modalProspect.existing_website}`}
+                        >
+                          <span>Direct in website</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      </div>
                     ) : (
                       <span className="text-rose-600 font-medium">No active website detected</span>
                     )}

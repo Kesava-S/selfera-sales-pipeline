@@ -21,11 +21,12 @@ import {
   MessageCircle,
   Phone,
   PhoneOff,
+  ExternalLink,
 } from 'lucide-react'
 import { getPhoneType, whatsappLink } from '@/lib/contact'
 import { CONFIG, actsAsSales } from '@/lib/config'
 import { categoryNames, matchCategory } from '@/lib/lists'
-import { dueLabel, formatDate } from '@/lib/format'
+import { dueLabel, formatDate, formatWebsiteDisplay } from '@/lib/format'
 import { approveLeads, bulkArchive, bulkAssign, bulkServices, deleteLeadsEverywhere } from '@/app/dashboard/actions'
 import { ChipSelect, ConfirmModal, EmptyState, ErrorNote, Modal, Pagination, PlatformStatus, Spinner, StageBadge, useAction, toast } from '@/components/ui'
 import { BusinessForm } from '@/components/v2/BusinessForm'
@@ -635,7 +636,27 @@ export function LeadsManagement({
                               {r.services_won?.length ? <Detail label="Services won">{r.services_won.join(', ')}</Detail> : null}
                               <Detail label="Assigned to">{r.assigned_sales_name || <Unassigned stage={r.stage} />}{r.assigned_consultant_name ? ` (consultant: ${r.assigned_consultant_name})` : ''}</Detail>
                               <Detail label="Area">{[r.area, r.postcode].filter(Boolean).join(', ') || '-'}</Detail>
-                              <Detail label="Website">{r.existing_website ? <a href={r.existing_website} target="_blank" rel="noreferrer" className="text-primary hover:text-primary-hover">{r.existing_website}</a> : r.has_no_website ? 'Marked as no website' : '-'}</Detail>
+                              <Detail label="Website">
+                                {r.existing_website ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-medium text-slate-800 break-words">{formatWebsiteDisplay(r.existing_website)}</span>
+                                    <a
+                                      href={r.existing_website.startsWith('http') ? r.existing_website : `https://${r.existing_website}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 px-1.5 py-0.5 text-xs font-medium transition-colors shrink-0"
+                                      title={`Direct to website: ${r.existing_website}`}
+                                    >
+                                      <span>Direct in website</span>
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  </div>
+                                ) : r.has_no_website ? (
+                                  'Marked as no website'
+                                ) : (
+                                  '-'
+                                )}
+                              </Detail>
                               <Detail label="Phone / WhatsApp">
                                 {(() => {
                                   const phone = r.whatsapp_number || (r.owner_contact && /^[+\d\s()-]+$/.test(r.owner_contact) ? r.owner_contact : null)
