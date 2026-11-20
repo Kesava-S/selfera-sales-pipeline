@@ -25,6 +25,7 @@ import {
   History,
   Trash2,
   TrendingUp,
+  SlidersHorizontal,
 } from 'lucide-react'
 import {
   importDiscoveredProspects,
@@ -88,6 +89,38 @@ export function LeadDiscoveryView({
   const [postcode, setPostcode] = useState('')
   const [category, setCategory] = useState('All Categories')
   const [smeOnly, setSmeOnly] = useState(true)
+
+  // Detailed SME Growth & Quality Filters
+  const [showFilters, setShowFilters] = useState(false)
+  const [reviewRange, setReviewRange] = useState<'all' | '10-150' | '5-50' | '50-250' | 'under-10'>('all')
+  const [ratingRange, setRatingRange] = useState<'all' | '3.5-4.8' | '4.0-plus' | 'under-4.2'>('all')
+  const [companyAge, setCompanyAge] = useState<'all' | '1-5' | '1-10' | '10-plus'>('all')
+  const [companyTypeFilter, setCompanyTypeFilter] = useState<'all' | 'ltd'>('all')
+  const [requirePhone, setRequirePhone] = useState(false)
+  const [requireWebsite, setRequireWebsite] = useState(false)
+  const [requireDirector, setRequireDirector] = useState(false)
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (reviewRange !== 'all') count++
+    if (ratingRange !== 'all') count++
+    if (companyAge !== 'all') count++
+    if (companyTypeFilter !== 'all') count++
+    if (requirePhone) count++
+    if (requireWebsite) count++
+    if (requireDirector) count++
+    return count
+  }, [reviewRange, ratingRange, companyAge, companyTypeFilter, requirePhone, requireWebsite, requireDirector])
+
+  const clearAllFilters = () => {
+    setReviewRange('all')
+    setRatingRange('all')
+    setCompanyAge('all')
+    setCompanyTypeFilter('all')
+    setRequirePhone(false)
+    setRequireWebsite(false)
+    setRequireDirector(false)
+  }
 
   // Search History State (persisted in localStorage)
   const [history, setHistory] = useState<SearchHistoryItem[]>([])
@@ -251,6 +284,7 @@ export function LeadDiscoveryView({
     setPostcode('')
     setCategory('All Categories')
     setSmeOnly(true)
+    clearAllFilters()
     setIsLastSearch(true)
     toast.info('Search inputs reset to London default. Last extracted scrape results are kept.')
   }
@@ -302,24 +336,64 @@ export function LeadDiscoveryView({
     })
   }
 
-  // Filtered prospects list based on quick filter selection
+  // Filtered prospects list based on quick filter selection & detailed growth filters
   const filteredProspects = useMemo(() => {
-    let list = prospects
-    if (resultFilter === 'growing-sme') {
-      list = list.filter((p) => Boolean(p.is_sme))
-    } else if (resultFilter === 'with-phone') {
-      list = list.filter((p) => Boolean(p.phone))
-    } else if (resultFilter === 'with-email') {
-      list = list.filter((p) => Boolean(p.email))
-    } else if (resultFilter === 'with-website') {
-      list = list.filter((p) => Boolean(p.existing_website))
-    } else if (resultFilter === 'no-website') {
-      list = list.filter((p) => !p.existing_website)
-    } else if (resultFilter === 'with-owner') {
-      list = list.filter((p) => Boolean(p.contact_name))
-    }
-    return list
-  }, [prospects, resultFilter])
+    return prospects.filter((p) => {
+      // 1. Quick pill filter tab
+      if (resultFilter === 'growing-sme' && !p.is_sme) return false
+      if (resultFilter === 'with-phone' && !p.phone) return false
+      if (resultFilter === 'with-email' && !p.email) return false
+      if (resultFilter === 'with-website' && !p.existing_website) return false
+      if (resultFilter === 'no-website' && p.existing_website) return false
+      if (resultFilter === 'with-owner' && !p.contact_name) return false
+
+      // 2. Growing SME general toggle
+      if (smeOnly && !p.is_sme) return false
+
+      // 3. Review Count Range
+      const reviews = typeof p.google_reviews_count === 'number' ? p.google_reviews_count : 0
+      if (reviewRange === '10-150' && (reviews < 10 || reviews > 150)) return false
+      if (reviewRange === '5-50' && (reviews < 5 || reviews > 50)) return false
+      if (reviewRange === '50-250' && (reviews < 50 || reviews > 250)) return false
+      if (reviewRange === 'under-10' && reviews >= 10) return false
+
+      // 4. Rating Range
+      const rating = typeof p.google_rating === 'number' ? p.google_rating : 0
+      if (ratingRange === '3.5-4.8' && (rating < 3.5 || rating > 4.8)) return false
+      if (ratingRange === '4.0-plus' && rating < 4.0) return false
+      if (ratingRange === 'under-4.2' && (rating === 0 || rating >= 4.2)) return false
+
+      // 5. Company Age
+      const age = typeof p.company_age_years === 'number' ? p.company_age_years : null
+      if (companyAge === '1-5' && (age === null || age < 1 || age > 5)) return false
+      if (companyAge === '1-10' && (age === null || age < 1 || age > 10)) return false
+      if (companyAge === '10-plus' && (age === null || age < 10)) return false
+
+      // 6. Business Structure
+      if (companyTypeFilter === 'ltd') {
+        const ct = p.company_type?.toLowerCase() || ''
+        if (!ct.includes('limited') && !ct.includes('ltd')) return false
+      }
+
+      // 7. Contact Must Haves
+      if (requirePhone && !p.phone) return false
+      if (requireWebsite && !p.existing_website) return false
+      if (requireDirector && !p.contact_name) return false
+
+      return true
+    })
+  }, [
+    prospects,
+    resultFilter,
+    smeOnly,
+    reviewRange,
+    ratingRange,
+    companyAge,
+    companyTypeFilter,
+    requirePhone,
+    requireWebsite,
+    requireDirector,
+  ])
 
   // Counts for filter pills
   const filterCounts = useMemo(() => {
@@ -366,107 +440,253 @@ export function LeadDiscoveryView({
       {/* Search Area with London default, Postcode & Category filters */}
       <form
         onSubmit={handleSearch}
-        className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3 shadow-xs"
+        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs"
       >
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search keyword (e.g. Dentist, Plumber, Cafe) or website URL..."
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Location: London as fixed default */}
-          <div className="relative flex-1 sm:flex-initial sm:w-36 min-w-[120px]">
-            <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2.5">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="City (default: London)"
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search keyword (e.g. Dentist, Plumber, Cafe) or website URL..."
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
 
-          {/* Postcode Filter Input */}
-          <div className="relative flex-1 sm:flex-initial sm:w-28 min-w-[90px]">
-            <input
-              type="text"
-              value={postcode}
-              onChange={(e) => setPostcode(e.target.value)}
-              placeholder="Postcode (e.g. NW1)"
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-            />
-          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Location: London as fixed default */}
+            <div className="relative flex-1 sm:flex-initial sm:w-36 min-w-[120px]">
+              <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="City (default: London)"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
 
-          {/* Category Dropdown */}
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-10 flex-1 sm:flex-initial sm:w-40 min-w-[130px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
-          >
-            {availableCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            {/* Postcode Filter Input */}
+            <div className="relative flex-1 sm:flex-initial sm:w-28 min-w-[90px]">
+              <input
+                type="text"
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                placeholder="Postcode (e.g. NW1)"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
 
-          {/* Growing SME Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => setSmeOnly(!smeOnly)}
-            className={`h-10 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold border transition-all shrink-0 ${
-              smeOnly
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-400/30'
-                : 'border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-            }`}
-            title={smeOnly ? 'Filtering for growing SMEs (5-150 reviews, excluding chains)' : 'Showing all businesses including large chains'}
-          >
-            <TrendingUp size={13} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Growing SMEs</span>
-            <span className="sm:hidden">SMEs</span>
-            <span className={`h-2 w-2 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-          </button>
+            {/* Category Dropdown */}
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="h-10 flex-1 sm:flex-initial sm:w-40 min-w-[130px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+            >
+              {availableCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
 
-          {/* Actions: Reset & Search buttons */}
-          <div className="flex items-center gap-2 ml-auto shrink-0">
-            {/* Reset button: resets inputs only, keeps extracted scrape data */}
+            {/* Growing SME Filter Toggle */}
             <button
               type="button"
-              onClick={handleReset}
-              disabled={isSearching}
-              className="h-10 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-50 transition-all shrink-0"
-              title="Reset search inputs to default"
+              onClick={() => setSmeOnly(!smeOnly)}
+              className={`h-10 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold border transition-all shrink-0 ${
+                smeOnly
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-400/30'
+                  : 'border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+              }`}
+              title={smeOnly ? 'Filtering for growing SMEs (5-150 reviews, excluding chains)' : 'Showing all businesses including large chains'}
             >
-              <RotateCcw size={13} className="text-slate-400" />
-              <span>Reset</span>
+              <TrendingUp size={13} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
+              <span className="hidden sm:inline">Growing SMEs</span>
+              <span className="sm:hidden">SMEs</span>
+              <span className={`h-2 w-2 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </button>
 
-            {/* Search Button */}
+            {/* More Filters Toggle */}
             <button
-              type="submit"
-              disabled={isSearching}
-              className="h-10 min-w-[110px] inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white shadow-xs hover:bg-primary-hover active:scale-[0.98] disabled:opacity-75 disabled:cursor-wait transition-all shrink-0"
+              type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`h-10 inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-semibold border transition-all shrink-0 ${
+                showFilters || activeFilterCount > 0
+                  ? 'border-sky-300 bg-sky-50 text-sky-800 shadow-2xs ring-1 ring-sky-400/30'
+                  : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+              title="Toggle detailed filters for reviews, rating, age, and contact requirements"
             >
-              {isSearching ? (
-                <>
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Searching...</span>
-                </>
-              ) : (
-                <>
-                  <Search size={14} />
-                  <span>Search</span>
-                </>
+              <SlidersHorizontal size={13} className={showFilters || activeFilterCount > 0 ? 'text-sky-700' : 'text-slate-500'} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-sky-600 px-1.5 py-0.2 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
               )}
             </button>
+
+            {/* Actions: Reset & Search buttons */}
+            <div className="flex items-center gap-2 ml-auto shrink-0">
+              {/* Reset button: resets inputs only, keeps extracted scrape data */}
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={isSearching}
+                className="h-10 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] disabled:opacity-50 transition-all shrink-0"
+                title="Reset search inputs and filters to default"
+              >
+                <RotateCcw size={13} className="text-slate-400" />
+                <span>Reset</span>
+              </button>
+
+              {/* Search Button */}
+              <button
+                type="submit"
+                disabled={isSearching}
+                className="h-10 min-w-[110px] inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white shadow-xs hover:bg-primary-hover active:scale-[0.98] disabled:opacity-75 disabled:cursor-wait transition-all shrink-0"
+              >
+                {isSearching ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Searching...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search size={14} />
+                    <span>Search</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Detailed SME & Quality Filters Panel */}
+        {showFilters && (
+          <div className="w-full border-t border-slate-100 pt-3 mt-1 space-y-3 animate-in fade-in duration-150">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                SME Growth and Quality Filters
+              </span>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline"
+                >
+                  Clear all filters ({activeFilterCount})
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {/* 1. Review Count Range */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Review Count Range
+                </label>
+                <select
+                  value={reviewRange}
+                  onChange={(e) => setReviewRange(e.target.value as any)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value="all">All Review Counts</option>
+                  <option value="10-150">10 - 150 reviews (SME Sweet Spot)</option>
+                  <option value="5-50">5 - 50 reviews (Early Traction)</option>
+                  <option value="50-250">50 - 250 reviews (Scaling)</option>
+                  <option value="under-10">Under 10 reviews (New/Emerging)</option>
+                </select>
+              </div>
+
+              {/* 2. Rating Range */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Google Star Rating
+                </label>
+                <select
+                  value={ratingRange}
+                  onChange={(e) => setRatingRange(e.target.value as any)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value="all">All Star Ratings</option>
+                  <option value="3.5-4.8">3.5 - 4.8 stars (Opportunity Sweet Spot)</option>
+                  <option value="4.0-plus">4.0+ stars (High Rated)</option>
+                  <option value="under-4.2">Under 4.2 stars (Review Pitch Target)</option>
+                </select>
+              </div>
+
+              {/* 3. Company Age (Companies House) */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Company Age (UK Registry)
+                </label>
+                <select
+                  value={companyAge}
+                  onChange={(e) => setCompanyAge(e.target.value as any)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value="all">All Company Ages</option>
+                  <option value="1-5">1 - 5 Years (Growth Phase)</option>
+                  <option value="1-10">1 - 10 Years (Established SME)</option>
+                  <option value="10-plus">Over 10 Years (Legacy)</option>
+                </select>
+              </div>
+
+              {/* 4. Company Structure */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Business Structure
+                </label>
+                <select
+                  value={companyTypeFilter}
+                  onChange={(e) => setCompanyTypeFilter(e.target.value as any)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
+                >
+                  <option value="all">All Business Structures</option>
+                  <option value="ltd">Active LTD (Private Limited) Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Verification & Must-Have Toggles */}
+            <div className="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-700">
+              <span className="text-[11px] font-semibold text-slate-500">Contact Must-Haves:</span>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requirePhone}
+                  onChange={(e) => setRequirePhone(e.target.checked)}
+                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                <span>Must have Phone / WhatsApp</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requireWebsite}
+                  onChange={(e) => setRequireWebsite(e.target.checked)}
+                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                <span>Must have Website</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={requireDirector}
+                  onChange={(e) => setRequireDirector(e.target.checked)}
+                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                />
+                <span>Verified Director / Owner on record</span>
+              </label>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Results Container with subtle thin accent line when viewing previous search */}
