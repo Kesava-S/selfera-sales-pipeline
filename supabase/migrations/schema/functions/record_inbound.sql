@@ -46,7 +46,7 @@ BEGIN
     PERFORM "sales-pipe".discard_drafts(v_opp_id);
     SELECT stage INTO v_stage FROM "sales-pipe".opportunities WHERE id = v_opp_id;
 
-    IF upper(regexp_replace(trim(p_body), '[.!]+$', '')) IN ('STOP', 'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT') THEN
+    IF "sales-pipe".is_stop_reply(p_body) THEN
         UPDATE "sales-pipe".threads SET status = 'Opted out', next_due_on = NULL, last_inbound_at = now() WHERE opportunity_id = v_opp_id;
         IF v_stage IS DISTINCT FROM 'Do not contact' THEN
             UPDATE "sales-pipe".opportunities SET stage = 'Do not contact', closed_at = now(), replied_after_close_at = NULL WHERE id = v_opp_id;
@@ -77,8 +77,8 @@ BEGIN
     SELECT coalesce(o.assigned_consultant_id, o.assigned_sales_id), 'new_reply',
            'New reply from ' || b.business_name || ' on ' || p_platform,
            '/dashboard/' || o.id || '/thread/' || v_thread_id
-    FROM "sales-pipe".opportunities o JOIN "sales-pipe".businesses b ON b.id = o.business_id
-    WHERE o.id = v_opp_id AND coalesce(o.assigned_consultant_id, o.assigned_sales_id) IS NOT NULL;
+        FROM "sales-pipe".opportunities o JOIN "sales-pipe".businesses b ON b.id = o.business_id
+        WHERE o.id = v_opp_id AND coalesce(o.assigned_consultant_id, o.assigned_sales_id) IS NOT NULL;
 END;
 $function$;
 REVOKE ALL ON FUNCTION "sales-pipe"."record_inbound"(p_platform text, p_external_thread_id text, p_from text, p_body text, p_external_message_id text, p_media_url text) FROM PUBLIC;

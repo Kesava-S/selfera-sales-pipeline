@@ -1093,7 +1093,8 @@ BEGIN
     RETURN net.http_post(
         url := rtrim(v_url, '/') || p_path,
         headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_secret),
-        body := p_body
+        body := p_body,
+        timeout_milliseconds := 55000
     );
 END;
 $function$;
@@ -2718,10 +2719,18 @@ GRANT EXECUTE ON FUNCTION "sales-pipe"."insights"(p_from date, p_to date, p_serv
 
 CREATE OR REPLACE FUNCTION "sales-pipe".is_stop_reply(p_body text)
  RETURNS boolean
- LANGUAGE sql
+ LANGUAGE plpgsql
  IMMUTABLE
 AS $function$
-    SELECT upper(regexp_replace(trim(coalesce(p_body, '')), '[.!]+$', '')) IN ('STOP', 'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT')
+DECLARE
+    v_clean text := upper(regexp_replace(trim(coalesce(p_body, '')), '[.!?,]+$', ''));
+BEGIN
+    RETURN v_clean IN (
+        'STOP', 'STOP MESSAGES', 'STOP MESSAGE', 'STOP PROMOTIONS', 'STOP PROMOTION',
+        'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT',
+        'CANCEL', 'END', 'QUIT', 'REMOVE ME', 'PLEASE STOP'
+    ) OR v_clean ~ '^(STOP|UNSUBSCRIBE|OPT\s*OUT)\M';
+END;
 $function$;
 GRANT EXECUTE ON FUNCTION "sales-pipe"."is_stop_reply"(p_body text) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION "sales-pipe"."is_stop_reply"(p_body text) TO "authenticated";
@@ -3657,7 +3666,7 @@ BEGIN
     PERFORM "sales-pipe".discard_drafts(v_opp_id);
     SELECT stage INTO v_stage FROM "sales-pipe".opportunities WHERE id = v_opp_id;
 
-    IF upper(regexp_replace(trim(p_body), '[.!]+$', '')) IN ('STOP', 'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT') THEN
+    IF "sales-pipe".is_stop_reply(p_body) THEN
         UPDATE "sales-pipe".threads SET status = 'Opted out', next_due_on = NULL, last_inbound_at = now() WHERE opportunity_id = v_opp_id;
         IF v_stage IS DISTINCT FROM 'Do not contact' THEN
             UPDATE "sales-pipe".opportunities SET stage = 'Do not contact', closed_at = now(), replied_after_close_at = NULL WHERE id = v_opp_id;
@@ -3688,8 +3697,8 @@ BEGIN
     SELECT coalesce(o.assigned_consultant_id, o.assigned_sales_id), 'new_reply',
            'New reply from ' || b.business_name || ' on ' || p_platform,
            '/dashboard/' || o.id || '/thread/' || v_thread_id
-    FROM "sales-pipe".opportunities o JOIN "sales-pipe".businesses b ON b.id = o.business_id
-    WHERE o.id = v_opp_id AND coalesce(o.assigned_consultant_id, o.assigned_sales_id) IS NOT NULL;
+        FROM "sales-pipe".opportunities o JOIN "sales-pipe".businesses b ON b.id = o.business_id
+        WHERE o.id = v_opp_id AND coalesce(o.assigned_consultant_id, o.assigned_sales_id) IS NOT NULL;
 END;
 $function$;
 REVOKE ALL ON FUNCTION "sales-pipe"."record_inbound"(p_platform text, p_external_thread_id text, p_from text, p_body text, p_external_message_id text, p_media_url text) FROM PUBLIC;
@@ -5412,10 +5421,12 @@ CREATE OR REPLACE FUNCTION "sales-pipe".trg_sync_to_shared_product_notifications
 AS $function$
 DECLARE
     v_employee_id integer;
+    v_product_name text;
     v_role text;
+    v_message text;
 BEGIN
     IF NEW.user_id IS NULL THEN RETURN NEW; END IF;
-    SELECT e.id INTO v_employee_id
+    SELECT e.id, p.name INTO v_employee_id, v_product_name
     FROM hr.employees e
     JOIN public.user_product_access upa ON upa.employee_id = e.id
     JOIN public.products p ON p.product_id = upa.product_id AND p.code = 'sales_pipeline'
@@ -5424,30 +5435,40 @@ BEGIN
     IF v_employee_id IS NULL THEN RETURN NEW; END IF;
     SELECT role INTO v_role FROM "sales-pipe".profiles WHERE id = NEW.user_id;
 
-    INSERT INTO shared.product_notifications (product_code, title, message, type, employee_id, is_read, created_at, metadata)
-    VALUES (
+    -- Combine title and message if both present and different to preserve full details
+    IF nullif(NEW.message, '') IS NOT NULL AND nullif(NEW.title, '') IS NOT NULL AND NEW.message <> NEW.title THEN
+        v_message := NEW.title || ' - ' || NEW.message;
+    ELSE
+        v_message := coalesce(nullif(NEW.title, ''), nullif(NEW.message, ''), 'Sales notification');
+    END IF;
+
+    INSERT INTO shared.product_notifications (
+        product_code,
+        title,
+        message,
+        type,
+        employee_id,
+        is_read,
+        created_at,
+        metadata
+    ) VALUES (
         'sales_pipeline',
-        CASE NEW.type
-            WHEN 'new_reply' THEN 'New reply'
-            WHEN 'assigned_to_you' THEN 'Assigned to you'
-            WHEN 'needs_consultant' THEN 'Needs a consultant'
-            WHEN 'upsell_due' THEN 'Upsell due'
-            WHEN 'unsubscribed' THEN 'Opted out'
-            WHEN 'booking_matched' THEN 'Booking matched'
-            WHEN 'booking_unmatched' THEN 'Booking not matched'
-            WHEN 'consultation_reminder' THEN 'Consultation tomorrow'
-            WHEN 'reply_waiting' THEN 'Reply waiting'
-            ELSE 'Sales Pipeline'
-        END,
-        coalesce(nullif(NEW.message, ''), NEW.title),
+        coalesce(v_product_name, 'Sales Pipeline'),
+        v_message,
         CASE WHEN NEW.type IN ('assigned_to_you', 'needs_consultant', 'reply_waiting') THEN 'action_required'
              WHEN NEW.type IN ('unsubscribed', 'booking_unmatched') THEN 'warning'
              ELSE 'info' END,
         v_employee_id,
         coalesce(NEW.is_read, false),
         coalesce(NEW.created_at, now()),
-        jsonb_build_object('link', NEW.link, 'channel', 'in_app', 'sales_notification_id', NEW.id,
-                           'sales_user_id', NEW.user_id, 'sales_type', NEW.type, 'role', v_role)
+        jsonb_build_object(
+            'link', NEW.link,
+            'channel', 'in_app',
+            'sales_notification_id', NEW.id,
+            'sales_user_id', NEW.user_id,
+            'sales_type', NEW.type,
+            'role', v_role
+        )
     );
     RETURN NEW;
 EXCEPTION

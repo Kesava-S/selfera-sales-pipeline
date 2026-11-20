@@ -4,10 +4,18 @@
 
 CREATE OR REPLACE FUNCTION "sales-pipe".is_stop_reply(p_body text)
  RETURNS boolean
- LANGUAGE sql
+ LANGUAGE plpgsql
  IMMUTABLE
 AS $function$
-    SELECT upper(regexp_replace(trim(coalesce(p_body, '')), '[.!]+$', '')) IN ('STOP', 'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT')
+DECLARE
+    v_clean text := upper(regexp_replace(trim(coalesce(p_body, '')), '[.!?,]+$', ''));
+BEGIN
+    RETURN v_clean IN (
+        'STOP', 'STOP MESSAGES', 'STOP MESSAGE', 'STOP PROMOTIONS', 'STOP PROMOTION',
+        'UNSUBSCRIBE', 'OPT OUT', 'OPT-OUT', 'OPTOUT',
+        'CANCEL', 'END', 'QUIT', 'REMOVE ME', 'PLEASE STOP'
+    ) OR v_clean ~ '^(STOP|UNSUBSCRIBE|OPT\s*OUT)\M';
+END;
 $function$;
 GRANT EXECUTE ON FUNCTION "sales-pipe"."is_stop_reply"(p_body text) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION "sales-pipe"."is_stop_reply"(p_body text) TO "authenticated";

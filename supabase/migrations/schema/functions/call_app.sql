@@ -21,7 +21,8 @@ BEGIN
     RETURN net.http_post(
         url := rtrim(v_url, '/') || p_path,
         headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_secret),
-        body := p_body
+        body := p_body,
+        timeout_milliseconds := 55000
     );
 END;
 $function$;

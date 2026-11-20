@@ -10,10 +10,12 @@ CREATE OR REPLACE FUNCTION "sales-pipe".trg_sync_to_shared_product_notifications
 AS $function$
 DECLARE
     v_employee_id integer;
+    v_product_name text;
     v_role text;
+    v_message text;
 BEGIN
     IF NEW.user_id IS NULL THEN RETURN NEW; END IF;
-    SELECT e.id INTO v_employee_id
+    SELECT e.id, p.name INTO v_employee_id, v_product_name
     FROM hr.employees e
     JOIN public.user_product_access upa ON upa.employee_id = e.id
     JOIN public.products p ON p.product_id = upa.product_id AND p.code = 'sales_pipeline'
@@ -22,30 +24,40 @@ BEGIN
     IF v_employee_id IS NULL THEN RETURN NEW; END IF;
     SELECT role INTO v_role FROM "sales-pipe".profiles WHERE id = NEW.user_id;
 
-    INSERT INTO shared.product_notifications (product_code, title, message, type, employee_id, is_read, created_at, metadata)
-    VALUES (
+    -- Combine title and message if both present and different to preserve full details
+    IF nullif(NEW.message, '') IS NOT NULL AND nullif(NEW.title, '') IS NOT NULL AND NEW.message <> NEW.title THEN
+        v_message := NEW.title || ' - ' || NEW.message;
+    ELSE
+        v_message := coalesce(nullif(NEW.title, ''), nullif(NEW.message, ''), 'Sales notification');
+    END IF;
+
+    INSERT INTO shared.product_notifications (
+        product_code,
+        title,
+        message,
+        type,
+        employee_id,
+        is_read,
+        created_at,
+        metadata
+    ) VALUES (
         'sales_pipeline',
-        CASE NEW.type
-            WHEN 'new_reply' THEN 'New reply'
-            WHEN 'assigned_to_you' THEN 'Assigned to you'
-            WHEN 'needs_consultant' THEN 'Needs a consultant'
-            WHEN 'upsell_due' THEN 'Upsell due'
-            WHEN 'unsubscribed' THEN 'Opted out'
-            WHEN 'booking_matched' THEN 'Booking matched'
-            WHEN 'booking_unmatched' THEN 'Booking not matched'
-            WHEN 'consultation_reminder' THEN 'Consultation tomorrow'
-            WHEN 'reply_waiting' THEN 'Reply waiting'
-            ELSE 'Sales Pipeline'
-        END,
-        coalesce(nullif(NEW.message, ''), NEW.title),
+        coalesce(v_product_name, 'Sales Pipeline'),
+        v_message,
         CASE WHEN NEW.type IN ('assigned_to_you', 'needs_consultant', 'reply_waiting') THEN 'action_required'
              WHEN NEW.type IN ('unsubscribed', 'booking_unmatched') THEN 'warning'
              ELSE 'info' END,
         v_employee_id,
         coalesce(NEW.is_read, false),
         coalesce(NEW.created_at, now()),
-        jsonb_build_object('link', NEW.link, 'channel', 'in_app', 'sales_notification_id', NEW.id,
-                           'sales_user_id', NEW.user_id, 'sales_type', NEW.type, 'role', v_role)
+        jsonb_build_object(
+            'link', NEW.link,
+            'channel', 'in_app',
+            'sales_notification_id', NEW.id,
+            'sales_user_id', NEW.user_id,
+            'sales_type', NEW.type,
+            'role', v_role
+        )
     );
     RETURN NEW;
 EXCEPTION
