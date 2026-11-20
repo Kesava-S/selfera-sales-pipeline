@@ -82,11 +82,13 @@ async function qev(email: string): Promise<{ check: EmailCheck; credits: number 
 export type VerifyOutcome = { email: string; check: EmailCheck | null } // null = not checked (no credits left)
 
 // Check a list of emails within a time budget. Stops spending credits when they run out.
-export async function verifyEmails(emails: string[], { budgetMs = 20_000 } = {}) {
+// useApi: false runs only the free checks (format, throwaway, does the domain take email);
+// emails that pass come back as null ("not checked yet") without spending credits.
+export async function verifyEmails(emails: string[], { budgetMs = 20_000, useApi = true } = {}) {
   const started = Date.now()
   const domains = new Map<string, boolean | null>()
   const done = new Map<string, EmailCheck | null>()
-  let outOfCredits = !isEmailApiConfigured()
+  let outOfCredits = !useApi || !isEmailApiConfigured()
   let credits: number | null = null
   let apiError: string | null = null
 

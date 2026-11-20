@@ -29,23 +29,26 @@ import {
 } from 'lucide-react'
 import {
   importDiscoveredProspects,
-  discoverProspectsWithFirecrawl,
+  discoverProspects,
+  checkDiscoveredProspects,
+  findProspectEmails,
   getSerpApiBalance,
   type DiscoveredProspect,
+  type ExistingMatch,
   type SerpApiAccountInfo,
 } from '@/app/dashboard/discovery/actions'
-import { toast } from '@/components/ui'
+import { toast, InfoTip } from '@/components/ui'
 import type { ListCategory } from '@/lib/lists'
+import { EMAIL_STATUS_LABEL } from '@/lib/emailCheck'
 
 interface LeadDiscoveryViewProps {
   categories: ListCategory[]
   services: string[]
   existingBusinessCount: number
-  isFirecrawlConfigured?: boolean
   initialSerpApiBalance?: SerpApiAccountInfo | null
 }
 
-type ResultFilter = 'all' | 'growing-sme' | 'with-phone' | 'with-email' | 'with-website' | 'no-website' | 'with-owner'
+type ResultFilter = 'all' | 'with-phone' | 'with-website' | 'no-website' | 'with-owner'
 
 interface SearchHistoryItem {
   id: string
@@ -87,9 +90,9 @@ export function LeadDiscoveryView({
   existingBusinessCount,
   initialSerpApiBalance,
 }: LeadDiscoveryViewProps) {
-  // Search parameters (Default location fixed to London)
+  // Search parameters
   const [query, setQuery] = useState('')
-  const [city, setCity] = useState('London')
+  const [city, setCity] = useState('')
   const [postcode, setPostcode] = useState('')
   const [category, setCategory] = useState('All Categories')
   const [smeOnly, setSmeOnly] = useState(true)
@@ -115,7 +118,7 @@ export function LeadDiscoveryView({
 
   // Detailed SME Growth & Quality Filters
   const [showFilters, setShowFilters] = useState(false)
-  const [reviewRange, setReviewRange] = useState<'all' | '10-150' | '5-50' | '50-250' | 'under-10'>('all')
+  const [reviewRange, setReviewRange] = useState<'all' | 'under-10' | '10-50' | '50-250' | '250-plus'>('all')
   const [ratingRange, setRatingRange] = useState<'all' | '3.5-4.8' | '4.0-plus' | 'under-4.2'>('all')
   const [companyAge, setCompanyAge] = useState<'all' | '1-5' | '1-10' | '10-plus'>('all')
   const [companyTypeFilter, setCompanyTypeFilter] = useState<'all' | 'ltd'>('all')
@@ -155,6 +158,55 @@ export function LeadDiscoveryView({
   const [isLastSearch, setIsLastSearch] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set())
+  // Already in Lead Management, or on the do-not-contact list (can't be pushed again)
+  const [existing, setExisting] = useState<Map<string, ExistingMatch>>(new Map())
+  // SerpAPI paging: 20 results a page
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
+  // Emails read from each business's website (after every search / page)
+  const [emailLookup, setEmailLookup] = useState<{ running: boolean; tried: Set<string> }>({ running: false, tried: new Set() })
+
+  const findEmails = async (list: DiscoveredProspect[]) => {
+    const todo = list.filter((p) => p.existing_website && !p.email)
+    if (!todo.length) return
+    setEmailLookup((prev) => {
+      const tried = new Set(prev.tried)
+      todo.forEach((p) => tried.delete(p.id))
+      return { running: true, tried }
+    })
+    try {
+      const found = await findProspectEmails(todo)
+      const byId = new Map(found.map((f) => [f.id, f]))
+      const updated: DiscoveredProspect[] = []
+      setProspects((prev) => prev.map((p) => {
+        const f = byId.get(p.id)
+        if (!f?.email) return p
+        const next = { ...p, email: f.email, email_source: f.email_source, email_check: f.email_check ?? null }
+        updated.push(next)
+        return next
+      }))
+      setEmailLookup((prev) => ({ running: false, tried: new Set([...prev.tried, ...todo.map((p) => p.id)]) }))
+      const count = found.filter((f) => f.email).length
+      if (count) toast.success(`Found ${count} ${count === 1 ? 'email' : 'emails'} on business websites.`)
+      // An email can show the business is already a lead
+      if (updated.length) void checkExisting(updated, false)
+    } catch (err) {
+      setEmailLookup((prev) => ({ running: false, tried: new Set([...prev.tried, ...todo.map((p) => p.id)]) }))
+      toast.error(err instanceof Error ? `Could not look for emails: ${err.message}` : 'Could not look for emails.')
+    }
+  }
+
+  const checkExisting = async (list: DiscoveredProspect[], replace = true) => {
+    if (!list.length) { if (replace) setExisting(new Map()); return }
+    const matches = await checkDiscoveredProspects(list).catch(() => [] as ExistingMatch[])
+    setExisting((prev) => {
+      const next = replace ? new Map<string, ExistingMatch>() : new Map(prev)
+      matches.forEach((m) => next.set(m.id, m))
+      return next
+    })
+  }
   const [pitchedService, setPitchedService] = useState(services[0] || 'Website')
 
   // Result quick filtering
@@ -179,8 +231,9 @@ export function LeadDiscoveryView({
           const latest = parsed[0]
           if (latest.prospects && latest.prospects.length > 0) {
             setProspects(latest.prospects)
+            void checkExisting(latest.prospects)
             setQuery(latest.query || '')
-            setCity(latest.city || 'London')
+            setCity(latest.city || '')
             setPostcode(latest.postcode || '')
             setCategory(latest.category || 'All Categories')
             if (typeof latest.smeOnly === 'boolean') {
@@ -227,6 +280,8 @@ export function LeadDiscoveryView({
       setSmeOnly(item.smeOnly)
     }
     setProspects(item.prospects)
+    void checkExisting(item.prospects)
+    setHasMore(false)
     setSelectedIds(new Set())
     setHasSearched(true)
     setIsLastSearch(true)
@@ -247,7 +302,7 @@ export function LeadDiscoveryView({
     return ['All Categories', ...categories.map((c) => c.name)]
   }, [categories])
 
-  const hasFilters = query.trim() !== '' || city.trim() !== 'London' || postcode.trim() !== '' || category !== 'All Categories'
+  const hasFilters = query.trim() !== '' || city.trim() !== '' || postcode.trim() !== '' || category !== 'All Categories'
 
   // Search action
   const handleSearch = async (e?: React.FormEvent) => {
@@ -263,17 +318,22 @@ export function LeadDiscoveryView({
     setIsLastSearch(false)
 
     try {
-      const res = await discoverProspectsWithFirecrawl({
+      const res = await discoverProspects({
         query: query.trim(),
         city: city.trim() || undefined,
         postcode: postcode.trim() || undefined,
         category,
         url: query.trim().startsWith('http') ? query.trim() : undefined,
         smeOnly,
+        page: 0,
       })
 
       if (res.success) {
         setProspects(res.prospects)
+        setPage(0)
+        setHasMore(Boolean(res.hasMore))
+        void checkExisting(res.prospects)
+        void findEmails(res.prospects)
         setSelectedIds(new Set())
         if (res.serpApiBalance) {
           setSerpBalance(res.serpApiBalance)
@@ -283,13 +343,13 @@ export function LeadDiscoveryView({
             id: `search-${Date.now()}`,
             timestamp: Date.now(),
             query: query.trim(),
-            city: city.trim() || 'London',
+            city: city.trim(),
             postcode: postcode.trim(),
             category,
             prospects: res.prospects,
             smeOnly,
           })
-          toast.success(`Found ${res.prospects.length} prospects.`)
+          toast.success(res.message || `Found ${res.prospects.length} businesses.`)
         } else {
           toast.error(res.message || 'No prospects found matching your search.')
         }
@@ -303,16 +363,47 @@ export function LeadDiscoveryView({
     }
   }
 
+  // Next page of SerpAPI results, added below the current ones
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !hasMore) return
+    setIsLoadingMore(true)
+    try {
+      const next = page + 1
+      const res = await discoverProspects({
+        query: query.trim(),
+        city: city.trim() || undefined,
+        postcode: postcode.trim() || undefined,
+        category,
+        smeOnly,
+        page: next,
+      })
+      if (!res.success) { toast.error(res.error || 'Could not load more results.'); return }
+      const known = new Set(prospects.map((p) => p.id))
+      const added = res.prospects.filter((p) => !known.has(p.id))
+      setProspects((prev) => [...prev, ...added])
+      setPage(next)
+      setHasMore(Boolean(res.hasMore))
+      if (res.serpApiBalance) setSerpBalance(res.serpApiBalance)
+      void checkExisting(added, false)
+      void findEmails(added)
+      toast.success(added.length ? `Added ${added.length} more.` : 'No new businesses on the next page.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load more results.')
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
+
   // Reset inputs only (preserves extracted prospects data)
   const handleReset = () => {
     setQuery('')
-    setCity('London')
+    setCity('')
     setPostcode('')
     setCategory('All Categories')
     setSmeOnly(true)
     clearAllFilters()
     setIsLastSearch(true)
-    toast.info('Search inputs reset to London default. Last extracted scrape results are kept.')
+    toast.info('Search reset. Results are kept.')
   }
 
   const toggleSelect = (id: string) => {
@@ -325,7 +416,7 @@ export function LeadDiscoveryView({
   }
 
   const toggleSelectAll = () => {
-    const unimported = prospects.filter((p) => !importedIds.has(p.id))
+    const unimported = prospects.filter((p) => !importedIds.has(p.id) && !existing.has(p.id))
     if (selectedIds.size === unimported.length && unimported.length > 0) {
       setSelectedIds(new Set())
     } else {
@@ -338,11 +429,19 @@ export function LeadDiscoveryView({
 
     startTransition(async () => {
       try {
-        const res = await importDiscoveredProspects(prospectsToImport, pitchedService)
+        const searchLabel = [query.trim(), category !== 'All Categories' ? category : '', city.trim()].filter(Boolean).join(', ')
+        const res = await importDiscoveredProspects(prospectsToImport, pitchedService, searchLabel)
         if (res.success) {
-          toast.success(
-            `Imported ${res.importedCount} ${res.importedCount === 1 ? 'prospect' : 'prospects'} to Needs Review.`
-          )
+          const skipped = [
+            res.existingCount ? `${res.existingCount} already in leads` : '',
+            res.optedOutCount ? `${res.optedOutCount} on do-not-contact` : '',
+          ].filter(Boolean).join(', ')
+          if (res.importedCount > 0) {
+            toast.success(`Added ${res.importedCount} to Lead Management${skipped ? ` (${skipped})` : ''}.`)
+          } else {
+            toast.info(skipped ? `Nothing added: ${skipped}.` : 'Nothing added.')
+          }
+          void checkExisting(prospectsToImport, false)
           setImportedIds((prev) => {
             const next = new Set(prev)
             prospectsToImport.forEach((p) => next.add(p.id))
@@ -366,9 +465,7 @@ export function LeadDiscoveryView({
   const filteredProspects = useMemo(() => {
     return prospects.filter((p) => {
       // 1. Quick pill filter tab
-      if (resultFilter === 'growing-sme' && !p.is_sme) return false
       if (resultFilter === 'with-phone' && !p.phone) return false
-      if (resultFilter === 'with-email' && !p.email) return false
       if (resultFilter === 'with-website' && !p.existing_website) return false
       if (resultFilter === 'no-website' && p.existing_website) return false
       if (resultFilter === 'with-owner' && !p.contact_name) return false
@@ -378,10 +475,10 @@ export function LeadDiscoveryView({
 
       // 3. Review Count Range
       const reviews = typeof p.google_reviews_count === 'number' ? p.google_reviews_count : 0
-      if (reviewRange === '10-150' && (reviews < 10 || reviews > 150)) return false
-      if (reviewRange === '5-50' && (reviews < 5 || reviews > 50)) return false
-      if (reviewRange === '50-250' && (reviews < 50 || reviews > 250)) return false
       if (reviewRange === 'under-10' && reviews >= 10) return false
+      if (reviewRange === '10-50' && (reviews < 10 || reviews > 50)) return false
+      if (reviewRange === '50-250' && (reviews <= 50 || reviews > 250)) return false
+      if (reviewRange === '250-plus' && reviews <= 250) return false
 
       // 4. Rating Range
       const rating = typeof p.google_rating === 'number' ? p.google_rating : 0
@@ -399,6 +496,7 @@ export function LeadDiscoveryView({
       if (companyTypeFilter === 'ltd') {
         const ct = p.company_type?.toLowerCase() || ''
         if (!ct.includes('limited') && !ct.includes('ltd')) return false
+        if ((p.company_status || '').toLowerCase() !== 'active') return false
       }
 
       // 7. Contact Must Haves
@@ -427,7 +525,7 @@ export function LeadDiscoveryView({
       all: prospects.length,
       growingSme: prospects.filter((p) => Boolean(p.is_sme)).length,
       withPhone: prospects.filter((p) => Boolean(p.phone)).length,
-      withEmail: prospects.filter((p) => Boolean(p.email)).length,
+      registryMatch: prospects.filter((p) => Boolean(p.company_number)).length,
       withWebsite: prospects.filter((p) => Boolean(p.existing_website)).length,
       noWebsite: prospects.filter((p) => !p.existing_website).length,
       withOwner: prospects.filter((p) => Boolean(p.contact_name)).length,
@@ -463,7 +561,7 @@ export function LeadDiscoveryView({
         </div>
       </div>
 
-      {/* Search Area with London default, Postcode & Category filters */}
+      {/* Search: keyword, city, postcode, category */}
       <form
         onSubmit={handleSearch}
         className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-xs"
@@ -482,14 +580,14 @@ export function LeadDiscoveryView({
             />
           </div>
 
-          {/* 2. City: London as default (2 cols on lg) */}
+          {/* 2. City (2 cols on lg) */}
           <div className="relative sm:col-span-1 lg:col-span-2">
             <MapPin size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              placeholder="City (default: London)"
+              placeholder="City or town"
               className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
@@ -565,10 +663,10 @@ export function LeadDiscoveryView({
                   ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-2xs ring-1 ring-emerald-400/30'
                   : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
-              title={smeOnly ? 'Filtering for growing SMEs (5-150 reviews, excluding chains)' : 'Showing all businesses including large chains'}
+              title={smeOnly ? 'Showing growing SMEs only: small businesses (no chains, PLCs or closed companies) with 10–250 reviews or a company formed in the last 10 years. Click to show every business found.' : 'Showing every business found. Click to show growing SMEs only.'}
             >
               <TrendingUp size={12} className={smeOnly ? 'text-emerald-700' : 'text-slate-400'} />
-              <span>Growing SMEs Only</span>
+              <span>Growing SMEs only{prospects.length > 0 ? ` (${filterCounts.growingSme} of ${filterCounts.all})` : ''}</span>
               <span className={`h-1.5 w-1.5 rounded-full ${smeOnly ? 'bg-emerald-500' : 'bg-slate-300'}`} />
             </button>
 
@@ -581,7 +679,7 @@ export function LeadDiscoveryView({
                   ? 'border-sky-300 bg-sky-50 text-sky-800 shadow-2xs ring-1 ring-sky-400/30'
                   : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
-              title="Toggle detailed filters for reviews, rating, age, and contact requirements"
+              title="Filter by reviews, rating, company age and contact details"
             >
               <SlidersHorizontal size={12} className={showFilters || activeFilterCount > 0 ? 'text-sky-700' : 'text-slate-500'} />
               <span>More Filters</span>
@@ -631,7 +729,12 @@ export function LeadDiscoveryView({
           <div className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 p-3.5 space-y-3.5 animate-in fade-in duration-150">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                SME Growth and Quality Filters
+                Filters
+                {prospects.length > 0 && (
+                  <span className="ml-2 normal-case tracking-normal font-medium text-slate-500">
+                    Companies House match: {filterCounts.registryMatch} of {filterCounts.all}
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-3">
                 {serpBalance && (
@@ -655,67 +758,69 @@ export function LeadDiscoveryView({
               {/* 1. Review Count Range */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Review Count Range
+                  Google reviews
                 </label>
                 <select
                   value={reviewRange}
                   onChange={(e) => setReviewRange(e.target.value as any)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
                 >
-                  <option value="all">All Review Counts</option>
-                  <option value="10-150">10 - 150 reviews (SME Sweet Spot)</option>
-                  <option value="5-50">5 - 50 reviews (Early Traction)</option>
-                  <option value="50-250">50 - 250 reviews (Scaling)</option>
-                  <option value="under-10">Under 10 reviews (New/Emerging)</option>
+                  <option value="all">Any</option>
+                  <option value="under-10">Under 10</option>
+                  <option value="10-50">10–50</option>
+                  <option value="50-250">51–250</option>
+                  <option value="250-plus">Over 250</option>
                 </select>
               </div>
 
               {/* 2. Rating Range */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Google Star Rating
+                  Google rating
                 </label>
                 <select
                   value={ratingRange}
                   onChange={(e) => setRatingRange(e.target.value as any)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
                 >
-                  <option value="all">All Star Ratings</option>
-                  <option value="3.5-4.8">3.5 - 4.8 stars (Opportunity Sweet Spot)</option>
-                  <option value="4.0-plus">4.0+ stars (High Rated)</option>
-                  <option value="under-4.2">Under 4.2 stars (Review Pitch Target)</option>
+                  <option value="all">Any</option>
+                  <option value="4.0-plus">4.0 and above</option>
+                  <option value="3.5-4.8">3.5–4.8</option>
+                  <option value="under-4.2">Under 4.2</option>
                 </select>
               </div>
 
               {/* 3. Company Age (Companies House) */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Company Age (UK Registry)
+                <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Company age
+                  <InfoTip text="From Companies House. Businesses without a Companies House match are hidden when this is set." />
                 </label>
                 <select
                   value={companyAge}
                   onChange={(e) => setCompanyAge(e.target.value as any)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
                 >
-                  <option value="all">All Company Ages</option>
-                  <option value="1-5">1 - 5 Years (Growth Phase)</option>
-                  <option value="1-10">1 - 10 Years (Established SME)</option>
-                  <option value="10-plus">Over 10 Years (Legacy)</option>
+                  <option value="all">Any</option>
+                  <option value="1-5">1–5 years</option>
+                  <option value="1-10">1–10 years</option>
+                  <option value="10-plus">Over 10 years</option>
                 </select>
               </div>
 
               {/* 4. Company Structure */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Business Structure
+                <label className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Business type
+                  <InfoTip text="From Companies House. Businesses without a Companies House match are hidden when this is set." />
                 </label>
                 <select
                   value={companyTypeFilter}
                   onChange={(e) => setCompanyTypeFilter(e.target.value as any)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:border-sky-500 focus:outline-none"
                 >
-                  <option value="all">All Business Structures</option>
-                  <option value="ltd">Active LTD (Private Limited) Only</option>
+                  <option value="all">Any</option>
+                  <option value="ltd">Active limited company</option>
                 </select>
               </div>
             </div>
@@ -724,7 +829,7 @@ export function LeadDiscoveryView({
             <div className="pt-2 border-t border-slate-200/60">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 shrink-0">
-                  Contact Must-Haves:
+                  Must have:
                 </span>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -739,7 +844,7 @@ export function LeadDiscoveryView({
                       onChange={(e) => setRequirePhone(e.target.checked)}
                       className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-3.5 w-3.5"
                     />
-                    <span>Phone / WhatsApp</span>
+                    <span>Phone</span>
                   </label>
 
                   <label className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-all ${
@@ -767,7 +872,8 @@ export function LeadDiscoveryView({
                       onChange={(e) => setRequireDirector(e.target.checked)}
                       className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-3.5 w-3.5"
                     />
-                    <span>Director / Owner on record</span>
+                    <span>Director</span>
+                    <InfoTip text="From Companies House, so only businesses with a Companies House match have one." />
                   </label>
                 </div>
               </div>
@@ -828,17 +934,6 @@ export function LeadDiscoveryView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setResultFilter('growing-sme')}
-                  className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                    resultFilter === 'growing-sme'
-                      ? 'bg-emerald-50 text-emerald-900 border border-emerald-200/70 shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Growing SMEs ({filterCounts.growingSme})
-                </button>
-                <button
-                  type="button"
                   onClick={() => setResultFilter('with-phone')}
                   className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
                     resultFilter === 'with-phone'
@@ -847,17 +942,6 @@ export function LeadDiscoveryView({
                   }`}
                 >
                   With Phone ({filterCounts.withPhone})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setResultFilter('with-email')}
-                  className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                    resultFilter === 'with-email'
-                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  With Email ({filterCounts.withEmail})
                 </button>
                 <button
                   type="button"
@@ -938,7 +1022,8 @@ export function LeadDiscoveryView({
             <div className="space-y-3.5 p-4 bg-slate-50/50">
               {filteredProspects.map((p) => {
                 const isSelected = selectedIds.has(p.id)
-                const isImported = importedIds.has(p.id)
+                const match = existing.get(p.id)
+                const isImported = importedIds.has(p.id) || Boolean(match)
 
                 return (
                   <div
@@ -959,7 +1044,7 @@ export function LeadDiscoveryView({
                           disabled={isImported}
                           onClick={() => toggleSelect(p.id)}
                           className="text-slate-400 hover:text-slate-600 disabled:opacity-40 shrink-0"
-                          title={isImported ? 'Already imported' : isSelected ? 'Deselect' : 'Select'}
+                          title={match ? (match.opted_out ? 'On the do-not-contact list' : `Already a lead (same ${match.matched_by})`) : isImported ? 'Already added' : isSelected ? 'Deselect' : 'Select'}
                         >
                           {isImported ? (
                             <CheckCircle2 size={18} className="text-emerald-600" />
@@ -977,9 +1062,7 @@ export function LeadDiscoveryView({
                           <span className="rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
                             {p.category}
                           </span>
-                          <span className="rounded bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
-                            Verified Lead
-                          </span>
+                          <span className="text-[11px] text-slate-500">From {p.source_provider || 'Google Maps'}</span>
                           {p.is_sme && (
                             <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 border border-emerald-200/60">
                               <TrendingUp size={11} className="text-emerald-700" /> Growing SME
@@ -1012,10 +1095,20 @@ export function LeadDiscoveryView({
                           <span>Details</span>
                         </button>
 
-                        {isImported ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                        {match?.opted_out ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700" title="On the do-not-contact list">
+                            <X size={13} />
+                            Do not contact
+                          </span>
+                        ) : match ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700" title={`Matched by ${match.matched_by}${match.business_name ? `: ${match.business_name}` : ''}`}>
                             <CheckCircle2 size={13} />
-                            Added to Leads
+                            Already a lead
+                          </span>
+                        ) : isImported ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                            <CheckCircle2 size={13} />
+                            Added to leads
                           </span>
                         ) : (
                           <button
@@ -1081,13 +1174,31 @@ export function LeadDiscoveryView({
                             Email
                           </span>
                           {p.email ? (
-                            <a
-                              href={`mailto:${p.email}`}
-                              className="font-semibold text-slate-800 hover:text-primary transition-colors block break-all"
-                              title={p.email}
-                            >
-                              {p.email}
-                            </a>
+                            <>
+                              <a
+                                href={`mailto:${p.email}`}
+                                className="font-semibold text-slate-800 hover:text-primary transition-colors block break-all"
+                                title={p.email_source ? `Found on ${p.email_source}` : p.email}
+                              >
+                                {p.email}
+                              </a>
+                              {p.email_check?.status ? (
+                                <span
+                                  className={`text-[11px] font-semibold ${p.email_check.status === 'valid' ? 'text-emerald-700' : p.email_check.status === 'risky' || p.email_check.status === 'unknown' ? 'text-amber-700' : 'text-rose-700'}`}
+                                  title={p.email_check.reason || undefined}
+                                >
+                                  {EMAIL_STATUS_LABEL[p.email_check.status]}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-500" title="Format and domain look fine. The inbox is checked when you add the lead.">
+                                  Inbox checked when added
+                                </span>
+                              )}
+                            </>
+                          ) : p.existing_website && emailLookup.running && !emailLookup.tried.has(p.id) ? (
+                            <span className="text-slate-400 italic">Looking on website…</span>
+                          ) : p.existing_website && emailLookup.tried.has(p.id) ? (
+                            <span className="text-slate-400 italic">None found on website</span>
                           ) : (
                             <span className="text-slate-400 italic">No email on file</span>
                           )}
@@ -1155,6 +1266,20 @@ export function LeadDiscoveryView({
                   </div>
                 )
               })}
+              {hasMore && (
+                <div className="flex justify-center pt-1">
+                  <button
+                    type="button"
+                    onClick={handleLoadMore}
+                    disabled={isLoadingMore}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-50"
+                    title="Loads the next 20 results (uses 1 SerpAPI search)"
+                  >
+                    <RefreshCw size={13} className={isLoadingMore ? 'animate-spin text-slate-400' : 'text-slate-400'} />
+                    {isLoadingMore ? 'Loading…' : 'Load 20 more'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1232,9 +1357,7 @@ export function LeadDiscoveryView({
                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                     {modalProspect.category}
                   </span>
-                  <span className="rounded bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
-                    Verified Lead
-                  </span>
+                  <span className="text-[11px] text-slate-500">From {modalProspect.source_provider || 'Google Maps'}</span>
                   {modalProspect.is_sme && (
                     <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200/60 inline-flex items-center gap-1">
                       <TrendingUp size={12} className="text-emerald-700" /> Growing SME
@@ -1434,10 +1557,10 @@ export function LeadDiscoveryView({
               </button>
 
               <div className="flex items-center gap-3">
-                {importedIds.has(modalProspect.id) ? (
+                {importedIds.has(modalProspect.id) || existing.has(modalProspect.id) ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
                     <CheckCircle2 size={14} />
-                    Already In Pipeline
+                    Already a lead
                   </span>
                 ) : (
                   <button

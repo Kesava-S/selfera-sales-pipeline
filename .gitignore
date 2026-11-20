@@ -29,11 +29,13 @@ next-env.d.ts
 /coverage/
 /test-results/
 /playwright-report/
+/screenshots/
 playwright/.auth/
 **/.auth/
 results.json
 .vitest/
 .nyc_output/
+*.csv
 
 # Logs and debug
 *.log
