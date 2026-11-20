@@ -445,39 +445,7 @@ export function LeadDiscoveryView({
           </p>
         </div>
 
-        <div className="flex flex-wrap shrink-0 items-center gap-2.5">
-          {serpBalance && (
-            <div
-              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 shadow-xs"
-              title={`SerpApi: ${serpBalance.total_searches_left} remaining of ${serpBalance.searches_per_month} searches (${serpBalance.plan_name}). Reset date: ${serpBalance.plan_renewal_date || 'Monthly'}`}
-            >
-              <div className="flex flex-col text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    SerpApi Balance
-                  </span>
-                  <button
-                    type="button"
-                    onClick={refreshBalance}
-                    disabled={isRefreshingBalance}
-                    className="text-slate-400 hover:text-slate-700 transition-colors p-0.5 rounded cursor-pointer"
-                    title="Refresh SerpApi search balance"
-                  >
-                    <RefreshCw size={10} className={isRefreshingBalance ? 'animate-spin' : ''} />
-                  </button>
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span className={`text-base font-bold ${serpBalance.total_searches_left <= 25 ? 'text-amber-600' : 'text-slate-900'}`}>
-                    {serpBalance.total_searches_left.toLocaleString()}
-                  </span>
-                  <span className="text-[11px] text-slate-500">
-                    / {serpBalance.searches_per_month} left
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
+        <div className="flex shrink-0 items-center gap-2.5">
           <Link
             href="/dashboard/discovery/history"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900 transition-colors"
@@ -635,35 +603,52 @@ export function LeadDiscoveryView({
             )}
           </div>
 
-          <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1.5">
-            <span>SerpApi UK Maps SME Search</span>
-            {serpBalance && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span className="font-medium text-slate-600">
-                  <span className="font-semibold text-slate-800">{serpBalance.total_searches_left}</span> searches remaining
-                </span>
-              </>
-            )}
-          </div>
+          {/* SerpApi Balance badge in the filters toolbar */}
+          {serpBalance && (
+            <div
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1 text-xs text-slate-700 shadow-2xs"
+              title={`SerpApi: ${serpBalance.total_searches_left} remaining of ${serpBalance.searches_per_month} searches (${serpBalance.plan_name}). Reset date: ${serpBalance.plan_renewal_date || 'Monthly'}`}
+            >
+              <span className="text-[11px] font-medium text-slate-500">SerpApi Balance:</span>
+              <span className={`font-bold ${serpBalance.total_searches_left <= 25 ? 'text-amber-600' : 'text-slate-900'}`}>
+                {serpBalance.total_searches_left.toLocaleString()} / {serpBalance.searches_per_month}
+              </span>
+              <button
+                type="button"
+                onClick={refreshBalance}
+                disabled={isRefreshingBalance}
+                className="text-slate-400 hover:text-slate-700 transition-colors p-0.5 rounded cursor-pointer ml-0.5"
+                title="Refresh SerpApi search balance"
+              >
+                <RefreshCw size={11} className={isRefreshingBalance ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Detailed SME & Quality Filters Panel */}
         {showFilters && (
           <div className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 p-3.5 space-y-3.5 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 SME Growth and Quality Filters
               </span>
-              {activeFilterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline"
-                >
-                  Reset all ({activeFilterCount})
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {serpBalance && (
+                  <span className="text-[11px] text-slate-500">
+                    Remaining Quota: <strong className="text-slate-800">{serpBalance.total_searches_left}</strong> / {serpBalance.searches_per_month} searches
+                  </span>
+                )}
+                {activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline"
+                  >
+                    Reset all ({activeFilterCount})
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
