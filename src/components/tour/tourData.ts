@@ -11,6 +11,8 @@ import {
   Sliders,
   CheckCircle2,
   AlertTriangle,
+  Compass,
+  Bell,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -57,7 +59,49 @@ export const MODULE_TOURS: ModuleTour[] = [
     ],
   },
 
-  // 2. Lead Management: All Leads Tab
+  // 2. Lead Discovery (Sales roles only)
+  {
+    id: 'discovery',
+    route: '/dashboard/discovery',
+    title: 'Lead Discovery',
+    subtitle: 'SME sourcing via Google Maps and Companies House',
+    icon: Compass,
+    roles: SALES_SIDE,
+    steps: [
+      {
+        id: 'disc-search',
+        title: 'Search Criteria',
+        instruction: 'Search prospects by keyword, location, UK postcode, sector category, or URL.',
+        targetSelector: '[data-tour="disc-search"]',
+      },
+      {
+        id: 'disc-sme-toggle',
+        title: 'Growing SME Filter',
+        instruction: 'Filter for active growing SMEs with 10-250 reviews or under 10 years old.',
+        targetSelector: '[data-tour="disc-sme-toggle"]',
+      },
+      {
+        id: 'disc-filters',
+        title: 'Growth & Quality Filters',
+        instruction: 'Refine results by review counts, star ratings, company age, and contacts.',
+        targetSelector: '[data-tour="disc-filters"]',
+      },
+      {
+        id: 'disc-results',
+        title: 'Discovered Prospects',
+        instruction: 'Review enriched leads with phone, website, Google ratings, and company info.',
+        targetSelector: '[data-tour="disc-results"]',
+      },
+      {
+        id: 'disc-history',
+        title: 'Search History',
+        instruction: 'Access previously discovered prospect batches without spending extra credits.',
+        targetSelector: '[data-tour="disc-history"]',
+      },
+    ],
+  },
+
+  // 3. Lead Management: All Leads Tab
   {
     id: 'leads',
     route: '/dashboard/leads',
@@ -429,6 +473,35 @@ export const MODULE_TOURS: ModuleTour[] = [
         title: 'Follow-Up Delays',
         instruction: 'Set working days to wait between consecutive automated follow-up steps.',
         targetSelector: '[data-tour="settings-cadence"]',
+      },
+    ],
+  },
+
+  // 12. Notifications Hub
+  {
+    id: 'notifications',
+    route: '/dashboard/notifications',
+    title: 'Notifications Hub',
+    subtitle: 'Real-time alerts, replies, and assignment reminders',
+    icon: Bell,
+    steps: [
+      {
+        id: 'notif-tabs',
+        title: 'Read & Unread Filters',
+        instruction: 'Filter notifications by read status to clear your task backlog.',
+        targetSelector: '[data-tour="notif-tabs"]',
+      },
+      {
+        id: 'notif-filter',
+        title: 'Type & Search Filtering',
+        instruction: 'Filter alerts by category or search by specific business name.',
+        targetSelector: '[data-tour="notif-filter"]',
+      },
+      {
+        id: 'notif-list',
+        title: 'Notification Activity',
+        instruction: 'Click any notification to navigate directly to its deal or thread.',
+        targetSelector: '[data-tour="notif-list"]',
       },
     ],
   },

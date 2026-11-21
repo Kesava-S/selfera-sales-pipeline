@@ -7,10 +7,11 @@ import {
 
 describe('Separate Module Tours & Cursor Guide', () => {
   it('defines separate guided tours for modules and lead tabs', () => {
-    expect(MODULE_TOURS).toHaveLength(12)
+    expect(MODULE_TOURS).toHaveLength(14)
     const moduleIds = MODULE_TOURS.map(m => m.id)
     expect(moduleIds).toEqual([
       'dashboard',
+      'discovery',
       'leads',
       'leads-review',
       'leads-missing',
@@ -22,6 +23,7 @@ describe('Separate Module Tours & Cursor Guide', () => {
       'templates',
       'integrations',
       'settings',
+      'notifications',
     ])
   })
 
@@ -97,16 +99,35 @@ describe('Separate Module Tours & Cursor Guide', () => {
 
   it('filters out restricted module tours for consultants', () => {
     const adminTours = getModuleToursForRole('admin')
-    expect(adminTours).toHaveLength(12)
+    expect(adminTours).toHaveLength(14)
 
     const consultantTours = getModuleToursForRole('consultant')
     const consultantRoutes = consultantTours.map(m => m.route)
 
-    // Consultants cannot access audience, campaigns, or whatsapp-campaigns
+    // Consultants cannot access discovery, audience, campaigns, or whatsapp-campaigns
+    expect(consultantRoutes).not.toContain('/dashboard/discovery')
     expect(consultantRoutes).not.toContain('/dashboard/audience')
     expect(consultantRoutes).not.toContain('/dashboard/campaigns')
     expect(consultantRoutes).not.toContain('/dashboard/whatsapp-campaigns')
-    expect(consultantTours).toHaveLength(9)
+    expect(consultantTours).toHaveLength(10)
+  })
+
+  it('matches separate tours for Lead Discovery and Notifications', () => {
+    const discoveryTour = getModuleTourForPath('/dashboard/discovery')
+    expect(discoveryTour).not.toBeNull()
+    expect(discoveryTour?.id).toBe('discovery')
+    expect(discoveryTour?.title).toBe('Lead Discovery')
+    expect(discoveryTour?.steps).toHaveLength(5)
+
+    const discoveryHistoryTour = getModuleTourForPath('/dashboard/discovery/history')
+    expect(discoveryHistoryTour).not.toBeNull()
+    expect(discoveryHistoryTour?.id).toBe('discovery')
+
+    const notifTour = getModuleTourForPath('/dashboard/notifications')
+    expect(notifTour).not.toBeNull()
+    expect(notifTour?.id).toBe('notifications')
+    expect(notifTour?.title).toBe('Notifications Hub')
+    expect(notifTour?.steps).toHaveLength(3)
   })
 
   it('contains zero literal em dashes across all tour content', () => {

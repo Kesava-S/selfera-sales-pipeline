@@ -546,6 +546,7 @@ export function LeadDiscoveryView({
         <div className="flex shrink-0 items-center gap-2.5">
           <Link
             href="/dashboard/discovery/history"
+            data-tour="disc-history"
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900 transition-colors"
           >
             <History size={14} className="text-slate-500" />
@@ -563,6 +564,7 @@ export function LeadDiscoveryView({
 
       {/* Search: keyword, city, postcode, category */}
       <form
+        data-tour="disc-search"
         onSubmit={handleSearch}
         className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-xs"
       >
@@ -657,6 +659,7 @@ export function LeadDiscoveryView({
             {/* Growing SME Filter Toggle */}
             <button
               type="button"
+              data-tour="disc-sme-toggle"
               onClick={() => setSmeOnly(!smeOnly)}
               className={`h-8 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold border transition-all ${
                 smeOnly
@@ -673,6 +676,7 @@ export function LeadDiscoveryView({
             {/* More Filters Toggle */}
             <button
               type="button"
+              data-tour="disc-filters"
               onClick={() => setShowFilters(!showFilters)}
               className={`h-8 inline-flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold border transition-all ${
                 showFilters || activeFilterCount > 0
@@ -884,6 +888,7 @@ export function LeadDiscoveryView({
 
       {/* Results Container with subtle thin accent line when viewing previous search */}
       <div
+        data-tour="disc-results"
         className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs transition-all ${
           prospects.length > 0 && isLastSearch ? 'border-t-2 border-t-primary' : ''
         }`}

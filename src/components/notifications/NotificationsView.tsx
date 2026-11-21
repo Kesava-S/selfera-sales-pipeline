@@ -128,7 +128,7 @@ export function NotificationsView({
       <div className="card p-3 sm:p-4 space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Status Tabs */}
-          <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 self-start sm:self-auto">
+          <div data-tour="notif-tabs" className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 self-start sm:self-auto">
             <button
               type="button"
               onClick={() => setFilterTab('all')}
@@ -170,7 +170,7 @@ export function NotificationsView({
           </div>
 
           {/* Search box & Type filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div data-tour="notif-filter" className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <div className="relative min-w-56 flex-1">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -201,7 +201,7 @@ export function NotificationsView({
       </div>
 
       {/* Notifications List */}
-      <div className="card p-0 overflow-hidden shadow-xs border border-slate-200">
+      <div data-tour="notif-list" className="card p-0 overflow-hidden shadow-xs border border-slate-200">
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3">
