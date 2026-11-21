@@ -104,12 +104,68 @@ describe('Separate Module Tours & Cursor Guide', () => {
     const consultantTours = getModuleToursForRole('consultant')
     const consultantRoutes = consultantTours.map(m => m.route)
 
-    // Consultants cannot access discovery, audience, campaigns, or whatsapp-campaigns
+    // Consultants cannot access discovery, review queue, audience, campaigns, whatsapp-campaigns, or settings
     expect(consultantRoutes).not.toContain('/dashboard/discovery')
+    expect(consultantRoutes).not.toContain('/dashboard/leads?tab=review')
     expect(consultantRoutes).not.toContain('/dashboard/audience')
     expect(consultantRoutes).not.toContain('/dashboard/campaigns')
     expect(consultantRoutes).not.toContain('/dashboard/whatsapp-campaigns')
-    expect(consultantTours).toHaveLength(10)
+    expect(consultantRoutes).not.toContain('/dashboard/settings')
+    expect(consultantTours).toHaveLength(8)
+  })
+
+  it('restricts Settings tour strictly to administrators', () => {
+    const adminSettings = getModuleTourForPath('/dashboard/settings', 'admin')
+    expect(adminSettings).not.toBeNull()
+    expect(adminSettings?.id).toBe('settings')
+    expect(adminSettings?.steps).toHaveLength(2)
+
+    // Non-admin roles do not have access to team management and cadence settings, preventing tour collapse
+    expect(getModuleTourForPath('/dashboard/settings', 'sales')).toBeNull()
+    expect(getModuleTourForPath('/dashboard/settings', 'consultant')).toBeNull()
+    expect(getModuleTourForPath('/dashboard/settings', 'sales_consultant')).toBeNull()
+  })
+
+  it('tailors Lead Management steps depending on user role', () => {
+    // Admin sees all 14 steps including export, row checkboxes, and bulk controls
+    const adminLeadTour = getModuleTourForPath('/dashboard/leads', 'admin')
+    expect(adminLeadTour?.steps).toHaveLength(14)
+
+    // Sales reps see intake and filters, but not admin-only export or bulk delete/archive
+    const salesLeadTour = getModuleTourForPath('/dashboard/leads', 'sales')
+    expect(salesLeadTour?.steps).toHaveLength(7)
+    expect(salesLeadTour?.steps.map(s => s.id)).toEqual([
+      'leads-import',
+      'leads-add',
+      'leads-tab-all',
+      'leads-tab-review',
+      'leads-tab-missing',
+      'leads-categories',
+      'leads-columns',
+    ])
+
+    // Consultants only see view/filter controls, not intake buttons or bulk operations
+    const consultantLeadTour = getModuleTourForPath('/dashboard/leads', 'consultant')
+    expect(consultantLeadTour?.steps).toHaveLength(5)
+    expect(consultantLeadTour?.steps.map(s => s.id)).toEqual([
+      'leads-tab-all',
+      'leads-tab-review',
+      'leads-tab-missing',
+      'leads-categories',
+      'leads-columns',
+    ])
+
+    // In Approval Queue, sales sees 6 steps (excluding admin-only archive & delete)
+    const salesReviewTour = getModuleTourForPath('/dashboard/leads', 'sales', 'tab=review')
+    expect(salesReviewTour?.steps).toHaveLength(6)
+    expect(salesReviewTour?.steps.map(s => s.id)).toEqual([
+      'leads-import',
+      'leads-add',
+      'leads-tab-review',
+      'leads-table',
+      'leads-table-checkbox',
+      'bulk-approve',
+    ])
   })
 
   it('matches separate tours for Lead Discovery and Notifications', () => {

@@ -21,6 +21,7 @@ export interface TourStep {
   title: string
   instruction: string
   targetSelector: string
+  roles?: string[]
 }
 
 export interface ModuleTour {
@@ -114,18 +115,21 @@ export const MODULE_TOURS: ModuleTour[] = [
         title: 'Import CSV',
         instruction: 'Bulk upload CSV lead lists with automatic phone formatting and deduplication.',
         targetSelector: '[data-tour="leads-import"]',
+        roles: SALES_SIDE,
       },
       {
         id: 'leads-export',
         title: 'Export CSV',
         instruction: 'Export filtered deals or selected businesses directly into a spreadsheet.',
         targetSelector: '[data-tour="leads-export"]',
+        roles: ['admin'],
       },
       {
         id: 'leads-add',
         title: 'Add Business',
         instruction: 'Manually register a single business with contact channels and pitch details.',
         targetSelector: '[data-tour="leads-add"]',
+        roles: SALES_SIDE,
       },
       {
         id: 'leads-tab-all',
@@ -162,47 +166,54 @@ export const MODULE_TOURS: ModuleTour[] = [
         title: 'Table Row Selection',
         instruction: 'Tick lead checkboxes in the table to open bulk action controls.',
         targetSelector: '[data-tour="leads-table-checkbox"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-assign',
         title: 'Assign Team Member',
         instruction: 'Reallocate selected leads to a specific sales rep or consultant in bulk.',
         targetSelector: '[data-tour="bulk-assign"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-services',
         title: 'Change Services',
         instruction: 'Update pitched service packages across multiple selected businesses at once.',
         targetSelector: '[data-tour="bulk-services"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-archive',
         title: 'Archive Option',
         instruction: 'Archive inactive leads to keep your active pipeline clean without losing data.',
         targetSelector: '[data-tour="bulk-archive"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-offtarget',
         title: 'Off Target Option',
         instruction: 'Flag out-of-scope accounts to prevent outreach and track unserviceable sectors.',
         targetSelector: '[data-tour="bulk-offtarget"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-delete',
         title: 'Delete Option',
         instruction: 'Permanently remove unwanted leads and their conversation history everywhere.',
         targetSelector: '[data-tour="bulk-delete"]',
+        roles: ['admin'],
       },
     ],
   },
 
-  // 2b. Lead Management: Approval Queue Tab
+  // 4. Lead Management: Approval Queue Tab
   {
     id: 'leads-review',
     route: '/dashboard/leads?tab=review',
     title: 'Lead Management: Approval Queue',
     subtitle: 'Inbound intake review and approval workflow',
     icon: CheckCircle2,
+    roles: SALES_SIDE,
     steps: [
       {
         id: 'leads-import',
@@ -245,12 +256,14 @@ export const MODULE_TOURS: ModuleTour[] = [
         title: 'Archive Option',
         instruction: 'Archive rejected leads without deleting their information permanently.',
         targetSelector: '[data-tour="bulk-archive"]',
+        roles: ['admin'],
       },
       {
         id: 'bulk-delete',
         title: 'Delete Option',
         instruction: 'Permanently remove invalid or duplicate leads from the intake queue.',
         targetSelector: '[data-tour="bulk-delete"]',
+        roles: ['admin'],
       },
     ],
   },
@@ -454,13 +467,14 @@ export const MODULE_TOURS: ModuleTour[] = [
     ],
   },
 
-  // 10. Settings
+  // 11. Settings (Admin only)
   {
     id: 'settings',
     route: '/dashboard/settings',
     title: 'Settings',
     subtitle: 'Team access, cadence, and opt-outs',
     icon: Sliders,
+    roles: ['admin'],
     steps: [
       {
         id: 'settings-team',
@@ -508,8 +522,14 @@ export const MODULE_TOURS: ModuleTour[] = [
 ]
 
 export function getModuleToursForRole(role?: string): ModuleTour[] {
-  if (!role) return MODULE_TOURS
-  return MODULE_TOURS.filter(m => !m.roles || m.roles.includes(role))
+  return MODULE_TOURS
+    .filter(m => !role || !m.roles || m.roles.includes(role))
+    .map(m => {
+      if (!role) return m
+      const filteredSteps = m.steps.filter(s => !s.roles || s.roles.includes(role))
+      return { ...m, steps: filteredSteps }
+    })
+    .filter(m => m.steps.length > 0)
 }
 
 export function getModuleTourForPath(
@@ -523,14 +543,14 @@ export function getModuleTourForPath(
   if (pathname === '/dashboard/leads') {
     if (search && search.includes('tab=review')) {
       const reviewTour = tours.find(m => m.id === 'leads-review')
-      if (reviewTour) return reviewTour
+      return reviewTour || null
     }
     if (search && search.includes('tab=missing')) {
       const missingTour = tours.find(m => m.id === 'leads-missing')
-      if (missingTour) return missingTour
+      return missingTour || null
     }
     const allTour = tours.find(m => m.id === 'leads')
-    if (allTour) return allTour
+    return allTour || null
   }
 
   // Exact route match first
@@ -538,10 +558,10 @@ export function getModuleTourForPath(
   if (exact) return exact
 
   // Subpath prefix match (except dashboard home)
-  const prefix = tours.find(m => m.route !== '/dashboard' && pathname.startsWith(m.route))
+  const prefix = tours.find(m => m.route !== '/dashboard' && pathname.startsWith(m.route + '/'))
   if (prefix) return prefix
 
-  if (pathname.startsWith('/dashboard')) {
+  if (pathname === '/dashboard' || pathname === '/dashboard/') {
     return tours.find(m => m.route === '/dashboard') || null
   }
 

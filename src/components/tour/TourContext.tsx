@@ -92,7 +92,9 @@ export function TourProvider({
       const currentFull = pathname + (typeof window !== 'undefined' ? window.location.search : '')
       const isCurrentRoute = targetModule.route.includes('?')
         ? currentFull === targetModule.route
-        : pathname === targetModule.route || pathname.startsWith(targetModule.route + '/')
+        : targetModule.route === '/dashboard'
+          ? pathname === '/dashboard' || pathname === '/dashboard/'
+          : pathname === targetModule.route || pathname.startsWith(targetModule.route + '/')
 
       if (!isCurrentRoute) {
         try {
