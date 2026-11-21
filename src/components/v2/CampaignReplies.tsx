@@ -126,11 +126,15 @@ export function CampaignRepliesList({ channel, campaignId, count }: { channel: '
 }
 
 // In the campaign page header
-export function RepliesLink({ channel }: { channel: 'email' | 'whatsapp' }) {
+export function RepliesLink({ channel, dataTour }: { channel: 'email' | 'whatsapp'; dataTour?: string }) {
   const [count, setCount] = useState<number | null>(null)
   useEffect(() => { countNewCampaignReplies(channel).then(setCount).catch(() => setCount(null)) }, [channel])
   return (
-    <Link href={channel === 'email' ? '/dashboard/campaigns/replies' : '/dashboard/whatsapp-campaigns/replies'} className="btn btn-secondary btn-sm">
+    <Link
+      href={channel === 'email' ? '/dashboard/campaigns/replies' : '/dashboard/whatsapp-campaigns/replies'}
+      data-tour={dataTour || (channel === 'email' ? 'email-replies-btn' : 'wa-replies-btn')}
+      className="btn btn-secondary btn-sm"
+    >
       <Inbox size={14} /> Replies
       {!!count && <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold text-white">{count}</span>}
     </Link>

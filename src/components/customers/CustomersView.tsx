@@ -101,8 +101,8 @@ export function CustomersView({ business, customers, total, counts, filters, pag
             <Download size={16} /> Export CSV{selected.length ? ` (${selected.length})` : ''}
           </button>
         )}
-        <button className="btn btn-secondary" onClick={() => setImporting(true)}><Upload size={16} /> Import CSV</button>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Add customer</button>
+        <button data-tour="aud-import" className="btn btn-secondary" onClick={() => setImporting(true)}><Upload size={16} /> Import CSV</button>
+        <button data-tour="aud-add" className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Add customer</button>
       </PageHeader>
 
       <div className="flex w-fit rounded-xl border border-slate-200 bg-slate-100 p-1 text-sm font-semibold">
@@ -140,7 +140,7 @@ export function CustomersView({ business, customers, total, counts, filters, pag
       <ErrorNote error={imports.error} />
 
       {view === 'campaigns' ? children : (<>
-      <div className="flex flex-wrap gap-2 border-b border-slate-200">
+      <div data-tour="aud-tabs" className="flex flex-wrap gap-2 border-b border-slate-200">
         {tabs.map(t => (
           <button
             key={t.key}

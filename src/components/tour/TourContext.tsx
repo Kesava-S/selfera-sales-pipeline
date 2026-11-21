@@ -1,9 +1,8 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useTransition } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
-  MODULE_TOURS,
   getModuleToursForRole,
   getModuleTourForPath,
   type ModuleTour,
@@ -48,88 +47,63 @@ export function TourProvider({
   const [isActive, setIsActive] = useState(false)
   const [browseModalOpen, setBrowseModalOpen] = useState(false)
 
-  const activeTourStorageKey = 'selfera_separate_tour_module'
-  const [searchString, setSearchString] = useState('')
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setSearchString(window.location.search)
-    }
-  }, [pathname])
-
-  // Determine current page's tour
+  const searchString = useSearchParams().toString()
+  const [pendingTourId, setPendingTourId] = useState<string | null>(null)
+  const [isNavigating, startNavigation] = useTransition()
   const currentModuleTour = useMemo(
     () => getModuleTourForPath(pathname, userProfile.role, searchString),
     [pathname, userProfile.role, searchString]
   )
 
   const endTour = useCallback(() => {
+    setPendingTourId(null)
     setIsActive(false)
     setActiveTour(null)
     setCurrentStepIndex(0)
-    try {
-      sessionStorage.removeItem(activeTourStorageKey)
-    } catch {
-      // Ignore
-    }
-  }, [activeTourStorageKey])
+  }, [])
+
+  const activateTour = useCallback((tour: ModuleTour) => {
+    const steps = tour.steps.filter(step =>
+      !step.requiresSelector || document.querySelector(step.requiresSelector)
+    )
+    if (steps.length === 0) return
+    setActiveTour({ ...tour, steps })
+    setCurrentStepIndex(0)
+    setIsActive(true)
+  }, [])
 
   const startTour = useCallback(
     (moduleId?: string) => {
       setBrowseModalOpen(false)
+      const target = moduleId ? allModules.find(tour => tour.id === moduleId) : currentModuleTour
+      if (!target) return
 
-      let targetModule: ModuleTour | null = null
-      if (moduleId) {
-        targetModule = allModules.find(m => m.id === moduleId) || null
-      }
-      if (!targetModule) {
-        targetModule = currentModuleTour || allModules[0] || null
-      }
-
-      if (!targetModule) return
-
-      // If the selected tour belongs to another page/tab, navigate there first
-      const currentFull = pathname + (typeof window !== 'undefined' ? window.location.search : '')
-      const isCurrentRoute = targetModule.route.includes('?')
-        ? currentFull === targetModule.route
-        : targetModule.route === '/dashboard'
-          ? pathname === '/dashboard' || pathname === '/dashboard/'
-          : pathname === targetModule.route || pathname.startsWith(targetModule.route + '/')
-
-      if (!isCurrentRoute) {
-        try {
-          sessionStorage.setItem(activeTourStorageKey, targetModule.id)
-        } catch {
-          // Ignore
-        }
-        router.push(targetModule.route)
+      if (target.id === currentModuleTour?.id) {
+        setPendingTourId(null)
+        activateTour(target)
         return
       }
 
-      setActiveTour(targetModule)
-      setCurrentStepIndex(0)
-      setIsActive(true)
+      setPendingTourId(target.id)
+      startNavigation(() => router.push(target.route))
     },
-    [allModules, currentModuleTour, pathname, router, activeTourStorageKey]
+    [allModules, currentModuleTour, activateTour, router]
   )
 
-  // Restore tour after cross-page navigation if initiated from the browse modal
   useEffect(() => {
-    try {
-      const storedId = sessionStorage.getItem(activeTourStorageKey)
-      if (storedId) {
-        const matchingModule = allModules.find(m => m.id === storedId)
-        if (matchingModule) {
-          setActiveTour(matchingModule)
-          setCurrentStepIndex(0)
-          setIsActive(true)
-          sessionStorage.removeItem(activeTourStorageKey)
-        }
-      }
-    } catch {
-      // Ignore
-    }
-  }, [pathname, allModules, activeTourStorageKey])
+    if (isNavigating || !pendingTourId) return
+    const frame = requestAnimationFrame(() => {
+      setPendingTourId(null)
+      if (currentModuleTour?.id === pendingTourId) activateTour(currentModuleTour)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isNavigating, pendingTourId, currentModuleTour, activateTour])
+
+  if (activeTour && activeTour.id !== currentModuleTour?.id) {
+    setActiveTour(null)
+    setCurrentStepIndex(0)
+    setIsActive(false)
+  }
 
   const nextStep = useCallback(() => {
     if (!activeTour) return

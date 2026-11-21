@@ -2,6 +2,7 @@
 
 import { exampleNumber } from '@/lib/contact'
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   MessageSquare,
   Plus,
@@ -105,6 +106,8 @@ export function WhatsAppCampaignsView({
   templates: WhatsAppTemplate[]
   isApiConfigured: boolean
 }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const lists = useLists()
   const services = ['General', ...lists.services]
   const [activeTab, setActiveTab] = useState<'campaigns' | 'databases'>('campaigns')
@@ -168,12 +171,12 @@ export function WhatsAppCampaignsView({
       { label: 'WhatsApp Campaigns' },
     ])
     if (typeof window !== 'undefined' && (window.location.search.includes('action=create') || window.location.search.includes('action=edit'))) {
-      window.history.replaceState({}, '', window.location.pathname)
+      router.push(window.location.pathname)
     }
-  }, [setBreadcrumbs, setCustomBack])
+  }, [setBreadcrumbs, setCustomBack, router])
 
   // Start new campaign
-  const startNewCampaign = () => {
+  const startNewCampaign = useCallback(() => {
     setEditingCampaign(null)
     setCampaignName('')
     setTemplateName('')
@@ -190,9 +193,15 @@ export function WhatsAppCampaignsView({
       { label: 'New Campaign' },
     ])
     if (typeof window !== 'undefined') {
-      window.history.pushState({ campaignView: 'create' }, '', window.location.pathname + '?action=create')
+      router.push(window.location.pathname + '?action=create')
     }
-  }
+  }, [databases, cancelCampaignEdit, setBreadcrumbs, setCustomBack, router])
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'create' && !isCreatingCampaign) {
+      startNewCampaign()
+    }
+  }, [searchParams, isCreatingCampaign, startNewCampaign])
 
   // Edit existing campaign
   const startEditCampaign = (c: WhatsAppCampaignRow) => {
@@ -573,11 +582,12 @@ export function WhatsAppCampaignsView({
 
         {/* View Switcher / New Action */}
         <div data-tour="wa-actions" className="flex items-center gap-2">
-          <RepliesLink channel="whatsapp" />
+          <RepliesLink channel="whatsapp" dataTour={isCreatingCampaign ? 'campaign-create-replies' : undefined} />
           {!isCreatingCampaign && (
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
               <button
                 type="button"
+                data-tour="wa-tab-campaigns"
                 onClick={() => setActiveTab('campaigns')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   activeTab === 'campaigns'
@@ -589,6 +599,7 @@ export function WhatsAppCampaignsView({
               </button>
               <button
                 type="button"
+                data-tour="wa-tab-databases"
                 onClick={() => setActiveTab('databases')}
                 className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                   activeTab === 'databases'
@@ -610,6 +621,7 @@ export function WhatsAppCampaignsView({
             </button>
           ) : activeTab === 'campaigns' ? (
             <button
+              data-tour="wa-new-btn"
               onClick={startNewCampaign}
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
@@ -617,6 +629,7 @@ export function WhatsAppCampaignsView({
             </button>
           ) : (
             <button
+              data-tour="wa-new-db-btn"
               onClick={openCreateDatabase}
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
@@ -634,7 +647,7 @@ export function WhatsAppCampaignsView({
           {/* LEFT: Builder */}
           <div className="lg:col-span-7 2xl:col-span-8 space-y-6">
             {/* Step 1: Campaign Details */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-details" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -678,7 +691,7 @@ export function WhatsAppCampaignsView({
             </div>
 
             {/* Step 2: Target Database Selector */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-database" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -777,7 +790,7 @@ export function WhatsAppCampaignsView({
             </div>
 
             {/* Step 3: WhatsApp Content */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-message" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -788,6 +801,7 @@ export function WhatsAppCampaignsView({
 
                 {templates.length > 0 && (
                   <select
+                    data-tour="campaign-create-template"
                     className="input !w-auto !py-1 !text-xs text-slate-600"
                     onChange={e => {
                       if (e.target.value) applyTemplate(e.target.value)
@@ -878,6 +892,7 @@ export function WhatsAppCampaignsView({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <button
                 type="button"
+                data-tour="campaign-create-test-btn"
                 onClick={() => setTestModalOpen(true)}
                 disabled={!message.trim()}
                 className="btn btn-secondary btn-sm flex items-center gap-1.5 text-slate-700"
@@ -896,6 +911,7 @@ export function WhatsAppCampaignsView({
                 </button>
                 <button
                   type="button"
+                  data-tour="campaign-create-draft-btn"
                   onClick={() => handleSaveCampaign('draft')}
                   disabled={pending || !campaignName.trim() || !message.trim()}
                   className="btn btn-secondary btn-sm"
@@ -904,6 +920,7 @@ export function WhatsAppCampaignsView({
                 </button>
                 <button
                   type="button"
+                  data-tour="campaign-create-launch-btn"
                   onClick={() => {
                     handleSaveCampaign('draft', row => {
                       setActiveLaunchCampaign(row)
@@ -927,7 +944,7 @@ export function WhatsAppCampaignsView({
 
           {/* RIGHT: Live Preview (Matched to Email Campaigns View with Phone/Chat Layout) */}
           <div className="lg:col-span-5 2xl:col-span-4 sticky top-4 space-y-4">
-            <div className="card p-0 overflow-hidden shadow-sm border border-slate-200">
+            <div data-tour="campaign-create-preview" className="card p-0 overflow-hidden shadow-sm border border-slate-200">
               <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">

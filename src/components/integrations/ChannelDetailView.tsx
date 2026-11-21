@@ -279,7 +279,7 @@ export function ChannelDetailView({
   return (
     <div className="space-y-6 w-full">
       {/* Header Bar */}
-      <div className="card p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border border-slate-200 shadow-xs">
+      <div data-tour="channel-header" className="card p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3.5">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50">
             <ChannelIcon id={channel.id} size={22} />
@@ -349,9 +349,10 @@ export function ChannelDetailView({
 
       {/* Environment Selector Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium self-start">
+        <div data-tour="channel-env-tabs" className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium self-start scroll-mt-4">
           <button
             type="button"
+            data-tour="channel-tab-realtime"
             onClick={() => setActiveEnv('realtime')}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${
               activeEnv === 'realtime'
@@ -365,6 +366,7 @@ export function ChannelDetailView({
 
           <button
             type="button"
+            data-tour="channel-tab-sandbox"
             onClick={() => setActiveEnv('sandbox')}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${
               activeEnv === 'sandbox'
@@ -388,18 +390,30 @@ export function ChannelDetailView({
         <div className="lg:col-span-7">
           <form
             onSubmit={handleSave}
-            className="card p-5 shadow-xs border border-slate-200 space-y-4"
+            data-tour={activeEnv === 'realtime' ? 'channel-realtime-creds' : 'channel-sandbox-creds'}
+            className="card p-5 shadow-xs border border-slate-200 space-y-4 scroll-mt-4"
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">
-                  {activeEnv === 'realtime' ? 'Realtime Credentials' : 'Sandbox Credentials'}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    {activeEnv === 'realtime' ? 'Realtime Credentials' : 'Sandbox Credentials'}
+                  </h2>
+                  <span
+                    className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                      activeEnv === 'realtime'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}
+                  >
+                    {activeEnv === 'realtime' ? 'Realtime' : 'Sandbox'}
+                  </span>
+                </div>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                   Configure API keys and connection secrets for {channel.name}.
                 </p>
               </div>
-              <span className="text-xs font-mono text-slate-400">
+              <span className="text-xs font-mono text-slate-400 hidden sm:inline">
                 AES-256-GCM
               </span>
             </div>
@@ -421,7 +435,7 @@ export function ChannelDetailView({
                         ? `${window.location.origin}${channel.webhookUrl}`
                         : channel.webhookUrl
                     }
-                    className="input !py-2 text-sm font-mono bg-slate-50 select-all"
+                    className="input !py-2 text-sm font-mono bg-slate-50 select-all min-w-0 flex-1"
                   />
                   <button
                     type="button"
@@ -640,7 +654,7 @@ export function ChannelDetailView({
         {/* Right Column: Health Check & Live Test Console */}
         <div className="lg:col-span-5 space-y-4">
           {/* Card 1: Connection Health Check */}
-          <div className="card p-5 shadow-xs border border-slate-200 space-y-3.5">
+          <div data-tour="channel-health" className="card p-5 shadow-xs border border-slate-200 space-y-3.5 scroll-mt-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity size={16} className="text-slate-700" />
@@ -705,7 +719,7 @@ export function ChannelDetailView({
           </div>
 
           {/* Card 2: Interactive Live Test Console */}
-          <div className="card p-5 shadow-xs border border-slate-200 space-y-3.5">
+          <div data-tour="channel-test-console" className="card p-5 shadow-xs border border-slate-200 space-y-3.5 scroll-mt-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Send size={15} className="text-slate-700" />

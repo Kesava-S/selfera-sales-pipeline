@@ -66,6 +66,16 @@ export function ProductTour() {
         checkbox.click()
       }
     }
+
+    // Reset campaign views to campaigns tab
+    const emailCampTab = document.querySelector('[data-tour="email-tab-campaigns"]') as HTMLButtonElement | null
+    if (emailCampTab) emailCampTab.click()
+    const waCampTab = document.querySelector('[data-tour="wa-tab-campaigns"]') as HTMLButtonElement | null
+    if (waCampTab) waCampTab.click()
+
+    // Reset channel integration to realtime
+    const realtimeTab = document.querySelector('[data-tour="channel-tab-realtime"]') as HTMLButtonElement | null
+    if (realtimeTab) realtimeTab.click()
   }, [])
 
   const handleEndTour = useCallback(() => {
@@ -115,17 +125,51 @@ export function ProductTour() {
         return
       }
 
-      // Smoothly scroll element to center of viewport
+      // Smoothly scroll element into view: align to start on mobile or tall cards, center on desktop
       if (shouldScroll) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        const mobile = window.innerWidth <= 900
+        const isTall = targetEl.offsetHeight > window.innerHeight * 0.55
+        if (mobile || isTall) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' })
+        } else {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+        }
       }
 
       const rect = targetEl.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) {
-        const top = Math.max(0, rect.top - 6)
-        const left = Math.max(0, rect.left - 6)
-        const width = rect.width + 12
-        const height = rect.height + 12
+        let top = Math.max(0, rect.top - 6)
+        let left = Math.max(0, rect.left - 6)
+        let width = rect.width + 12
+        let height = rect.height + 12
+
+        if (window.innerWidth <= 900) {
+          // Keep spotlight inside horizontal viewport bounds
+          if (left + width > window.innerWidth - 6) {
+            width = Math.max(60, window.innerWidth - 6 - left)
+          }
+
+          // Mobile vertical bounds: keep spotlight clear of fixed tour dialog card
+          const placeTop = top > window.innerHeight * 0.42
+          if (placeTop) {
+            // Card is docked at top (top: 72px, height ~180px); spotlight is below it
+            const cardBottom = 72 + 180 + 12
+            if (top < cardBottom) {
+              const diff = cardBottom - top
+              top = cardBottom
+              height = Math.max(60, height - diff)
+            }
+            if (top + height > window.innerHeight - 12) {
+              height = Math.max(60, window.innerHeight - 12 - top)
+            }
+          } else {
+            // Card is docked at bottom (bottom: 16px, height ~180px); spotlight is above it
+            const maxBottom = window.innerHeight - 210
+            if (top + height > maxBottom) {
+              height = Math.max(120, maxBottom - top)
+            }
+          }
+        }
 
         setSpotlightRect({ top, left, width, height })
 
@@ -211,6 +255,82 @@ export function ProductTour() {
           clearTimeout(timeout)
         }
       }
+    } else if (activeTour.id === 'campaigns') {
+      if (currentStep.id === 'email-tab-databases') {
+        const dbTab = document.querySelector('[data-tour="email-tab-databases"]') as HTMLButtonElement | null
+        if (dbTab) {
+          dbTab.click()
+          setTimeout(() => updatePositions(true), 80)
+        }
+      } else if (
+        currentStep.id === 'email-tab-campaigns' ||
+        currentStep.id === 'email-new-btn' ||
+        currentStep.id === 'email-header'
+      ) {
+        const campTab = document.querySelector('[data-tour="email-tab-campaigns"]') as HTMLButtonElement | null
+        if (campTab) {
+          campTab.click()
+          setTimeout(() => updatePositions(true), 80)
+        }
+      }
+    } else if (activeTour.id === 'whatsapp-campaigns') {
+      if (currentStep.id === 'wa-tab-databases') {
+        const dbTab = document.querySelector('[data-tour="wa-tab-databases"]') as HTMLButtonElement | null
+        if (dbTab) {
+          dbTab.click()
+          setTimeout(() => updatePositions(true), 80)
+        }
+      } else if (
+        currentStep.id === 'wa-tab-campaigns' ||
+        currentStep.id === 'wa-new-btn' ||
+        currentStep.id === 'wa-header'
+      ) {
+        const campTab = document.querySelector('[data-tour="wa-tab-campaigns"]') as HTMLButtonElement | null
+        if (campTab) {
+          campTab.click()
+          setTimeout(() => updatePositions(true), 80)
+        }
+      }
+    } else if (activeTour.id === 'integration-channel') {
+      if (currentStep.id === 'channel-sandbox-creds') {
+        const sandboxTab = document.querySelector('[data-tour="channel-tab-sandbox"]') as HTMLButtonElement | null
+        if (sandboxTab) {
+          sandboxTab.click()
+        }
+        const interval = setInterval(() => {
+          const el = document.querySelector('[data-tour="channel-sandbox-creds"]')
+          if (el) {
+            clearInterval(interval)
+            updatePositions(true)
+          }
+        }, 40)
+        const timeout = setTimeout(() => clearInterval(interval), 1500)
+        return () => {
+          clearInterval(interval)
+          clearTimeout(timeout)
+        }
+      } else if (
+        currentStep.id === 'channel-realtime-creds' ||
+        currentStep.id === 'channel-env-tabs' ||
+        currentStep.id === 'channel-header'
+      ) {
+        const realtimeTab = document.querySelector('[data-tour="channel-tab-realtime"]') as HTMLButtonElement | null
+        if (realtimeTab) {
+          realtimeTab.click()
+        }
+        const interval = setInterval(() => {
+          const el = document.querySelector('[data-tour="channel-realtime-creds"]')
+          if (el) {
+            clearInterval(interval)
+            updatePositions(true)
+          }
+        }, 40)
+        const timeout = setTimeout(() => clearInterval(interval), 1500)
+        return () => {
+          clearInterval(interval)
+          clearTimeout(timeout)
+        }
+      }
     }
   }, [isActive, currentStep, currentStepIndex, activeTour, triggerClickAnimation, updatePositions])
 
@@ -280,11 +400,15 @@ export function ProductTour() {
 
   const getCardStyle = (): React.CSSProperties => {
     if (isMobile) {
+      const placeTop = Boolean(
+        spotlightRect && spotlightRect.top > window.innerHeight * 0.42
+      )
       return {
         position: 'fixed',
         left: '16px',
         right: '16px',
-        bottom: '16px',
+        top: placeTop ? '72px' : undefined,
+        bottom: placeTop ? undefined : '16px',
         zIndex: 10002,
         width: 'calc(100vw - 32px)',
         maxWidth: '420px',
@@ -400,8 +524,8 @@ export function ProductTour() {
             />
           )}
 
-          {/* Mobile backdrop fallback */}
-          {(isMobile || !spotlightRect) && (
+          {/* Backdrop fallback when target element is not mounted */}
+          {!spotlightRect && (
             <div className="fixed inset-0 z-[9998] bg-slate-900/65 backdrop-blur-xs transition-opacity duration-200" />
           )}
 

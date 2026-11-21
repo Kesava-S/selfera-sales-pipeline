@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Mail,
   Plus,
@@ -104,6 +105,8 @@ export function EmailCampaignsView({
   templates: EmailTemplate[]
   userEmail: string
 }) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const lists = useLists()
   const services = ['General', ...lists.services]
   const [activeTab, setActiveTab] = useState<'campaigns' | 'databases'>('campaigns')
@@ -167,12 +170,12 @@ export function EmailCampaignsView({
       { label: 'Email Campaigns' },
     ])
     if (typeof window !== 'undefined' && (window.location.search.includes('action=create') || window.location.search.includes('action=edit'))) {
-      window.history.replaceState({}, '', window.location.pathname)
+      router.push(window.location.pathname)
     }
-  }, [setBreadcrumbs, setCustomBack])
+  }, [setBreadcrumbs, setCustomBack, router])
 
   // Start new campaign
-  const startNewCampaign = () => {
+  const startNewCampaign = useCallback(() => {
     setEditingCampaign(null)
     setCampaignName('')
     setService('General')
@@ -190,9 +193,15 @@ export function EmailCampaignsView({
       { label: 'New Campaign' },
     ])
     if (typeof window !== 'undefined') {
-      window.history.pushState({ campaignView: 'create' }, '', window.location.pathname + '?action=create')
+      router.push(window.location.pathname + '?action=create')
     }
-  }
+  }, [databases, cancelCampaignEdit, setBreadcrumbs, setCustomBack, router])
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'create' && !isCreatingCampaign) {
+      startNewCampaign()
+    }
+  }, [searchParams, isCreatingCampaign, startNewCampaign])
 
   // Edit existing campaign
   const startEditCampaign = (c: CampaignRow) => {
@@ -582,11 +591,12 @@ export function EmailCampaignsView({
 
         {/* View Switcher / New Action */}
         <div data-tour="email-actions" className="flex items-center gap-2">
-          <RepliesLink channel="email" />
+          <RepliesLink channel="email" dataTour={isCreatingCampaign ? 'campaign-create-replies' : undefined} />
           {!isCreatingCampaign && (
             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
               <button
                 type="button"
+                data-tour="email-tab-campaigns"
                 onClick={() => setActiveTab('campaigns')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   activeTab === 'campaigns'
@@ -598,6 +608,7 @@ export function EmailCampaignsView({
               </button>
               <button
                 type="button"
+                data-tour="email-tab-databases"
                 onClick={() => setActiveTab('databases')}
                 className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                   activeTab === 'databases'
@@ -619,6 +630,7 @@ export function EmailCampaignsView({
             </button>
           ) : activeTab === 'campaigns' ? (
             <button
+              data-tour="email-new-btn"
               onClick={startNewCampaign}
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
@@ -626,6 +638,7 @@ export function EmailCampaignsView({
             </button>
           ) : (
             <button
+              data-tour="email-new-db-btn"
               onClick={openCreateDatabase}
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
@@ -643,7 +656,7 @@ export function EmailCampaignsView({
           {/* LEFT: Builder */}
           <div className="lg:col-span-7 2xl:col-span-8 space-y-6">
             {/* Step 1: Campaign Details */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-details" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -687,7 +700,7 @@ export function EmailCampaignsView({
             </div>
 
             {/* Step 2: Target Database Selector */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-database" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -786,7 +799,7 @@ export function EmailCampaignsView({
             </div>
 
             {/* Step 3: Email Content */}
-            <div className="card p-5 space-y-4">
+            <div data-tour="campaign-create-message" className="card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -797,6 +810,7 @@ export function EmailCampaignsView({
 
                 {templates.length > 0 && (
                   <select
+                    data-tour="campaign-create-template"
                     className="input !w-auto !py-1 !text-xs text-slate-600"
                     onChange={e => {
                       if (e.target.value) applyTemplate(e.target.value)
@@ -905,6 +919,7 @@ export function EmailCampaignsView({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <button
                 type="button"
+                data-tour="campaign-create-test-btn"
                 onClick={() => setTestEmailOpen(true)}
                 disabled={!subject.trim() || !body.trim()}
                 className="btn btn-secondary btn-sm flex items-center gap-1.5 text-slate-700"
@@ -923,6 +938,7 @@ export function EmailCampaignsView({
                 </button>
                 <button
                   type="button"
+                  data-tour="campaign-create-draft-btn"
                   onClick={() => handleSaveCampaign('draft')}
                   disabled={pending || !campaignName.trim() || !subject.trim() || !body.trim()}
                   className="btn btn-secondary btn-sm"
@@ -931,6 +947,7 @@ export function EmailCampaignsView({
                 </button>
                 <button
                   type="button"
+                  data-tour="campaign-create-launch-btn"
                   onClick={() => {
                     handleSaveCampaign('draft', row => {
                       setEditingCampaign(row)
@@ -955,7 +972,7 @@ export function EmailCampaignsView({
 
           {/* RIGHT: Live Preview */}
           <div className="lg:col-span-5 2xl:col-span-4 sticky top-4 space-y-4">
-            <div className="card p-0 overflow-hidden shadow-sm border border-slate-200">
+            <div data-tour="campaign-create-preview" className="card p-0 overflow-hidden shadow-sm border border-slate-200">
               <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">
